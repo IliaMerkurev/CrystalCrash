@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
-import {createGraph,damageBonds} from './cluster-graph.js';
+import {createGraph,damageBonds,components} from './cluster-graph.js';
 import {Reflector} from 'three/addons/objects/Reflector.js';
 import {wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells} from './glass-shell.js';
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -59,9 +59,38 @@ function splitCluster(o,parts,point){const origin=o.origin,position={...o.b.tran
  const next={id:++uid,kind:terminal?'fragment':'block',origin,ids,b,c:cs[0],cs,mesh,type:origin.type,sx:origin.sx,sy:origin.sy,sz:origin.sz,stage:0,damage:0,lastHit,born:elapsed,life:Math.min(remainingLife,ids.length>1?5:C.fragmentLife)};cs.forEach(c=>colliders.set(c.handle,next));if(terminal)fragments.push(next);else{blocks.set(next.id,next);origin.clusters.add(next.id);}
  }awardOriginal(origin);audio.play('chip',.85,origin.type);shake=Math.max(shake,.07);}
 function damage(o,energy,point){if((!blocks.has(o.id)&&!fragments.includes(o))||!o.ids||o.ids.length<2||elapsed-o.lastHit<.09||energy<.16)return;o.lastHit=elapsed;o.damage+=energy;const t=GLASS[o.type],local=point?v3().copy(point).sub(o.b.translation()).applyQuaternion(new THREE.Quaternion().copy(o.b.rotation()).invert()):o.origin.graph.cells[o.ids[0]].pos.clone();const parts=damageBonds(o.origin.graph,o.ids,local,energy,t.bondStrength);if(parts.length>1){splitCluster(o,parts,point);return;}audio.play('hit',clamp(energy/3,.2,1),o.type);if(o.damage>=t.crack&&o.stage<1){o.stage=1;crack(o,point);audio.play('crack',.7,o.type);}}
+// Only a ball center inside a substantial remaining shell can trigger this escape fracture.
+function releaseInteriorBall(dt){
+ if(state!=='BALL_ACTIVE')return;
+ const ballPos=v3().copy(ball.translation());
+ for(const o of [...blocks.values()]){
+  const origin=o.origin,q=new THREE.Quaternion().copy(o.b.rotation()),local=ballPos.clone().sub(o.b.translation()).applyQuaternion(q.clone().invert()),t=wallThickness(o.type);
+  const inside=Math.abs(local.x)<o.sx/2-t-.015&&Math.abs(local.y)<o.sy/2-t-.015&&Math.abs(local.z)<o.sz/2-t-.015;
+  const faces=new Set(o.ids.map(id=>origin.graph.cells[id].normal.toArray().join(',')));
+  if(!inside||faces.size<4||o.ids.length<4){o.interiorTime=0;continue;}
+  o.interiorTime=(o.interiorTime||0)+dt;
+  if(o.interiorTime<.12||elapsed-(origin.lastEscape??-10)<.45)continue;
+  origin.lastEscape=elapsed;
+  // Open most of the shell, keeping a connected remnant opposite the exit where possible.
+  const direction=v3().copy(ball.linvel()).sub(o.b.linvel()).applyQuaternion(q.clone().invert());
+  if(direction.lengthSq()<.5)direction.set(0,.2,1);direction.normalize();
+  const ordered=[...o.ids].sort((a,b)=>origin.graph.cells[b].pos.dot(direction)-origin.graph.cells[a].pos.dot(direction));
+  const opened=new Set(ordered.slice(0,Math.ceil(ordered.length*.75))),owned=new Set(o.ids);
+  for(const bond of origin.graph.bonds)if(owned.has(bond.a)&&owned.has(bond.b)&&(opened.has(bond.a)||opened.has(bond.b)))bond.hp=0;
+  const parts=components(origin.graph,o.ids);
+  if(parts.length<2)continue;
+  splitCluster(o,parts,ballPos);
+  // Push loosened panes away from the interior; keep the ball's own motion untouched.
+  for(const f of fragments)if(f.origin===origin&&f.born===elapsed&&f.ids.some(id=>opened.has(id))){
+   const outward=v3().copy(f.b.worldCom()).sub(ballPos);if(outward.lengthSq()<.001)outward.copy(direction).applyQuaternion(q);outward.normalize();
+   f.b.applyImpulse(outward.multiplyScalar(f.b.mass()*1.8),true);
+  }
+  break; // Bound fracture work to one shell per physics step.
+ }
+}
 function contacts(){const impacts=new Map();const record=(o,e,p)=>{const old=impacts.get(o.id);if(!old||old.e<e)impacts.set(o.id,{o,e,p});};queue.drainCollisionEvents((a,b,start)=>{if(!start)return;const oa=colliders.get(a),ob=colliders.get(b);if(elapsed<1&&oa?.kind!=='ball'&&ob?.kind!=='ball')return;if(oa?.origin&&oa.origin===ob?.origin)return;if(elapsed-(oa?.born??-10)<.12||elapsed-(ob?.born??-10)<.12)return;const ba=world.getCollider(a)?.parent(),bb=world.getCollider(b)?.parent();if(!ba||!bb)return;const va=previousVel.get(ba.handle)||ba.linvel(),vb=previousVel.get(bb.handle)||bb.linvel();const speed=Math.hypot(va.x-vb.x,va.y-vb.y,va.z-vb.z);const ma=ba.mass(),mb=bb.mass(),effective=ma&&mb?ma*mb/(ma+mb):Math.max(ma,mb);let point,normalImpulse=0;world.contactPair(world.getCollider(a),world.getCollider(b),m=>{if(!point&&m.numSolverContacts())point={...m.solverContactPoint(0)};for(let i=0;i<m.numContacts();i++)normalImpulse+=Math.max(0,m.contactImpulse(i));});const energy=Math.min(.5*effective*speed*speed,.5*normalImpulse*speed)*.13;if(oa?.ids?.length>1)record(oa,energy,point);if(ob?.ids?.length>1)record(ob,energy,point);if(oa?.kind==='ball'||ob?.kind==='ball'){if(oa?.kind!=='block'&&ob?.kind!=='block'&&speed>2){audio.play('wall',Math.min(speed/16,.8));shake=Math.max(shake,.04);}}else if(speed>3&&(oa?.kind==='block'||ob?.kind==='block'))audio.play('fall',Math.min(speed/10,.7));});for(const {o,e,p}of impacts.values())damage(o,e,p);}
 function step(dt){elapsed+=dt;previousVel.clear();world.forEachRigidBody(b=>{previousVel.set(b.handle,{...b.linvel()});});if(state==='BALL_ACTIVE'){const v=ball.linvel();ball.addForce({x:0,y:0,z:C.returnAcceleration*ball.mass()},true);if(Math.abs(v.x)+Math.abs(v.z)<.3)ball.applyImpulse({x:0,y:0,z:.06},true);}else if(state==='CAPTURED'||state==='AIMING')ball.setNextKinematicTranslation({x:carriageX,y:C.ballRadius+.03,z:C.railZ});
- world.step(queue);ball.resetForces(true);contacts();
+ world.step(queue);ball.resetForces(true);contacts();releaseInteriorBall(dt);
  if(state==='BALL_ACTIVE'){const p=ball.translation(),v=ball.linvel();if(p.z>=C.railZ-.24&&p.z<=C.railZ+.6&&v.z>0&&Math.abs(p.x-carriageX)<C.catchWidth/2-C.ballRadius*.3&&p.y<1){state='SETTLING';settle=.22;settleFrom.set(p.x,p.y,p.z);ball.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased,true);audio.play('catch',1);$('hint').textContent='Caught! Pull back for your next shot.';}else if(p.z>6.2||p.y< -2){state='MISSED';missTimer=.9;audio.play('miss');tell('MISSED',.8);}}
  if(state==='SETTLING'){settle=Math.max(0,settle-dt);const t=1-settle/.22;const p=settleFrom.clone().lerp(v3(carriageX,C.ballRadius+.03,C.railZ),1-(1-t)**3);ball.setNextKinematicTranslation(p);if(!settle)resetBall();}
  if(state==='MISSED'){missTimer-=dt;if(missTimer<=0)resetBall();}

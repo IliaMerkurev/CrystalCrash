@@ -66,3 +66,9 @@ Focused real-Rapier checks verified tier differentiation, natural bonded-patch d
 ### Coarser cluster fracture
 
 Ordinary cube walls now contain five or six Voronoi cells instead of fourteen to eighteen. This increases characteristic shard width by approximately 1.7 times while preserving the full wall surface and original mass. Beam walls use area-scaled cell counts with a lower upper bound. Compounds retain their real bond graph and repeat fracture; fine supplemental chip particles remain small. Geometry coverage/connectivity, launched-ball fracture, tier distinction, bonded-compound detachment/re-fracture, score, transitions, and cleanup were checked. This reduces cell-collider load substantially, but device frame rate has not been measured.
+
+### Interior-ball recovery
+
+An active ball whose center remains inside a substantial shell for 0.12 seconds opens approximately 75% of that shell's remaining cells. Detection uses each compound body's current position and rotation, with an inset interior boundary and at least four represented shell faces, so ordinary exterior contact does not trigger recovery. Loose panes receive a small outward impulse; the ball is neither teleported nor directly accelerated. A per-original cooldown and one-shell-per-step bound prevent recursive fracture bursts. The remaining patches retain normal cluster behavior and once-only original scoring.
+
+A real-Rapier regression checked exterior non-trigger, recovery inside a moved/rotated reinforced cube, majority detachment, unchanged ball pose/velocity at fracture, mass conservation, subsequent escape, reward uniqueness, and section progression. Real-device validation remains outstanding.
