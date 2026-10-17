@@ -145,3 +145,7 @@ Glass now uses 94% transmission with lighter body tint, retained colored absorpt
 User screenshot review showed the previous high-transmission glass lost tier-color readability and the table became too mirror-like. Saturated original tier colors are restored with moderate 42–60% transmission and crisp physical reflections. The earlier brushed floor coat (roughness 0.22, opacity 0.76) is restored. Continuous rail illumination remains. The obsolete prototype footer label is hidden.
 
 A small tileable mathematical normal map adds broad, subtle changes of reflection direction to glass. It uses stable face UVs on shells and fracture plates, with lower amplitude on small shards; no noisy frosting or raster dependency is added.
+
+## Reference-led visual refinement 24
+
+Confirmed landscape and portrait browser frames revealed fixed-distance fog obscuring the expanded portrait arena. Fog now starts beyond the active gate. Colored glass receives a narrow procedural edge-emission mask, while normal variation is reduced to keep broad faces clean. Planar reflections use a bounded nine-tap anisotropic blur so the brushed floor shows softened color streaks instead of crisp duplicate towers. Camera and gameplay are unchanged.
