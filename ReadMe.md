@@ -17,7 +17,7 @@ Press PLAY to enable sound. In the lower half, grab the ball to stop it exactly 
 - Three.js 0.186.1, Rapier 3D compatibility/WASM 0.19.3, Vite 8.3.4; exact dependencies in lockfile.
 - Vite is build tooling, not an embedded development server. The export includes bundled game code and the physics runtime, without runtime CDN calls.
 - Dynamic towers and supported beams, CCD steel ball, normal gravity for blocks, separate gentle +Z return force for the ball.
-- Five glass tiers with 1/2/4/6/8-strike local chipping, persistent Voronoi shell clusters, bounded physical debris and instanced fine shards.
+- Five glass tiers with 1/2/4/6/8-strike local chipping, persistent Voronoi shell clusters, bounded floor-bouncing mesh debris and instanced fine shards.
 - Original blocks score once; fragments never score. Cascade multipliers x1/x1.5/x2/x3. Endless seeded sections and a brief camera transition.
 - Procedural Web Audio: launch, wall, hit, crack, chip, material-specific break, fall, catch, miss, section clear and UI.
 - Perspective pinball camera shows glass thickness and tower height. World table is square; portrait composition retains space for HUD and gestures.
@@ -34,7 +34,7 @@ Prototype export is one HTML, approximately 2.82 MB raw (approximately 2.83 mill
 
 Production build and inline-byte gate pass. Real-Rapier and pointer-handler checks cover stopping at the current position, same-gesture aiming/launch, upper-half attraction, acceleration ramp, arrival-to-aim without accidental launch, cancellation, irreversible loss, retry, tier damage, once-only scoring and section progression. These do not replace real-device browser/touch testing. The cloud browser has disabled WebGL; no new rendered-browser or Safari acceptance is claimed. Phone performance, touch feel and Safari audio require owner verification.
 
-Glass shells are hollow, with actual extruded Voronoi polygons, compound convex colliders and persistent bonds. Shared physical materials, planar reflections and studio environment lighting approximate glass; this is not path tracing. No shop, bonuses or multiball.
+Playable glass shells are hollow, with extruded Voronoi polygons, compound convex colliders and persistent bonds. Detached groups are visual 3D particles with floor bounce; they no longer have rigid bodies or secondary collision fracture. Shared physical materials, planar reflections and studio environment lighting approximate glass; this is not path tracing. No shop, bonuses or multiball.
 
 ## Development discipline
 
@@ -104,3 +104,10 @@ Flat panes (one/two represented faces), open corners without opposing faces, and
 When any actual remaining shell vertex crosses the same middle divider used for controls, all its remaining bonds are severed and its cells separate into individual physical melting shards with a restrained outward impulse. The ball-inside-shell amplified fracture rule has been removed completely.
 
 Dissolve duration is now size-dependent from 0.3 to 2 seconds; larger pieces last longer. Fine chips use their visual size too. Shrink begins immediately; orange emission is raised from 3.5 to 7.5 peak strength for both physical shards and chip particles. Previous debris collision masks are preserved. Focused checks cover residual classification, full bond separation on crossing, duration ordering/range, score uniqueness, section progression and controls.
+
+
+### Hybrid debris simulation
+
+Rapier now simulates only the ball, table/boundaries and remaining playable glass structures. Detached irregular shards and glued groups are independent 3D mesh particles with inherited linear/angular movement, gravity, approximate oriented-box floor support, bounce and friction. They pass through cubes, the ball and other debris, and do not undergo secondary rigid-body fracture. No detached convex colliders or melting collider rebuilds remain.
+
+Size-based dissolve lifetime is 0.5–3 seconds, with immediate shrink and progressive orange emission preserved. Hit quotas, local chipping, residual cleanup, complete separation below the divider, upper-half spawning, scoring and ball controls remain. Focused checks verified zero debris bodies/colliders, visual group retention, floor bounce, duration bounds, cleanup, score/section progression and pointer controls. This removes debris physics load; it does not establish device FPS or eliminate possible remaining compound-shell or rendering issues.
