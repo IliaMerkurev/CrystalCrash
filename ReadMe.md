@@ -72,3 +72,11 @@ Ordinary cube walls now contain five or six Voronoi cells instead of fourteen to
 An active ball whose center remains inside a substantial shell for 0.12 seconds opens approximately 75% of that shell's remaining cells. Detection uses each compound body's current position and rotation, with an inset interior boundary and at least four represented shell faces, so ordinary exterior contact does not trigger recovery. Loose panes receive a small outward impulse; the ball is neither teleported nor directly accelerated. A per-original cooldown and one-shell-per-step bound prevent recursive fracture bursts. The remaining patches retain normal cluster behavior and once-only original scoring.
 
 A real-Rapier regression checked exterior non-trigger, recovery inside a moved/rotated reinforced cube, majority detachment, unchanged ball pose/velocity at fracture, mass conservation, subsequent escape, reward uniqueness, and section progression. Real-device validation remains outstanding.
+
+### Strike-count chipping balance
+
+Valid distinct impacts now chip structural glass immediately instead of spending hits on crack-only feedback. Tier targets are 1 / 2 / 4 / 6 / 8 strikes. Each strike commits approximately 100% / 50% / 25% / 16.7% / 12.5% of the original shell area; coarse irregular cell boundaries create small rounding differences. Cumulative area accounting prevents exponential decay of the remaining shell. The final strike releases all remaining structural patches and grants the original reward once.
+
+Patch selection grows through connected neighboring cells from the actual contact location. Released material forms varied bonded physical groups, with normal inherited movement, particles and repeat fracture. These detached groups use bounded debris cleanup and no longer block completion. Contact-start grouping across a cube's multiple colliders plus a 0.22-second original-wide strike cooldown suppress duplicate strike accounting from the same collision. Low-energy resting contacts remain below the valid-impact threshold. Interior-ball recovery remains active.
+
+Focused checks passed all tier hit counts, local patch inclusion, cumulative removed area, mass conservation, cooldown, one-hit blue destruction from a real launched ball, unique rewards, section transitions and interior recovery. Real-device testing is still outstanding.
