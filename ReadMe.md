@@ -149,3 +149,7 @@ A small tileable mathematical normal map adds broad, subtle changes of reflectio
 ## Reference-led visual refinement 24
 
 Confirmed landscape and portrait browser frames revealed fixed-distance fog obscuring the expanded portrait arena. Fog now starts beyond the active gate. Colored glass receives a narrow procedural edge-emission mask, while normal variation is reduced to keep broad faces clean. Planar reflections use a bounded nine-tap anisotropic blur so the brushed floor shows softened color streaks instead of crisp duplicate towers. Camera and gameplay are unchanged.
+
+## Glass compositing trial 25
+
+Browser comparison still showed solid-looking faces. Intact cubes now separate a tinted alpha-blended outer surface (0.52 opacity) and faint inner shell (0.13), retaining physical environment highlights, colored rims and normals. This intentionally avoids the opaque-only transmission buffer so other glass can appear behind it; it is a stylized lightweight glass approximation, not ray-traced refraction. Floor roughness is increased and broad rectangular-light highlights reduced. The HUD is compacted for portrait readability.
