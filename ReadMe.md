@@ -129,3 +129,9 @@ A generated 1536×768 sRGB studio panorama is embedded in the single HTML and fi
 The surrounding platform is removed. Only the active tabletop and the next tables beyond its gate remain above the void. Table length, divider, spawns, floor collider, side rails, gate, loss line and travel distance adapt together to the initial viewport and resizing; camera angle, fitting parameters, aim offset and transition behavior are retained. Horizontal upper play width remains unchanged; portrait lower edges taper slightly to fit the phone.
 
 Glass, steel and table materials explicitly bind the reflection map so their individual environment strengths apply. The generated LDR source image is unchanged and filtered through PMREM; per-material environment intensity controls reflection strength. Glass optical path length now corresponds more closely to its thin walls, and the table coat gives environment reflections more weight alongside its planar reflection.
+
+## Crisp glass, frosted gate and bounded glow
+
+Glass roughness and clearcoat roughness are 0.005; physical dielectric Fresnel remains handled by MeshPhysicalMaterial. The 12.3-wide exit gate is 1.5 units high, with matching collider and fracture dimensions. It begins as frosted glass, remains invulnerable until all targets clear, then smoothly becomes clear glass with an emissive pulse that fades to zero.
+
+Melting shards and fine chips receive bounded instanced camera-facing additive halos; side strips have narrow orange halo meshes. These are localized glow effects rather than a costly full-screen bloom pass. They do not change the generated environment image or visible background.
