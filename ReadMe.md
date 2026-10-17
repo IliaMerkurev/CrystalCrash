@@ -139,3 +139,7 @@ Melting shards and fine chips receive bounded instanced camera-facing additive h
 ## Visual refinement 22
 
 Glass now uses 94% transmission with lighter body tint, retained colored absorption, crisp beveled edges and reoriented studio reflections. The floor exposes more of its planar reflection. Four continuous rectangular rail lights replace the two isolated point highlights; rail halos and melting emission are brighter. The gate starts as clear reflective glass, is 0.75 units high and 0.18 units deep, remains locked until the arena clears, then pulses before manual breaking. Camera and controls are unchanged. Visual review on a real browser remains required.
+
+## Visual correction 23
+
+User screenshot review showed the previous high-transmission glass lost tier-color readability and the table became too mirror-like. Saturated original tier colors are restored with moderate 42–60% transmission and crisp physical reflections. The earlier brushed floor coat (roughness 0.22, opacity 0.76) is restored. Continuous rail illumination remains. The obsolete prototype footer label is hidden.
