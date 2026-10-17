@@ -135,3 +135,7 @@ Glass, steel and table materials explicitly bind the reflection map so their ind
 Glass roughness and clearcoat roughness are 0.005; physical dielectric Fresnel remains handled by MeshPhysicalMaterial. The 12.3-wide exit gate is 1.5 units high, with matching collider and fracture dimensions. It begins as frosted glass, remains invulnerable until all targets clear, then smoothly becomes clear glass with an emissive pulse that fades to zero.
 
 Melting shards and fine chips receive bounded instanced camera-facing additive halos; side strips have narrow orange halo meshes. These are localized glow effects rather than a costly full-screen bloom pass. They do not change the generated environment image or visible background.
+
+## Visual refinement 22
+
+Glass now uses 94% transmission with lighter body tint, retained colored absorption, crisp beveled edges and reoriented studio reflections. The floor exposes more of its planar reflection. Four continuous rectangular rail lights replace the two isolated point highlights; rail halos and melting emission are brighter. The gate starts as clear reflective glass, is 0.75 units high and 0.18 units deep, remains locked until the arena clears, then pulses before manual breaking. Camera and controls are unchanged. Visual review on a real browser remains required.
