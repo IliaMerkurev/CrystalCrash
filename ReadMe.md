@@ -119,3 +119,7 @@ Size-based dissolve lifetime is 0.5–3 seconds, with immediate shrink and progr
 - Clearing targets changes the armored gate into breakable glass and smoothly returns the ball to the lower start point or held pointer. The player must launch into the gate to shatter it, then pass through the opening. The next arena similarly positions the ball safely without an automatic launch. A smooth upward travel leads to the next seeded arena with a continuous surrounding platform.
 - Aiming eases the camera toward the lower edge to create finger room. The gesture projects through a frozen camera, so camera movement cannot change its launch vector. Portrait framing spans more screen width; landscape gameplay width is retained with extended surroundings.
 - Focused real-Rapier checks cover all five tier drop impacts, floor support, gate waiting/crossing/progression, and frozen-camera aiming. Actual device visual/performance review remains necessary.
+
+## Reflection environment
+
+A generated 1536×768 sRGB studio panorama is embedded in the single HTML and filtered to a PMREM environment for glass and polished metal. Broad white strips with restrained cyan and warm accents supply contrasting highlights. It affects reflections only; the visible scene background and environment geometry remain unchanged. The source is an LDR JPEG, not a true high-dynamic-range capture.
