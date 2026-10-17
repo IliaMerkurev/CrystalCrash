@@ -20,7 +20,7 @@ Press PLAY to enable sound. In the lower half, grab the ball to stop it exactly 
 - Five glass tiers with 1/2/4/6/8-strike local chipping, persistent Voronoi shell clusters, bounded floor-bouncing mesh debris and instanced fine shards.
 - Original blocks score once; fragments never score. Cascade multipliers x1/x1.5/x2/x3. Endless seeded arenas, visible continuation above the gate, and player-triggered upward camera travel.
 - Procedural Web Audio: launch, wall, hit, crack, chip, material-specific break, fall, catch, miss, section clear and UI.
-- Perspective pinball camera shows glass thickness and tower height. World table is square; portrait composition retains space for HUD and gestures.
+- Perspective pinball camera shows glass thickness and tower height. Arena geometry adapts to the unchanged perspective camera: gate near the top, interaction divider in the middle, and fall edge near the bottom. Portrait lower rails taper to stay within the screen.
 
 ## Tuning
 
@@ -123,3 +123,9 @@ Size-based dissolve lifetime is 0.5–3 seconds, with immediate shrink and progr
 ## Reflection environment
 
 A generated 1536×768 sRGB studio panorama is embedded in the single HTML and filtered to a PMREM environment for glass and polished metal. Broad white strips with restrained cyan and warm accents supply contrasting highlights. It affects reflections only; the visible scene background and environment geometry remain unchanged. The source is an LDR JPEG, not a true high-dynamic-range capture.
+
+## Full-height arena layout
+
+The surrounding platform is removed. Only the active tabletop and the next tables beyond its gate remain above the void. Table length, divider, spawns, floor collider, side rails, gate, loss line and travel distance adapt together to the initial viewport and resizing; camera angle, fitting parameters, aim offset and transition behavior are retained. Horizontal upper play width remains unchanged; portrait lower edges taper slightly to fit the phone.
+
+Glass, steel and table materials explicitly bind the reflection map so their individual environment strengths apply. The generated LDR source image is unchanged and filtered through PMREM; per-material environment intensity controls reflection strength. Glass optical path length now corresponds more closely to its thin walls, and the table coat gives environment reflections more weight alongside its planar reflection.
