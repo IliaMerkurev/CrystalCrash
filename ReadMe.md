@@ -89,3 +89,9 @@ Focused checks passed all tier hit counts, local patch inclusion, cumulative rem
 ### Free-position ball control
 
 Removed the launcher/catcher geometry and all carriage constraints. The dashed center boundary separates the lower control zone, with a restrained tint and pointer attraction ring. Direct lower-half grabs freeze the ball at its exact 3D position. Same-pointer pullback launches from that position; attraction ramps toward the lower-zone pointer and changes to aim on arrival with a reset baseline. The red bottom line is an irreversible loss threshold. Single-pointer capture, cancellation, UI exclusion, pause, reset and section transitions use the new flow.
+
+### Melting debris and clear lower control zone
+
+Collision masks separate ball, structural glass, debris and table/boundaries. Detached debris collide only with structural glass and table/boundaries, never with the ball or other debris. Structural target clusters retain their normal behavior. Released shards and compound debris immediately shrink around their own centers, gain orange emission progressively, and dissolve within a randomized 0.2–1-second lifetime. Convex collision shapes shrink with the visible geometry and bodies/materials are removed at expiry. A re-fractured melting group inherits its already-reduced shape and remaining lifetime. Fine instanced chips use independent lifetime/shrink/emission attributes; intact shared glass materials are unaffected.
+
+All cube spawn bounds now lie entirely above the middle divider, with clearance for rotated corners. This applies to subsequent sections too; natural falling motion is unrestricted. Focused Rapier checks verified the collision matrix, matching visual/collider scale, lifetime cleanup without deleting remaining targets, original score progression and controls. Six section layouts passed the upper-half spawn-bound check. Physics timestep, CCD policy, renderer settings and cluster system were otherwise retained.
