@@ -10,21 +10,21 @@ Install Node.js 24 LTS. In this folder run `npm ci`, then `npm run dev` and open
 
 ## Play
 
-Press PLAY to enable sound. Pull the captured steel ball backward and release to choose direction and power. While the ball rolls, drag horizontally to position the catcher. Catch only works within the actual cup. Missing returns the ball for a retry without resetting the section. Clear all original glass blocks to advance; score carries over. Escape or pointer cancellation aborts an aim. Pause freezes simulation; leaving the tab pauses automatically. Arrow keys also move the carriage.
+Press PLAY to enable sound. In the lower half, grab the ball to stop it exactly where it is; keep holding, pull back and release to launch from that position. Hold elsewhere below the dashed center line to attract the ball toward your pointer with gradually increasing force, even when it is in the upper half. When it reaches your finger, the same gesture becomes aiming. Crossing the red bottom line is a miss and cannot be rescued; a retry preserves the section. Escape/pointer cancellation aborts aiming safely. Pause and leaving the tab freeze gameplay. Clear all original glass blocks to advance; score carries over.
 
 ## Implementation
 
 - Three.js 0.186.1, Rapier 3D compatibility/WASM 0.19.3, Vite 8.3.4; exact dependencies in lockfile.
 - Vite is build tooling, not an embedded development server. The export includes bundled game code and the physics runtime, without runtime CDN calls.
 - Dynamic towers and supported beams, CCD steel ball, normal gravity for blocks, separate gentle +Z return force for the ball.
-- Five configurable materials with impulse/relative-speed damage, visible cracks, chipped geometry, bounded physical fragments and instanced small shards.
+- Five glass tiers with 1/2/4/6/8-strike local chipping, persistent Voronoi shell clusters, bounded physical debris and instanced fine shards.
 - Original blocks score once; fragments never score. Cascade multipliers x1/x1.5/x2/x3. Endless seeded sections and a brief camera transition.
 - Procedural Web Audio: launch, wall, hit, crack, chip, material-specific break, fall, catch, miss, section clear and UI.
-- Orthographic centered pinball camera preserves parallel rails. World table is square; portrait composition retains space for HUD and gestures.
+- Perspective pinball camera shows glass thickness and tower height. World table is square; portrait composition retains space for HUD and gestures.
 
 ## Tuning
 
-`src/config.js` contains glass score/color/density/crack/chip/fracture thresholds/roughness/transmission/thickness/shard presets plus launch power, return acceleration, catch width, fixed timestep, debris budgets and combo window. `comboFor` owns combo thresholds. Section layouts and seed progression are in `generateSection` in `src/main.js`.
+`src/config.js` contains glass score/color/density/crack/chip/fracture thresholds/roughness/transmission/thickness/shard presets plus launch power, return acceleration, start/loss positions, fixed timestep, debris budgets and combo window. `comboFor` owns combo thresholds. Section layouts and seed progression are in `generateSection` in `src/main.js`.
 
 ## Build budget
 
@@ -32,13 +32,17 @@ Prototype export is one HTML, approximately 2.82 MB raw (approximately 2.83 mill
 
 ## Verification and limitations
 
-Production build and inline-byte gate pass. Real Rapier simulation checks cover nonlethal cracking, once-only scoring, catch, miss/retry, section advance/score retention and fragment cleanup. Browser/device verification is recorded separately; desktop viewport emulation is not iOS testing. Headless Chromium launch was blocked by the VM environment. The existing cloud browser reached the private Site sign-in gate, and the connected laptop exposed no usable browser surface. No rendered browser, touch-device or Safari acceptance is claimed; the owner should perform the focused visual/input check on the deployed link.
+Production build and inline-byte gate pass. Real-Rapier and pointer-handler checks cover stopping at the current position, same-gesture aiming/launch, upper-half attraction, acceleration ramp, arrival-to-aim without accidental launch, cancellation, irreversible loss, retry, tier damage, once-only scoring and section progression. These do not replace real-device browser/touch testing. The cloud browser has disabled WebGL; no new rendered-browser or Safari acceptance is claimed. Phone performance, touch feel and Safari audio require owner verification.
 
-Chipped blocks use visibly deformed preset geometry with a conservative original collider; large shards use approximate convex-looking meshes with box colliders. Small shards are visual only. Glass uses shared physical materials and bounded transparency; this is intentionally not runtime Voronoi or path-traced glass. Phone performance and Safari audio need physical-device verification. No life economy, shop, bonuses or multiball.
+Glass shells are hollow, with actual extruded Voronoi polygons, compound convex colliders and persistent bonds. Shared physical materials, planar reflections and studio environment lighting approximate glass; this is not path tracing. No shop, bonuses or multiball.
 
 ## Development discipline
 
 Work on `prototype/0.2`, preserve and verify meaningful pushes, and do not merge main without owner approval. Reuse the same Site for every iteration. Keep recordings, generated test reports and caches outside Git. Retain the portable Three.js playable production checklist when starting another project.
+
+## Earlier iteration notes
+
+The notes below describe the sequence of earlier iterations; the current controls and implementation above supersede old catcher/crack behavior.
 
 Visual polish checkpoint: cracks now originate from Rapier contact positions on the impacted face; localized dents follow that contact; larger fragments use tapered glass-like prisms. Launch tuning, damage thresholds, debris caps and lifetimes are unchanged. Visual acceptance uses owner screenshots because this VM has disabled WebGL.
 
@@ -80,3 +84,8 @@ Valid distinct impacts now chip structural glass immediately instead of spending
 Patch selection grows through connected neighboring cells from the actual contact location. Released material forms varied bonded physical groups, with normal inherited movement, particles and repeat fracture. These detached groups use bounded debris cleanup and no longer block completion. Contact-start grouping across a cube's multiple colliders plus a 0.22-second original-wide strike cooldown suppress duplicate strike accounting from the same collision. Low-energy resting contacts remain below the valid-impact threshold. Interior-ball recovery remains active.
 
 Focused checks passed all tier hit counts, local patch inclusion, cumulative removed area, mass conservation, cooldown, one-hit blue destruction from a real launched ball, unique rewards, section transitions and interior recovery. Real-device testing is still outstanding.
+
+
+### Free-position ball control
+
+Removed the launcher/catcher geometry and all carriage constraints. The dashed center boundary separates the lower control zone, with a restrained tint and pointer attraction ring. Direct lower-half grabs freeze the ball at its exact 3D position. Same-pointer pullback launches from that position; attraction ramps toward the lower-zone pointer and changes to aim on arrival with a reset baseline. The red bottom line is an irreversible loss threshold. Single-pointer capture, cancellation, UI exclusion, pause, reset and section transitions use the new flow.
