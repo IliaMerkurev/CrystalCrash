@@ -28,7 +28,7 @@ Press PLAY to enable sound. Pull the captured steel ball backward and release to
 
 ## Build budget
 
-Prototype export is one HTML, approximately 2.82 MB raw (2,817,116 bytes in current build), including embedded Rapier WASM. No external art, music or videos. Build rejects HTML >= 5,000,000 bytes. This is a hosted prototype, not a certified ad-network package; no MRAID/CTA/monetization is included.
+Prototype export is one HTML, approximately 2.82 MB raw (2,815,836 bytes in current build), including embedded Rapier WASM. No external art, music or videos. Build rejects HTML >= 5,000,000 bytes. This is a hosted prototype, not a certified ad-network package; no MRAID/CTA/monetization is included.
 
 ## Verification and limitations
 
@@ -40,4 +40,6 @@ Chipped blocks use visibly deformed preset geometry with a conservative original
 
 Work on `prototype/0.1`, preserve and verify meaningful pushes, and do not merge main without owner approval. Reuse the same Site for every iteration. Keep recordings, generated test reports and caches outside Git. Retain the portable Three.js playable production checklist when starting another project.
 
-Visual polish checkpoint: cracks now originate from Rapier contact positions on the impacted face; localized dents follow that contact; larger fragments use tapered glass-like prisms. Launch tuning, damage thresholds, debris caps and lifetimes are unchanged. This checkpoint awaits rendered visual review before deployment.
+Visual polish checkpoint: cracks now originate from Rapier contact positions on the impacted face; localized dents follow that contact; larger fragments use tapered glass-like prisms. Launch tuning, damage thresholds, debris caps and lifetimes are unchanged. Visual acceptance uses owner screenshots because this VM has disabled WebGL.
+
+3D material pass: lower-angle camera; square glass blocks rotated 45 degrees with matching physics colliders; beveled faces; saturated absorption, studio-strip reflection environment, softer diffuse fill, reflective brushed table, metal catcher and warm edge fixtures. Launch forces and damage tuning remain unchanged.
