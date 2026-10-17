@@ -10,7 +10,7 @@ Install Node.js 24 LTS. In this folder run `npm ci`, then `npm run dev` and open
 
 ## Play
 
-Press PLAY to enable sound. In the lower half, grab the ball to stop it exactly where it is; keep holding, pull back and release to launch from that position. Hold elsewhere below the dashed center line to attract the ball toward your pointer with gradually increasing force, even when it is in the upper half. When it reaches your finger, the same gesture becomes aiming. Crossing the red bottom line is a miss and cannot be rescued; a retry preserves the section. Escape/pointer cancellation aborts aiming safely. Pause and leaving the tab freeze gameplay. Clear all original glass blocks to advance; score carries over.
+Press PLAY to enable sound. In the lower half, grab the ball to stop it exactly where it is; keep holding, pull back and release to launch from that position. Hold elsewhere below the dashed center line to attract the ball toward your pointer with gradually increasing force, even when it is in the upper half. When it reaches your finger, the same gesture becomes aiming. Crossing the red bottom line is a miss and cannot be rescued; a retry preserves the section. Escape/pointer cancellation aborts aiming safely. Pause and leaving the tab freeze gameplay. Clear all original glass blocks to turn the armored upper gate into breakable glass, then launch the ball through it to travel into the next arena; score carries over.
 
 ## Implementation
 
@@ -18,7 +18,7 @@ Press PLAY to enable sound. In the lower half, grab the ball to stop it exactly 
 - Vite is build tooling, not an embedded development server. The export includes bundled game code and the physics runtime, without runtime CDN calls.
 - Dynamic towers and supported beams, CCD steel ball, normal gravity for blocks, separate gentle +Z return force for the ball.
 - Five glass tiers with 1/2/4/6/8-strike local chipping, persistent Voronoi shell clusters, bounded floor-bouncing mesh debris and instanced fine shards.
-- Original blocks score once; fragments never score. Cascade multipliers x1/x1.5/x2/x3. Endless seeded sections and a brief camera transition.
+- Original blocks score once; fragments never score. Cascade multipliers x1/x1.5/x2/x3. Endless seeded arenas, visible continuation above the gate, and player-triggered upward camera travel.
 - Procedural Web Audio: launch, wall, hit, crack, chip, material-specific break, fall, catch, miss, section clear and UI.
 - Perspective pinball camera shows glass thickness and tower height. World table is square; portrait composition retains space for HUD and gestures.
 
@@ -111,3 +111,11 @@ Dissolve duration is now size-dependent from 0.3 to 2 seconds; larger pieces las
 Rapier now simulates only the ball, table/boundaries and remaining playable glass structures. Detached irregular shards and glued groups are independent 3D mesh particles with inherited linear/angular movement, gravity, approximate oriented-box floor support, bounce and friction. They pass through cubes, the ball and other debris, and do not undergo secondary rigid-body fracture. No detached convex colliders or melting collider rebuilds remain.
 
 Size-based dissolve lifetime is 0.5–3 seconds, with immediate shrink and progressive orange emission preserved. Hit quotas, local chipping, residual cleanup, complete separation below the divider, upper-half spawning, scoring and ball controls remain. Focused checks verified zero debris bodies/colliders, visual group retention, floor bounce, duration bounds, cleanup, score/section progression and pointer controls. This removes debris physics load; it does not establish device FPS or eliminate possible remaining compound-shell or rendering issues.
+
+## Gate progression and crisp debris
+
+- Melt duration is size-based from 0.5 to 1 second. Mesh debris uses actual polygon support vertices for floor contact, stronger gravity and brisk friction; fine chips also use geometric support rather than a fixed hovering height.
+- Falling cubes register distinct contact episodes. Original-object contact identities survive collider reconstruction; resting contact does not repeatedly spend hit quotas. Cube-floor restitution uses the minimum material coefficient to avoid artificial high bounces and their repeated impacts. Residual scraps still clear automatically.
+- Clearing targets changes the armored gate into breakable glass and smoothly returns the ball to the lower start point or held pointer. The player must launch into the gate to shatter it, then pass through the opening. The next arena similarly positions the ball safely without an automatic launch. A smooth upward travel leads to the next seeded arena with a continuous surrounding platform.
+- Aiming eases the camera toward the lower edge to create finger room. The gesture projects through a frozen camera, so camera movement cannot change its launch vector. Portrait framing spans more screen width; landscape gameplay width is retained with extended surroundings.
+- Focused real-Rapier checks cover all five tier drop impacts, floor support, gate waiting/crossing/progression, and frozen-camera aiming. Actual device visual/performance review remains necessary.
