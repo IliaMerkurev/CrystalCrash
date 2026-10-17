@@ -95,3 +95,12 @@ Removed the launcher/catcher geometry and all carriage constraints. The dashed c
 Collision masks separate ball, structural glass, debris and table/boundaries. Detached debris collide only with structural glass and table/boundaries, never with the ball or other debris. Structural target clusters retain their normal behavior. Released shards and compound debris immediately shrink around their own centers, gain orange emission progressively, and dissolve within a randomized 0.2–1-second lifetime. Convex collision shapes shrink with the visible geometry and bodies/materials are removed at expiry. A re-fractured melting group inherits its already-reduced shape and remaining lifetime. Fine instanced chips use independent lifetime/shrink/emission attributes; intact shared glass materials are unaffected.
 
 All cube spawn bounds now lie entirely above the middle divider, with clearance for rotated corners. This applies to subsequent sections too; natural falling motion is unrestricted. Focused Rapier checks verified the collision matrix, matching visual/collider scale, lifetime cleanup without deleting remaining targets, original score progression and controls. Six section layouts passed the upper-half spawn-bound check. Physics timestep, CCD policy, renderer settings and cluster system were otherwise retained.
+
+
+### Residual cleanup and lower-half destruction
+
+Flat panes (one/two represented faces), open corners without opposing faces, and remnants at or below 30% of original shell area are terminal debris, not objectives. Substantial remaining shells stay playable; once-original reward accounting remains intact. This can complete a cube before its nominal maximum strike count when only unusable remnants remain.
+
+When any actual remaining shell vertex crosses the same middle divider used for controls, all its remaining bonds are severed and its cells separate into individual physical melting shards with a restrained outward impulse. The ball-inside-shell amplified fracture rule has been removed completely.
+
+Dissolve duration is now size-dependent from 0.3 to 2 seconds; larger pieces last longer. Fine chips use their visual size too. Shrink begins immediately; orange emission is raised from 3.5 to 7.5 peak strength for both physical shards and chip particles. Previous debris collision masks are preserved. Focused checks cover residual classification, full bond separation on crossing, duration ordering/range, score uniqueness, section progression and controls.
