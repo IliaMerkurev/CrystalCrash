@@ -38,10 +38,12 @@ Chipped blocks use visibly deformed preset geometry with a conservative original
 
 ## Development discipline
 
-Work on `prototype/0.1`, preserve and verify meaningful pushes, and do not merge main without owner approval. Reuse the same Site for every iteration. Keep recordings, generated test reports and caches outside Git. Retain the portable Three.js playable production checklist when starting another project.
+Work on `prototype/0.2`, preserve and verify meaningful pushes, and do not merge main without owner approval. Reuse the same Site for every iteration. Keep recordings, generated test reports and caches outside Git. Retain the portable Three.js playable production checklist when starting another project.
 
 Visual polish checkpoint: cracks now originate from Rapier contact positions on the impacted face; localized dents follow that contact; larger fragments use tapered glass-like prisms. Launch tuning, damage thresholds, debris caps and lifetimes are unchanged. Visual acceptance uses owner screenshots because this VM has disabled WebGL.
 
 3D material pass: lower-angle camera; square glass blocks rotated 45 degrees with matching physics colliders; beveled faces; saturated absorption, studio-strip reflection environment, softer diffuse fill, reflective brushed table, metal catcher and warm edge fixtures. Launch forces and damage tuning remain unchanged.
 
 Perspective material pass: perspective camera fitted to table/tower bounds, ray-projected drag aiming, 30 initial stacked glass blocks, brighter studio environment, 512×512 planar table reflection beneath a brushed translucent coating, enlarged faceted debris and sparse short-lived glints. Reflection adds one scene pass; no screen-space ray tracing or postprocess bloom. Owner screenshot review remains required.
+
+Hollow-shell fracture iteration: six actual thin wall panels and six compound colliders per cube, with wall thickness 0.025/0.040/0.055/0.070/0.090 world units. Cube mass is preserved across the hollow collider compound. Each face splits into small triangular plates, up to 48 convex-hull rigid shards per break, global 240-body fragment cap and 3.2-second lifetime. Fine instanced chips remain, capped at 420, with restrained glints. This is procedural prefracture, not runtime Unreal Geometry Collection/Voronoi. Browser/device performance remains unmeasured. Export 2,826,099 bytes.

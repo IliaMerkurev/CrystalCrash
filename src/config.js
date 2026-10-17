@@ -5,5 +5,5 @@ export const GLASS = [
  {name:'Crystal Violet',score:100,color:0x8437ee,density:.9,crack:.7,chip:1.4,fracture:2.5,roughness:.05,transmission:.8,thickness:.7,shards:22,pitch:1.8},
  {name:'Reinforced Ruby',score:150,color:0xe60726,density:2.2,crack:2.3,chip:4.5,fracture:9,roughness:.19,transmission:.55,thickness:1.4,shards:14,pitch:.6}
 ];
-export const TUNE={half:6,cube:.88,ballRadius:.38,ballDensity:7,gravity:18,returnAcceleration:2.4,launchMin:7,launchMax:24,catchWidth:1.9,railZ:4.8,comboWindow:2.1,maxFragments:56,maxDust:180,fragmentLife:3.2,step:1/90,maxSubsteps:6};
+export const TUNE={half:6,cube:.88,ballRadius:.38,ballDensity:7,gravity:18,returnAcceleration:2.4,launchMin:7,launchMax:24,catchWidth:1.9,railZ:4.8,comboWindow:2.1,maxFragments:240,maxDust:420,fragmentLife:3.2,step:1/90,maxSubsteps:6};
 export const comboFor=n=>n>=8?3:n>=5?2:n>=3?1.5:1;
