@@ -28,11 +28,11 @@ Press PLAY to enable sound. Pull the captured steel ball backward and release to
 
 ## Build budget
 
-Prototype export is one HTML, approximately 2.82 MB raw (2,815,936 bytes at first deployment), including embedded Rapier WASM. No external art, music or videos. Build rejects HTML >= 5,000,000 bytes. This is a hosted prototype, not a certified ad-network package; no MRAID/CTA/monetization is included.
+Prototype export is one HTML, approximately 2.82 MB raw (2,815,979 bytes in current build), including embedded Rapier WASM. No external art, music or videos. Build rejects HTML >= 5,000,000 bytes. This is a hosted prototype, not a certified ad-network package; no MRAID/CTA/monetization is included.
 
 ## Verification and limitations
 
-Production build and inline-byte gate pass. Real Rapier simulation checks cover nonlethal cracking, once-only scoring, catch, miss/retry, section advance/score retention and fragment cleanup. Browser/device verification is recorded separately; desktop viewport emulation is not iOS testing. The VM's Chromium launch was blocked by its environment, so visible browser acceptance is a separate targeted check.
+Production build and inline-byte gate pass. Real Rapier simulation checks cover nonlethal cracking, once-only scoring, catch, miss/retry, section advance/score retention and fragment cleanup. Browser/device verification is recorded separately; desktop viewport emulation is not iOS testing. Headless Chromium launch was blocked by the VM environment. The existing cloud browser reached the private Site sign-in gate, and the connected laptop exposed no usable browser surface. No rendered browser, touch-device or Safari acceptance is claimed; the owner should perform the focused visual/input check on the deployed link.
 
 Chipped blocks use visibly deformed preset geometry with a conservative original collider; large shards use approximate convex-looking meshes with box colliders. Small shards are visual only. Glass uses shared physical materials and bounded transparency; this is intentionally not runtime Voronoi or path-traced glass. Phone performance and Safari audio need physical-device verification. No life economy, shop, bonuses or multiball.
 
