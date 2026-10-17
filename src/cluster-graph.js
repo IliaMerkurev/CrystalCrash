@@ -1,0 +1,13 @@
+import * as THREE from 'three';
+export function createGraph(cells){
+ const bonds=[],byEdge=new Map(),seams=new Map();
+ const key=v=>v.map(x=>Math.round(x*1e5)).join(',');
+ const add=(a,b,len)=>{if(a===b)return;const old=bonds.find(e=>(e.a===a&&e.b===b)||(e.a===b&&e.b===a));if(old){old.length+=len;old.hp+=len;return;}bonds.push({a,b,length:len,hp:len});};
+ cells.forEach((c,id)=>{c.id=id;c.area=Math.abs(c.points.reduce((s,p,i)=>{const q=c.points[(i+1)%c.points.length];return s+p[0]*q[1]-q[0]*p[1];},0))/2;const verts=c.points.map(p=>new THREE.Vector3(p[0],p[1],0).applyQuaternion(c.q).add(c.pos).addScaledVector(c.normal,c.t/2).toArray());
+ for(let i=0;i<verts.length;i++){const a=verts[i],b=verts[(i+1)%verts.length],len=Math.hypot(...a.map((n,j)=>n-b[j])),edgeKey=[key(a),key(b)].sort().join('|');if(byEdge.has(edgeKey))add(id,byEdge.get(edgeKey),len);else byEdge.set(edgeKey,id);
+ // Cube-edge boundary segments are axis aligned; interval overlaps connect different faces.
+ const varying=[0,1,2].filter(j=>Math.abs(a[j]-b[j])>1e-5);if(varying.length!==1)continue;const axis=varying[0],fixed=[0,1,2].filter(j=>j!==axis),lineKey=axis+':'+fixed.map(j=>Math.round(a[j]*1e5)).join(',');const list=seams.get(lineKey)||[];for(const prev of list){if(Math.abs(c.normal.dot(cells[prev.id].normal))>.5)continue;const overlap=Math.min(Math.max(a[axis],b[axis]),prev.hi)-Math.max(Math.min(a[axis],b[axis]),prev.lo);if(overlap>1e-5)add(id,prev.id,overlap);}list.push({id,lo:Math.min(a[axis],b[axis]),hi:Math.max(a[axis],b[axis])});seams.set(lineKey,list);
+ }});return {cells,bonds,totalArea:cells.reduce((s,c)=>s+c.area,0)};
+}
+export function components(graph,ids){const set=new Set(ids),adj=new Map(ids.map(id=>[id,[]]));for(const b of graph.bonds)if(b.hp>0&&set.has(b.a)&&set.has(b.b)){adj.get(b.a).push(b.b);adj.get(b.b).push(b.a);}const out=[];for(const id of ids){if(!set.delete(id))continue;const part=[id];for(let i=0;i<part.length;i++)for(const next of adj.get(part[i]))if(set.delete(next))part.push(next);out.push(part);}return out;}
+export function damageBonds(graph,ids,point,energy,resistance){const set=new Set(ids),nearest=ids.map(id=>({id,d:graph.cells[id].pos.distanceTo(point)})).sort((a,b)=>a.d-b.d);if(!nearest.length)return [];const r=.23+Math.min(.55,Math.sqrt(Math.max(0,energy))*.1),center=graph.cells[nearest[0].id].pos;for(const b of graph.bonds){if(b.hp<=0||!set.has(b.a)||!set.has(b.b))continue;const a=graph.cells[b.a],c=graph.cells[b.b],d=Math.min(a.pos.distanceTo(center),c.pos.distanceTo(center));if(d<r)b.hp-=energy/resistance*.16*(1-d/(r+.08));}return components(graph,ids);}
