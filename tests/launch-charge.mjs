@@ -7,7 +7,7 @@ const fixedCharge = (unit = 0) => new LaunchCharge({ random: () => unit });
 
 test('holding still and partial pulls never precharge the launch', () => {
   const charge = fixedCharge();
-  for (const length of [0, .2, .7, 1, 9, 14.55, 14.849999, NaN, Infinity, -.8]) {
+  for (const length of [0, .2, .7, 1, 9, 11.64, 11.879999, NaN, Infinity, -.8]) {
     charge.setPull(length);
     charge.update(10);
     assert.equal(charge.multiplier(), 1);
@@ -17,7 +17,7 @@ test('holding still and partial pulls never precharge the launch', () => {
     assert.equal(charge.snapshot().pulling, false);
     assert.equal(charge.snapshot().started, false);
   }
-  charge.setPull(14.85);
+  charge.setPull(11.88);
   assert.equal(charge.snapshot().elapsed, 0);
   assert.equal(charge.snapshot().pulling, true);
   assert.equal(charge.snapshot().fullPull, true);
@@ -25,10 +25,10 @@ test('holding still and partial pulls never precharge the launch', () => {
   assert.equal(charge.snapshot().state, 'charging');
 });
 
-test('full-pull hysteresis retains timing to 14.55 and requires 14.85 to re-enter', () => {
+test('full-pull hysteresis retains timing to 11.64 and requires 11.88 to re-enter', () => {
   const charge = fixedCharge();
-  charge.setPull(14.85);
-  for (const length of [15, 14.84, 14.7, 14.55]) {
+  charge.setPull(11.88);
+  for (const length of [15, 11.87, 11.7, 11.64]) {
     charge.setPull(length);
     charge.update(.25);
     assert.equal(charge.snapshot().fullPull, true);
@@ -36,20 +36,20 @@ test('full-pull hysteresis retains timing to 14.55 and requires 14.85 to re-ente
   }
   near(charge.snapshot().elapsed, 1);
   assert.equal(charge.multiplier(), 2, 'reward remains available inside the retention band');
-  charge.setPull(14.549999);
+  charge.setPull(11.639999);
   assert.equal(charge.multiplier(), 1);
   assert.equal(charge.snapshot().elapsed, 0);
   assert.equal(charge.snapshot().state, 'idle');
   assert.equal(charge.snapshot().pulling, false);
   assert.equal(charge.snapshot().fullPull, false);
   assert.equal(charge.snapshot().started, false);
-  for (const length of [14.55, 14.7, 14.849999]) {
+  for (const length of [11.64, 11.7, 11.879999]) {
     charge.setPull(length);
     charge.update(10);
     assert.equal(charge.snapshot().fullPull, false);
     assert.equal(charge.snapshot().elapsed, 0);
   }
-  charge.setPull(14.85);
+  charge.setPull(11.88);
   charge.update(.1);
   near(charge.snapshot().elapsed, .1);
   assert.equal(charge.snapshot().fullPull, true);
@@ -63,7 +63,7 @@ test('one inclusive one-third-second window starts between 1.0 and 1.25 seconds'
     near(windowStart, 1 + .25 * unit);
     near(windowEnd - windowStart, 1 / 3);
     assert.equal(windowDuration, 1 / 3);
-    charge.setPull(15);
+    charge.setPull(12);
     charge.update(windowStart - .001);
     assert.equal(charge.multiplier(), 1);
     assert.equal(charge.snapshot().state, 'charging');
@@ -88,7 +88,7 @@ test('sample once on construction and each reset, never during the same gesture'
   const charge = new LaunchCharge({ random: () => rolls[calls++] });
   assert.equal(calls, 1);
   assert.equal(charge.snapshot().windowStart, 1);
-  for (const length of [0, 1, 14.84, 15, 14.6, 8, 15]) {
+  for (const length of [0, 1, 11.87, 15, 14.6, 8, 15]) {
     charge.setPull(length);
     charge.update(.1);
     charge.update(10, { paused: true });
@@ -103,7 +103,7 @@ test('sample once on construction and each reset, never during the same gesture'
   assert.equal(second.elapsed, 0);
   assert.equal(second.state, 'idle');
   assert.equal(second.started, false);
-  charge.setPull(15);
+  charge.setPull(12);
   charge.update(1.1);
   assert.equal(charge.multiplier(), 1, 'reset uses the newly sampled start');
   charge.update(.025);
@@ -128,7 +128,7 @@ test('default RNG and invalid injected samples keep the timing bounds safe', () 
 test('retreat resets timing while preserving the random window until a fresh gesture', () => {
   let calls = 0;
   const charge = new LaunchCharge({ random: () => calls++ ? 1 : 0 });
-  charge.setPull(15);
+  charge.setPull(12);
   charge.update(.8);
   charge.setPull(10);
   charge.update(.3);
@@ -140,13 +140,13 @@ test('retreat resets timing while preserving the random window until a fresh ges
   assert.equal(charge.snapshot().window, false);
   assert.equal(charge.snapshot().windowStart, 1);
   assert.equal(calls, 1);
-  charge.setPull(15);
+  charge.setPull(12);
   assert.equal(charge.multiplier(), 1, 'returning to full pull cannot recover elapsed charge');
   charge.update(1.1);
   assert.equal(charge.multiplier(), 2);
   charge.setPull(0);
   charge.update(.5);
-  charge.setPull(15);
+  charge.setPull(12);
   assert.equal(charge.multiplier(), 1);
   assert.equal(charge.snapshot().state, 'charging');
   assert.equal(charge.snapshot().elapsed, 0);
@@ -155,7 +155,7 @@ test('retreat resets timing while preserving the random window until a fresh ges
   charge.reset();
   assert.equal(calls, 2);
   assert.deepEqual(charge.snapshot(), { state: 'idle', elapsed: 0, window: false, windowStart: 1.25, windowEnd: 1.25 + 1 / 3, windowDuration: 1 / 3, progress: 0, pulling: false, fullPull: false, started: false });
-  charge.setPull(15);
+  charge.setPull(12);
   charge.update(1.25);
   assert.equal(charge.multiplier(), 2);
 });
@@ -163,7 +163,7 @@ test('retreat resets timing while preserving the random window until a fresh ges
 test('non-finite or negative pull immediately clears full charge without rerolling', () => {
   const charge = fixedCharge(.5);
   for (const length of [NaN, Infinity, -Infinity, undefined, -1]) {
-    charge.setPull(15);
+    charge.setPull(12);
     charge.update(1.125);
     assert.equal(charge.multiplier(), 2);
     charge.setPull(length);
@@ -178,7 +178,7 @@ test('non-finite or negative pull immediately clears full charge without rerolli
 
 test('pause freezes elapsed and invalid deltas never poison the clock', () => {
   const charge = fixedCharge();
-  charge.setPull(15);
+  charge.setPull(12);
   charge.update(.9);
   charge.update(100, { paused: true });
   for (const value of [0, -1, NaN, Infinity, undefined]) charge.update(value);
@@ -187,11 +187,11 @@ test('pause freezes elapsed and invalid deltas never poison the clock', () => {
   assert.equal(charge.multiplier(), 2);
   charge.update(100, { paused: true });
   assert.equal(charge.multiplier(), 2);
-  charge.setPull(14.549);
+  charge.setPull(11.639);
   charge.update(100, { paused: true });
   assert.equal(charge.snapshot().elapsed, 0);
   assert.equal(charge.snapshot().fullPull, false);
-  charge.setPull(15);
+  charge.setPull(12);
   charge.update(100, { paused: true });
   assert.equal(charge.snapshot().elapsed, 0);
   assert.equal(charge.multiplier(), 1);
@@ -202,8 +202,8 @@ test('pause freezes elapsed and invalid deltas never poison the clock', () => {
 test('real-time window is independent of frame rate and repeated pull events', () => {
   for (const rate of [30, 60, 90, 120, 144]) {
     const charge = fixedCharge();
-    charge.setPull(15);
-    for (let i = 0; i < rate; i++) { charge.setPull(15); charge.update(1 / rate); }
+    charge.setPull(12);
+    for (let i = 0; i < rate; i++) { charge.setPull(12); charge.update(1 / rate); }
     near(charge.snapshot().elapsed, 1);
     assert.equal(charge.multiplier(), 2, `${rate}Hz at 1 second`);
     for (let i = 0; i < rate / 3; i++) charge.update(1 / rate);
@@ -233,7 +233,7 @@ test('meter is compact, pointer-transparent, viewport-bounded, above and beside 
   const charge = fixedCharge();
   meter.render(charge.snapshot(), { x: 200, y: 700, width: 390, height: 844 });
   assert.equal(meter.element.style.display, 'none');
-  charge.setPull(15);
+  charge.setPull(12);
   meter.render(charge.snapshot(), { x: 200, y: 700, width: 390, height: 844 });
   assert.equal(meter.element.style.display, 'block');
   assert.equal(meter.element.style.pointerEvents, 'none');
@@ -267,31 +267,31 @@ test('meter appears only at full pull and hides immediately below the retention 
   const meter = new LaunchChargeMeter(document.body);
   const charge = fixedCharge();
   const point = { x: 200, y: 700, width: 390, height: 844 };
-  for (const length of [0, 1, 9, 14.55, 14.849999]) {
+  for (const length of [0, 1, 9, 11.64, 11.879999]) {
     charge.setPull(length);
     charge.update(2);
     meter.render(charge.snapshot(), point);
     assert.equal(meter.element.style.display, 'none');
   }
-  charge.setPull(14.85);
+  charge.setPull(11.88);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.element.style.display, 'block');
   assert.equal(meter.label.textContent, 'TIMED LAUNCH');
   const sector = meter.sector.attributes.d;
   charge.update(1);
-  charge.setPull(14.55);
+  charge.setPull(11.64);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.element.style.display, 'block');
   assert.equal(meter.label.textContent, 'RELEASE ×2');
   meter.success(point);
-  charge.setPull(14.549999);
+  charge.setPull(11.639999);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.element.style.display, 'none');
   assert.equal(meter.successElement.style.display, 'block', 'hiding the dial leaves success feedback independent');
-  charge.setPull(14.8);
+  charge.setPull(11.8);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.element.style.display, 'none');
-  charge.setPull(14.85);
+  charge.setPull(11.88);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.element.style.display, 'block');
   assert.equal(meter.label.textContent, 'TIMED LAUNCH');
@@ -329,7 +329,7 @@ test('dial sector, bonus marker and label use the chosen window from the first f
   expectSector(charge.snapshot());
   assert.equal(meter.timingLabel.textContent, '1.00–1.33 s');
   const firstSector = meter.sector.attributes.d;
-  charge.setPull(15);
+  charge.setPull(12);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.element.style.display, 'block');
   assert.equal(meter.sector.attributes.d, firstSector);
@@ -339,7 +339,7 @@ test('dial sector, bonus marker and label use the chosen window from the first f
   meter.render(charge.snapshot(), point);
   assert.equal(meter.sector.attributes.d, firstSector, 'retreat and elapsed time do not move the sector');
   assert.equal(meter.element.style.display, 'none');
-  charge.setPull(15);
+  charge.setPull(12);
   charge.update(1);
   charge.update(10, { paused: true });
   meter.render(charge.snapshot(), point);
@@ -350,7 +350,7 @@ test('dial sector, bonus marker and label use the chosen window from the first f
   expectSector(charge.snapshot());
   assert.notEqual(meter.sector.attributes.d, firstSector);
   assert.equal(meter.timingLabel.textContent, '1.25–1.58 s');
-  charge.setPull(15);
+  charge.setPull(12);
   meter.render(charge.snapshot(), point);
   expectSector(charge.snapshot());
   const nextSector = meter.sector.attributes.d;
@@ -373,17 +373,17 @@ test('optional sector hint requires a visible full-pull dial and follows the sel
   assert.equal(meter.hintText.textContent, 'RELEASE IN ×2 SECTOR');
   meter.render(charge.snapshot(), { ...point, hint: true });
   assert.equal(meter.hintElement.style.display, 'none');
-  charge.setPull(14);
+  charge.setPull(11);
   meter.render(charge.snapshot(), { ...point, hint: true });
   assert.equal(meter.hintElement.style.display, 'none');
-  charge.setPull(15);
+  charge.setPull(12);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.hintElement.style.display, 'none', 'default false leaves hint ownership with the caller');
   meter.render(charge.snapshot(), { ...point, hint: true });
   assert.equal(meter.hintElement.style.display, 'block');
   const firstPointer = meter.hintPointer.attributes.d;
   for (const unit of [0, .5, 1]) {
-    const snapshot = fixedCharge(unit).setPull(15);
+    const snapshot = fixedCharge(unit).setPull(12);
     meter.render(snapshot, { ...point, hint: true });
     const coords = meter.hintPointer.attributes.d.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi).map(Number);
     const angle = Math.PI * (1 - (snapshot.windowStart + snapshot.windowEnd) / 4);
@@ -399,10 +399,10 @@ test('optional sector hint requires a visible full-pull dial and follows the sel
   meter.render(charge.snapshot(), { ...point, y: -100, hint: true });
   const scale = parseFloat(meter.element.style.width) / 160;
   assert.ok(parseFloat(meter.element.style.top) - 26 * scale >= 8, 'hint stays inside the viewport above the dial');
-  charge.setPull(14.54);
+  charge.setPull(11.63);
   meter.render(charge.snapshot(), { ...point, hint: true });
   assert.equal(meter.hintElement.style.display, 'none');
-  charge.setPull(15);
+  charge.setPull(12);
   meter.render(charge.snapshot(), { ...point, hint: true });
   meter.hide();
   assert.equal(meter.hintElement.style.display, 'none');

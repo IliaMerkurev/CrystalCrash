@@ -4,8 +4,8 @@ const WINDOW_DURATION = 1 / 3;
 const DIAL_DURATION = 2;
 const TIME_EPSILON = 1e-12;
 // 99% entry / 97% retention of the normalized maximum pull length (15).
-const FULL_PULL_ENTER = 14.85;
-const FULL_PULL_RETAIN = 14.55;
+const FULL_PULL_ENTER = 11.88;
+const FULL_PULL_RETAIN = 11.64;
 
 /** A stable timing window, measured in active real time while holding full pull. */
 export class LaunchCharge {
