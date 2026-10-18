@@ -87,3 +87,28 @@ test('callback-only Safari decode and webkit context fallback work',async()=>{
  delete globalThis.AudioContext;globalThis.webkitAudioContext=Context;Context.prototype.decodeAudioData=function(bytes,ok){ok({duration:65});};
  const fx=new AudioFX();try{fx.setMusicData(data);fx.setMusicPlaying(true);await ready(fx);assert(fx.musicSource);}finally{fx.dispose();globalThis.AudioContext=old;globalThis.webkitAudioContext=webkit;Context.prototype.decodeAudioData=decode;}
 });
+
+class Events {constructor(){this.listeners=new Map();this.hidden=false;this.PointerEvent=function(){};}addEventListener(k,f){const set=this.listeners.get(k)||new Set();set.add(f);this.listeners.set(k,set);}removeEventListener(k,f){this.listeners.get(k)?.delete(f);}emit(k){for(const f of this.listeners.get(k)||[])f();}}
+const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
+test('iPad interruption/visibility recovery preserves offset, pause and one music loop',()=>fixture(async fx=>{
+ const doc=new Events(),win=new Events();fx.bindLifecycle(doc,win);fx.setMusicData(data);fx.setMusicPlaying(true);await ready(fx);const ctx=fx.context;ctx.currentTime+=7;
+ doc.hidden=true;doc.emit('visibilitychange');ctx.state='interrupted';ctx.onstatechange();assert.equal(fx.musicSource,null);assert.equal(fx.musicOffset,7);
+ fx.setMusicPlaying(false);doc.hidden=false;doc.emit('visibilitychange');win.emit('pageshow');win.emit('focus');await flush();assert.equal(ctx.state,'running');assert.equal(fx.musicSource,null,'paused game does not restart music');
+ fx.setMusicPlaying(true);assert.equal(fx.musicSource.startOffset,7);const current=fx.musicSource;win.emit('focus');await flush();assert.equal(fx.musicSource,current);
+ for(let i=0;i<5;i++){doc.hidden=true;doc.emit('visibilitychange');ctx.state='interrupted';ctx.onstatechange();doc.hidden=false;win.emit('pageshow');await flush();assert(fx.musicSource);}
+ assert.equal(fx.context,ctx);assert.equal(ctx.decodes,1);const live=ctx.nodes.filter(n=>n.loop&&n.stops===0);assert.equal(live.filter(n=>n.buffer===fx.musicBuffer).length,1);
+ fx.dispose();assert([...doc.listeners.values(),...win.listeners.values()].every(s=>s.size===0));
+}));
+test('rejected automatic resume retries inside next gesture; muted and hidden stay silent',()=>fixture(async fx=>{
+ const doc=new Events(),win=new Events();fx.bindLifecycle(doc,win);fx.setMusicData(data);fx.setMusicPlaying(true);await ready(fx);const ctx=fx.context;
+ fx.setPageVisible(false);ctx.state='interrupted';ctx.resume=async()=>{ctx.resumes++;throw new Error('gesture required');};fx.setPageVisible(true);await flush();assert.equal(fx.unlocked,false);assert.equal(fx.musicSource,null);
+ ctx.resume=async()=>{ctx.resumes++;ctx.state='running';ctx.onstatechange();};doc.emit('pointerdown');await flush();assert(fx.musicSource);fx.play('click');assert(fx.voices.length>0);
+ fx.setMuted(true);fx.setPageVisible(false);ctx.state='interrupted';const calls=ctx.resumes;fx.setPageVisible(true);doc.emit('pointerdown');await flush();assert.equal(ctx.resumes,calls);assert.equal(fx.musicSource,null);assert(fx.muted);
+ doc.hidden=true;doc.emit('visibilitychange');fx.setMuted(false);doc.emit('pointerdown');await flush();assert.equal(ctx.resumes,calls);assert.equal(fx.musicSource,null);
+}));
+test('stale pending resume cannot block real gesture or resurrect a hidden/disposed source',()=>fixture(async fx=>{
+ const doc=new Events(),win=new Events();fx.bindLifecycle(doc,win);fx.setMusicData(data);fx.setMusicPlaying(true);await ready(fx);const ctx=fx.context;
+ fx.setPageVisible(false);ctx.state='interrupted';let resolveOld;ctx.resume=()=>new Promise(resolve=>resolveOld=resolve);fx.setPageVisible(true);assert(fx.unlocking);
+ ctx.resume=async()=>{ctx.state='running';};doc.emit('pointerdown');await flush();const current=fx.musicSource;assert(current);resolveOld();await flush();assert.equal(fx.musicSource,current);
+ fx.setPageVisible(false);assert.equal(fx.musicSource,null);ctx.onstatechange();assert.equal(fx.musicSource,null);fx.dispose();win.emit('pageshow');assert.equal(fx.context,null);
+}));

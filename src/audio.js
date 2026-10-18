@@ -6,6 +6,7 @@ export class AudioFX {
     this.muted = false;
     this.unlocked = false;
     this.unlocking = null;
+    this.unlockGeneration = 0; this.everUnlocked = false; this.pageVisible = true; this.lifecycleCleanup = null;
     this.voices = [];
     this.maxVoices = 12;
     this.lastPlayed = new Map();
@@ -26,18 +27,18 @@ export class AudioFX {
     this.disposed = false;
   }
 
-  async unlock() {
-    if (this.disposed) return false;
+  async unlock({retry=false}={}) {
+    if (this.disposed || !this.pageVisible) return false;
     if (this.unlocked && this.context?.state === 'running') return true;
-    if (this.unlocking) return this.unlocking;
+    if (this.unlocking && !retry) return this.unlocking;
     this.unlocked = false;
-    const attempt = this._unlockContext();
+    const attempt = this._unlockContext(++this.unlockGeneration);
     this.unlocking = attempt;
     try { return await attempt; }
     finally { if (this.unlocking === attempt) this.unlocking = null; }
   }
 
-  async _unlockContext() {
+  async _unlockContext(generation) {
     try {
       if (!this.context) {
         const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -45,7 +46,8 @@ export class AudioFX {
         const ctx = this.context = new Context({ latencyHint: 'interactive' });
         ctx.onstatechange = () => {
           if (this.disposed || this.context !== ctx) return;
-          if (ctx.state !== 'running') this.stopRolling();
+          if (ctx.state !== 'running') { this.unlocked=false;this.stopRolling(); }
+          else if(this.everUnlocked&&this.pageVisible){this.unlocked=true;this._prepareMusic();}
           this._syncMusic();
         };
         this.master = ctx.createGain();
@@ -70,7 +72,7 @@ export class AudioFX {
         // Keep resume() before the first await so it retains user activation.
         await ctx.resume();
       }
-      if (this.disposed || this.context !== ctx || ctx.state !== 'running') return false;
+      if (this.disposed || generation!==this.unlockGeneration || !this.pageVisible || this.context !== ctx || ctx.state !== 'running') return false;
       // Prepare the reusable texture on the unlocking gesture, not the first roll.
       this.rollingBuffer ||= this._createRollingBuffer();
       // A silent source also unlocks WebAudio on mobile Safari.
@@ -79,11 +81,29 @@ export class AudioFX {
       source.connect(this.master);
       source.onended = () => source.disconnect();
       source.start();
-      this.unlocked = true;
+      this.unlocked = this.everUnlocked = true;
       this._prepareMusic();
       this._syncMusic();
       return this.unlocked;
     } catch (_) { return false; }
+  }
+
+  /** Event-driven recovery; no retry timers or new audio contexts on return. */
+  bindLifecycle(doc=globalThis.document,win=globalThis.window){
+    this.lifecycleCleanup?.();if(!doc?.addEventListener||!win?.addEventListener)return;
+    const recover=()=>{if(!doc.hidden)this.setPageVisible(true);};
+    const visibility=()=>this.setPageVisible(!doc.hidden),hide=()=>this.setPageVisible(false);
+    const gesture=()=>{if(!doc.hidden&&this.everUnlocked&&!this.muted){this.pageVisible=true;void this.unlock({retry:true});}};
+    const gestureEvent=win.PointerEvent?'pointerdown':'touchend';
+    doc.addEventListener('visibilitychange',visibility);win.addEventListener('pagehide',hide);win.addEventListener('pageshow',recover);win.addEventListener('focus',recover);
+    doc.addEventListener(gestureEvent,gesture,{capture:true,passive:true});doc.addEventListener('keydown',gesture,true);
+    this.lifecycleCleanup=()=>{doc.removeEventListener('visibilitychange',visibility);win.removeEventListener('pagehide',hide);win.removeEventListener('pageshow',recover);win.removeEventListener('focus',recover);doc.removeEventListener(gestureEvent,gesture,true);doc.removeEventListener('keydown',gesture,true);};
+    this.pageVisible=!doc.hidden;
+  }
+  setPageVisible(visible){
+    if(this.disposed)return;this.pageVisible=!!visible;
+    if(!this.pageVisible){this.unlockGeneration++;this.unlocking=null;this.unlocked=false;this.stopRolling();this._stopMusic();this.voices.splice(0).forEach(v=>this._stop(v));return;}
+    if(this.everUnlocked&&!this.muted&&this.context?.state!=='closed')void this.unlock();
   }
 
   setMuted(muted) {
@@ -159,7 +179,7 @@ export class AudioFX {
 
   _syncMusic() {
     const ctx = this.context;
-    if (this.disposed || !this.musicPlaying || this.muted || !this.unlocked || ctx?.state !== 'running') {
+    if (this.disposed || !this.pageVisible || !this.musicPlaying || this.muted || !this.unlocked || ctx?.state !== 'running') {
       this._stopMusic();
       return;
     }
@@ -281,7 +301,7 @@ export class AudioFX {
 
   /** One shared mix. Caller supplies grounded tangent speed in world units/s. */
   updateRolling(speed, intensity = 1, dt = 1 / 60) {
-    if (this.disposed || this.muted || !this.unlocked || this.context?.state !== 'running') {
+    if (this.disposed || !this.pageVisible || this.muted || !this.unlocked || this.context?.state !== 'running') {
       this.stopRolling();
       return;
     }
@@ -378,10 +398,10 @@ export class AudioFX {
   }
 
   play(name, strength = 1, type = 0) {
-    if (this.muted || this.disposed || !this.unlocked || !this.context) return;
+    if (this.muted || this.disposed || !this.pageVisible || !this.unlocked || !this.context) return;
     if (this.context.state !== 'running') {
       // Never queue a backlog after a tab interruption. Retry context only.
-      try { this.context.resume().catch(() => {}); } catch (_) {}
+      void this.unlock({retry:false});
       return;
     }
     const known = ['launch', 'wall', 'hit', 'glassTap', 'ballLand', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
@@ -463,6 +483,7 @@ export class AudioFX {
   }
 
   dispose() {
+    this.lifecycleCleanup?.();this.lifecycleCleanup=null;this.unlockGeneration++;
     this.disposed = true;
     this.unlocked = false;
     this.unlocking = null;
