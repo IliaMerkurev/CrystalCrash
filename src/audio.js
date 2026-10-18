@@ -1,4 +1,4 @@
-/** Small, gesture-unlocked procedural sound engine. No files, music, or autoplay. */
+/** Gesture-unlocked procedural effects and an optional embedded music loop. */
 export class AudioFX {
   constructor() {
     this.context = null;
@@ -12,6 +12,17 @@ export class AudioFX {
     this.noise = null;
     this.rollingBuffer = null;
     this.rolling = null;
+    this.musicData = '';
+    this.musicBuffer = null;
+    this.musicDuration = 0;
+    this.musicGain = null;
+    this.musicSource = null;
+    this.musicPlaying = false;
+    this.musicOffset = 0;
+    this.musicStartedAt = 0;
+    this.musicDecoding = null;
+    this.musicGeneration = 0;
+    this.musicError = null;
     this.disposed = false;
   }
 
@@ -32,6 +43,11 @@ export class AudioFX {
         const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
         if (!Context) return false;
         const ctx = this.context = new Context({ latencyHint: 'interactive' });
+        ctx.onstatechange = () => {
+          if (this.disposed || this.context !== ctx) return;
+          if (ctx.state !== 'running') this.stopRolling();
+          this._syncMusic();
+        };
         this.master = ctx.createGain();
         this.master.gain.value = this.muted ? 0 : 0.56;
         const limiter = ctx.createDynamicsCompressor();
@@ -50,6 +66,8 @@ export class AudioFX {
       const ctx = this.context;
       if (ctx.state !== 'running') {
         this.stopRolling();
+        this._stopMusic();
+        // Keep resume() before the first await so it retains user activation.
         await ctx.resume();
       }
       if (this.disposed || this.context !== ctx || ctx.state !== 'running') return false;
@@ -62,6 +80,8 @@ export class AudioFX {
       source.onended = () => source.disconnect();
       source.start();
       this.unlocked = true;
+      this._prepareMusic();
+      this._syncMusic();
       return this.unlocked;
     } catch (_) { return false; }
   }
@@ -69,6 +89,7 @@ export class AudioFX {
   setMuted(muted) {
     this.muted = Boolean(muted);
     if (this.muted) this.stopRolling();
+    this._syncMusic();
     if (!this.context || !this.master) return;
     try {
       const now = this.context.currentTime;
@@ -76,6 +97,113 @@ export class AudioFX {
       this.master.gain.setTargetAtTime(this.muted ? 0 : 0.56, now, 0.012);
       if (this.muted) this.voices.splice(0).forEach(v => this._stop(v));
     } catch (_) { /* Audio is optional. */ }
+  }
+
+  /** Store an embedded data URL without fetching, decoding, or autoplaying it. */
+  setMusicData(dataURL) {
+    if (this.disposed) return;
+    const data = typeof dataURL === 'string' ? dataURL : '';
+    if (data === this.musicData) return;
+    this._stopMusic();
+    this.musicGeneration++;
+    this.musicData = data;
+    this.musicBuffer = null;
+    this.musicDuration = 0;
+    this.musicOffset = 0;
+    this.musicDecoding = null;
+    this.musicError = null;
+    this._prepareMusic();
+  }
+
+  /** Caller combines game, pause, Test menu, and visibility state. Safe per frame. */
+  setMusicPlaying(playing) {
+    if (this.disposed) return;
+    this.musicPlaying = Boolean(playing);
+    this._syncMusic();
+  }
+
+  _prepareMusic() {
+    if (this.disposed || !this.unlocked || !this.context || !this.musicData || this.musicBuffer || this.musicError) return;
+    if (this.musicDecoding) return this.musicDecoding;
+    const ctx = this.context, generation = this.musicGeneration, dataURL = this.musicData;
+    const current = () => !this.disposed && this.context === ctx && this.musicGeneration === generation;
+    const attempt = Promise.resolve().then(() => {
+      if (!current()) return null;
+      const comma = dataURL.indexOf(',');
+      if (comma < 0 || !/^data:[^,]*;base64$/i.test(dataURL.slice(0, comma))) throw new Error('Music must be an embedded base64 audio data URL.');
+      const data = atob(dataURL.slice(comma + 1));
+      const bytes = new Uint8Array(data.length);
+      for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i);
+      // Callback support also covers older Safari; modern promise results share
+      // the same settlement, so the asset is decoded exactly once either way.
+      return new Promise((resolve, reject) => {
+        const result = ctx.decodeAudioData(bytes.buffer, resolve, reject);
+        if (result?.then) result.then(resolve, reject);
+      });
+    }).then(buffer => {
+      if (!current()) return false;
+      if (!buffer || !Number.isFinite(buffer.duration) || buffer.duration <= 0) throw new Error('Music has no playable duration.');
+      this.musicBuffer = buffer;
+      this.musicDuration = buffer.duration;
+      this._syncMusic();
+      return true;
+    }).catch(error => {
+      if (current()) this.musicError = error;
+      return false; // Audio failures must never interrupt gameplay or effects.
+    }).finally(() => {
+      if (this.musicDecoding === attempt) this.musicDecoding = null;
+    });
+    this.musicDecoding = attempt;
+    return attempt;
+  }
+
+  _syncMusic() {
+    const ctx = this.context;
+    if (this.disposed || !this.musicPlaying || this.muted || !this.unlocked || ctx?.state !== 'running') {
+      this._stopMusic();
+      return;
+    }
+    if (this.musicSource || !this.musicBuffer || this.musicError) return;
+    let source;
+    try {
+      if (!this.musicGain) {
+        this.musicGain = ctx.createGain();
+        this.musicGain.gain.value = 0.3;
+        this.musicGain.connect(this.master);
+      }
+      source = ctx.createBufferSource();
+      source.buffer = this.musicBuffer;
+      source.loop = true;
+      source.loopStart = 0;
+      source.loopEnd = this.musicDuration;
+      source.playbackRate.value = 1; // Game slow motion never changes the score.
+      source.connect(this.musicGain);
+      this.musicOffset %= this.musicDuration;
+      this.musicStartedAt = ctx.currentTime;
+      this.musicSource = source;
+      source.onended = () => {
+        if (this.musicSource === source) this.musicSource = null;
+        try { source.disconnect(); } catch (_) {}
+      };
+      // Preserve the complete decoded track, including its authored loop edges.
+      source.start(0, this.musicOffset);
+    } catch (error) {
+      this.musicError = error;
+      if (this.musicSource === source) this.musicSource = null;
+      if (source) this._stop({ sources: [source], nodes: [] });
+    }
+  }
+
+  _stopMusic() {
+    const source = this.musicSource;
+    if (!source) return;
+    this.musicSource = null;
+    if (this.musicDuration > 0 && this.context) {
+      const elapsed = Math.max(0, this.context.currentTime - this.musicStartedAt);
+      this.musicOffset = (this.musicOffset + elapsed) % this.musicDuration;
+    }
+    source.onended = null;
+    this._stop({ sources: [source], nodes: [] });
   }
 
   _createRollingBuffer() {
@@ -338,12 +466,24 @@ export class AudioFX {
     this.disposed = true;
     this.unlocked = false;
     this.unlocking = null;
+    this._stopMusic();
+    this.musicGeneration++;
+    this.musicPlaying = false;
+    this.musicData = '';
+    this.musicBuffer = null;
+    this.musicDuration = 0;
+    this.musicOffset = 0;
+    this.musicDecoding = null;
+    this.musicError = null;
+    try { this.musicGain?.disconnect(); } catch (_) {}
+    this.musicGain = null;
     if (this.rolling) this._stop({ sources: [this.rolling.source], nodes: [this.rolling.gain] });
     this.rolling = null;
     this.rollingBuffer = null;
     this.voices.splice(0).forEach(v => this._stop(v));
     this.lastPlayed.clear();
     try { this.master?.disconnect(); this.limiter?.disconnect(); } catch (_) {}
+    if (this.context) this.context.onstatechange = null;
     try { this.context?.close().catch(() => {}); } catch (_) {}
     this.context = null;
     this.master = null;

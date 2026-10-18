@@ -125,3 +125,6 @@ A lightweight animated hand/arrow teaches main-ball catch, pull/release, lower-z
 
 ### Dense Bomb placement
 Bomb carriers are one-hit T1 glass and are chosen by maximum nearby-original coverage at the actual landed blast height/radius, rather than the general bonus spacing rule. Other bonus kinds remain on separate, dispersed towers. Bombs drop vertically from the broken carrier; rare out-of-table recovery moves visibly to the nearest upper-table point instead of the player pickup area. Deterministic placement and real model-drop checks cover normal, long and narrow fields; moving/destroyed neighbors can change the eventual blast count.
+
+### Background music
+User-supplied HypnoticChaos plays as a 65-second looping background track after the PLAY gesture. The existing sound button mutes music and effects together. Pause, Test and hidden-page state preserve the music position; resume continues the same loop. Music stays at normal speed during aiming and Black Hole slow motion. The self-contained asset is a cover-free 96 kbps stereo MP3 with short 20 ms edge fades; it needs no external audio request. Music has a separate low-level gain into the existing audio master so impact effects remain readable.
