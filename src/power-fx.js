@@ -266,7 +266,7 @@ export class PowerFX {
     const dt=reset?0:Math.max(0,age-this.blackHoleLastAge);
     this.blackHoleLastAge=age;
     const outer=Math.max(this.radius*2,range*.85),sink=this.radius*.36;
-    const density=6+30*intensity,speed=(.18+.30*intensity)*(6/3.5);
+    const density=6+30*intensity,speed=(.18+.30*intensity)*(6/3);
     for(let i=0;i<36;i++) {
       if(reset)this.blackHoleStreamPhase[i]=i/36;
       const phase=this.blackHoleStreamPhase[i]=(this.blackHoleStreamPhase[i]+dt*speed)%1;

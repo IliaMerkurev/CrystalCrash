@@ -28,7 +28,7 @@ export class CaptureCollisionProxy {
    for(const target of field.targets||[]){
     const o=blocks.get(target.id),b=o?.b;
     if(o?.kind!=='block'||!b?.isValid()||!b.isDynamic()||b!==target.body||target.handle!==undefined&&target.handle!==b.handle||!o.cs?.length||o.cs.some(c=>!c.isValid()))continue;
-    if(field.kind!=='tornado'){
+    if(field.kind!=='tornado'&&field.kind!=='capture-release'){
      const p=b.worldCom(),range=field.radius??field.range;
      if(!field.point||!Number.isFinite(range)||Math.hypot(p.x-field.point.x,p.y-field.point.y,p.z-field.point.z)>range)continue;
     }

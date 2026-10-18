@@ -154,6 +154,8 @@ function selected(level) {
 // This cap bounds expensive compound shells rather than only their visible cubes.
 const DENSITY = [30, 36, 41, 45, 48, 52, 56, 60, 64, 68, 74, 80, 86, 92];
 const BONUS_KINDS = ['pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
+const bonusWeight = kind => kind === 'split' ? 1 : 3;
+const isPowerfulBonus = kind => kind === 'gravity' || kind === 'blackhole';
 let arenaRunSeed = 0x00c57a11;
 
 /** Set once when starting/restarting a run, never while previewing or resizing.
@@ -166,8 +168,6 @@ export function setArenaRunSeed(seed) {
 
 function bonusSchedule(level) {
   if (level === 1) return ['pulse'];
-  if (level === 2) return ['pulse', 'split'];
-  if (level === 3) return ['split', 'pierce'];
   // A local PRNG depends only on run seed + absolute level. Metadata, preview,
   // generation and repeated resize queries never advance shared random state.
   let state = (arenaRunSeed ^ Math.imul(level >>> 0, 0x9e3779b1)
@@ -178,13 +178,30 @@ function bonusSchedule(level) {
     t ^= t + Math.imul(t ^ t >>> 7, t | 61);
     return ((t ^ t >>> 14) >>> 0) / 0x100000000;
   };
-  const count = 2 + Math.floor(random() * 4), kinds = [...BONUS_KINDS];
-  // Fisher–Yates produces a random subset without repeated types in one arena.
-  for (let i = kinds.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [kinds[i], kinds[j]] = [kinds[j], kinds[i]];
+  const count = level <= 3 ? 2 : 2 + Math.floor(random() * 4);
+  const kinds = [...BONUS_KINDS], chosen = [];
+  // Weighted sampling without replacement: Split has one third of every other
+  // kind's selection weight, not a fixed one-third marginal arena frequency.
+  while (chosen.length < count) {
+    let ticket = random() * kinds.reduce((sum, kind) => sum + bonusWeight(kind), 0);
+    let index = 0;
+    while (index < kinds.length - 1 && ticket >= bonusWeight(kinds[index])) {
+      ticket -= bonusWeight(kinds[index++]);
+    }
+    const [kind] = kinds.splice(index, 1);
+    chosen.push(kind);
+    // A powerful pickup may coexist with ordinary powers, never the other
+    // arena-wide power. Removing it here also keeps every draw distinct.
+    if (isPowerfulBonus(kind)) {
+      const incompatible = kinds.findIndex(isPowerfulBonus);
+      if (incompatible !== -1) kinds.splice(incompatible, 1);
+    }
   }
-  return kinds.slice(0, count);
+  if (!chosen.some(isPowerfulBonus) || count <= 3) return chosen;
+  // Retain the selected powerful kind and the earliest one or two companions.
+  // Do not simply truncate: that could discard a late-drawn powerful pickup.
+  let companions = 1 + Math.floor(random() * 2);
+  return chosen.filter(kind => isPowerfulBonus(kind) || companions-- > 0);
 }
 
 function progression(level, index, source) {
@@ -252,6 +269,8 @@ function decode(token) {
  * Repeated names retain their authored foreground; added mixed-tier groups and
  * density grows to a bounded 110 originals. Bonus counts are 1/2/2, then
  * seeded random 2–5 distinct types on every subsequent level and repeat.
+ * Split has one-third selection weight; Tornado and Black Hole are mutually
+ * exclusive and limit an arena to 2–3 total bonuses.
  */
 export function arenaDefinition(level) {
   const { level: n, index, cycle, arena } = selected(level);

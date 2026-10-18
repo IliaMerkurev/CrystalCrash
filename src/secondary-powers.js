@@ -1,8 +1,8 @@
 // Secondary physical effects own their bodies and simple, shared visual resources.
 // Call step before world.step, and render after world.step. All times are seconds.
 export class SecondaryPowers {
- constructor({THREE,RAPIER,scene,world,colliders,radius,tableGroup=1,structureGroup=4,onEchoHit,onFinishSplit}) {
-  Object.assign(this,{THREE,RAPIER,scene,world,colliders,radius,onEchoHit,onFinishSplit});
+ constructor({THREE,RAPIER,scene,world,colliders,radius,tableGroup=1,structureGroup=4,onEchoHit,onFinishSplit,onBlackHoleExpire}) {
+  Object.assign(this,{THREE,RAPIER,scene,world,colliders,radius,onEchoHit,onFinishSplit,onBlackHoleExpire});
   this.echoRadius=radius;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.blackHole=null;this.frictionLeases=new Map();this.marks=new Map();this.markPool=[];this.frostEdges=new Map();this.transitionParked=false;
   const membership=g=>g>0xffff?(g>>>16):g;
   this.echoGroups=(16<<16)|(membership(tableGroup)|membership(structureGroup)|2|16);
@@ -323,9 +323,9 @@ export class SecondaryPowers {
  createBlackHole(point,now,blocks,config={}) {
   this.endBlackHole();
   const value=(key,fallback)=>Number.isFinite(config[key])?Math.max(0,config[key]):fallback;
-  const diameter=this.radius*2,duration=value('duration',3.5),radius=value('radiusD',6.6)*diameter;
+  const diameter=this.radius*2,duration=value('duration',3),radius=value('radiusD',6.6)*diameter;
   const hole={point:{x:point.x,y:point.y,z:point.z},radius,range:radius,born:now,expires:now+duration,duration,
-   age:0,intensity:0,active:true,rampDuration:value('rampDuration',7/6),acceleration:value('acceleration',50),maxSpeed:value('speedCap',value('maxSpeed',14)),
+   age:0,intensity:0,active:true,rampDuration:value('rampDuration',1),acceleration:value('acceleration',50),maxSpeed:value('speedCap',value('maxSpeed',14)),
    settleRadius:value('settleRadiusD',.25)*diameter,maxTargets:Math.floor(value('maxTargets',64)),targets:[],blocks,nextCapture:now};
   this.blackHole=hole;this.captureBlackHoleTargets(hole);return hole;
  }
@@ -342,7 +342,7 @@ export class SecondaryPowers {
  stepBlackHole(dt,now) {
   const hole=this.blackHole;if(!hole)return;
   dt=Math.max(0,Math.min(dt,.1));hole.age=Math.max(0,now-hole.born);
-  if(now>=hole.expires){this.endBlackHole();return;}
+  if(now>=hole.expires){this.onBlackHoleExpire?.(hole,now);this.endBlackHole();return;}
   const ramp=hole.rampDuration>0?Math.max(0,Math.min(1,hole.age/hole.rampDuration)):1;
   hole.intensity=ramp*ramp*(3-2*ramp);
   hole.targets=hole.targets.filter(target=>{

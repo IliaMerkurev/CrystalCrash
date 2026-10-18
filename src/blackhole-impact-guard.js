@@ -13,7 +13,7 @@ export class BlackHoleImpactGuard {
     if(o?.kind!=='block'||!o.origin||body!==target.body||!body?.isValid()||!body.isDynamic()||!o.cs?.length)continue;
     if(target.handle!==undefined&&body.handle!==target.handle)continue;
     const p=body.worldCom(),range=hole.radius??hole.range;
-    if(hole.kind!=='tornado'&&(!hole.point||!Number.isFinite(range)||Math.hypot(p.x-hole.point.x,p.y-hole.point.y,p.z-hole.point.z)>range))continue;
+    if(hole.kind!=='tornado'&&hole.kind!=='capture-release'&&(!hole.point||!Number.isFinite(range)||Math.hypot(p.x-hole.point.x,p.y-hole.point.y,p.z-hole.point.z)>range))continue;
     next.set(o.origin.id,o.origin);
    }
   }

@@ -67,18 +67,18 @@ Contained powers use a dense 32-particle sun and layered additive sprites, witho
 
 Camera feedback uses bounded, deterministic translation: short Pulse impacts, a decaying Bomb shake, slow Tornado wind sway, and a slight progressive Black Hole zoom. Pause freezes the effect clock; restart clears offsets. The lens copies display-encoded RGBA8 without a second color transform. QA routes support `lens=off` and `lens=identity` for comparison.
 
-Black Hole now uses a 6.6-ball-diameter radius, eases camera focus over 1.1 seconds and progressively dollies up to 50% closer over its 6-second duration. FOV widens by the camera-space depth ratio to retain the hole’s apparent size while changing background perspective; both pose and lens return in 0.3 seconds. All free balls smoothly run at 35% motion speed while cubes retain normal simulation time. Logical velocities are converted only around each Rapier step, preserving post-collision responses and external impulses; held and parked balls are excluded. The one-second lower-zone catch window stays in real simulation seconds. Test opens the same diagnostic menu as Q, and FULLSCREEN uses the browser-supported API with an explicit unsupported fallback.
+Black Hole now uses a 6.6-ball-diameter radius, eases camera focus over 0.6 seconds and progressively dollies up to 58% closer over its 3-second duration. FOV widens by the camera-space depth ratio with deliberate 40% subject growth while changing background perspective; both pose and lens return in 0.3 seconds. All free balls smoothly run at 10% motion speed while cubes retain normal simulation time. Logical velocities are converted only around each Rapier step, preserving post-collision responses and external impulses; held and parked balls are excluded. The one-second lower-zone catch window stays in real simulation seconds. Test opens the same diagnostic menu as Q, and FULLSCREEN uses the browser-supported API with an explicit unsupported fallback.
 
 ### Aim control and extra-ball parity
 - Holding either the main ball or an extra ball to aim smoothly slows simulation to 40%; empty-space attraction does not. Release/cancel smoothly restores normal time. Camera/input remain responsive in real time, and menus freeze simulation.
-- Black Hole ball dilation composes by the stronger slowdown rather than multiplication: settled aiming + Black Hole yields 40% cube time and 35% free-ball time. Held bodies remain externally controlled.
+- Black Hole ball dilation composes by the stronger slowdown rather than multiplication: settled aiming + Black Hole yields 30% cube time and 10% free-ball time. Held bodies remain externally controlled.
 - Extra balls have the main ball's radius and polished steel response, retaining their pink tint. Spawn and carried-group spacing derive from the shared radius.
 
 ### Bomb visual refinement and arena diagnostics
 - Bomb fire lobes spread 32% farther, hot streaks travel about 31% faster, and glowing embers are brighter. Smoke coverage is lighter and less opaque; damage and physical impulses are unchanged.
 - The Test menu offers an explicit arena loader for the 14 authored arenas. Loading resets that scene, score and effects while retaining the current run seed for repeatable layouts.
 
-- Black Hole now lasts 3.5 seconds with a proportionally faster pull ramp and inward particles. Its camera approaches 58% closer while deliberately increasing apparent size up to 40%; world geometry and influence radius are unchanged.
+- Black Hole now lasts 3 seconds with a proportionally faster pull ramp and inward particles. Its camera approaches 58% closer while deliberately increasing apparent size up to 40%; world geometry and influence radius are unchanged.
 
 ### Pulse readability
 Pulse impacts now show a short local amber flash, two broader luminous expanding waves and 48 brighter radial sparks. Wave geometry and warmup are pooled; damage, radius and mini-shake are unchanged. The active-ball amber cue is also enlarged and animated while preserving the reflective ball surface.
@@ -101,3 +101,13 @@ Catching any ball now uses the same smooth aim-camera pose and pullback space. T
 While Black Hole or Tornado captures a playable cluster, its existing glass colliders keep their exact ball/extra-ball collision geometry. A temporary mass-zero local bounding box handles cube/table contacts instead. Visible meshes, fracture cells, Frost state, mass properties and velocities are retained. Shared field ownership keeps this representation until the final capture ends; release, direct-hit fracture, effect reset and arena cleanup restore/remove it safely. Direct ball and Bomb damage continue through the existing original-cube rules.
 
 Focused real-Rapier checks cover collision masks, holes, mass/center-of-mass/inertia, overlapping field ownership, stale bodies, friction and repeated cleanup. Synthetic dense-contact CPU comparisons are development diagnostics, not device FPS guarantees; rendering quality and FX geometry are unchanged.
+
+### Short Black Hole and staggered release
+Black Hole now lasts 3 seconds, reaching full pull after 1 second. Its camera and inward-particle timeline are retimed proportionally. Free balls smoothly approach 10% normal speed; aiming still slows the world to 30%, and the selective ball scale combines to 10% rather than 3%. Logical moving velocities prevent premature solver sleep, and normal speed returns smoothly from current collision results.
+
+Natural expiry gives captured cubes a small horizontal outward nudge. Temporary environmental contacts and collision-damage protection are then restored bottom-first in groups of at most eight, 0.15 simulation seconds apart. Falling motion continues; ball/Bomb damage remains available. The release schedule follows running physics even during main-ball respawn, and overlapping Tornado ownership remains valid. Explicit resets remove pending ownership immediately.
+
+### More relaxed bonus distribution
+Arena 1 keeps its single Pulse, and arenas 2–3 have two distinct seeded pickups without guaranteed Split. Split has one-third the selection weight of other kinds. Later ordinary arenas retain 2–5 unique pickups; an arena containing Black Hole or Tornado has only 1–2 additional pickups, and the two powerful fields never share an arena. Existing tower geometry and spaced host selection are retained.
+
+Tornado's cyan ribbons now have soft feathered edges, with additional gold filaments, warm orbiting particles and a ground-hugging airflow skirt. The fixed visual budget is nine draws and 27,520 triangles per scene pass; no full-screen blur or physics change is added by this polish.

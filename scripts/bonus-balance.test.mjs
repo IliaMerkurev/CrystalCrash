@@ -178,7 +178,7 @@ test('Arc, Frost, Tornado and Black Hole return immediate descriptors on every p
   assert.match(tornado.message, /Tornado activated/);
   assert.deepEqual(tornado.effect, {kind: 'gravity', originId: null, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, targetType: 'intact-cube'});
   const hole = powers.collect('blackhole');
-  assert.deepEqual(hole.effect, {kind: 'blackhole', originId: null, duration: 3.5, radiusD: 6.6, rampDuration: 7/6, acceleration: 50, speedCap: 14, maxTargets: 64});
+  assert.deepEqual(hole.effect, {kind: 'blackhole', originId: null, duration: 3, radiusD: 6.6, rampDuration: 1, acceleration: 50, speedCap: 14, maxTargets: 64});
   assert.equal('damage' in hole.effect, false);
   assert.equal(powers.collect('gravity').effect.kind, 'gravity');
   assert.equal(powers.collect('blackhole').effect.kind, 'blackhole');
@@ -342,7 +342,7 @@ test('Arc covers all 110 targets in distinct pooled chunks even when the pool is
 test('Simultaneous main and extra pickup contact awards the item exactly once',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'pulse'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const p=item.p.clone(),v=new THREE.Vector3(1,0,0);let count=0;const collect=controller.collect.bind(controller);controller.collect=kind=>{count++;return collect(kind);};world.update(.01,p,v,true,new Map(),[{id:12,p:p.clone(),v},{id:13,p:p.clone(),v}]);assert.equal(count,1);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'pulse');assert.equal('queued' in controller.snapshotHUD(),false);});
 test('Extra pickup sweeps keep independent histories and cannot bridge between balls',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'heavy'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const v=new THREE.Vector3(1,0,0),main=new THREE.Vector3(0,.38,8);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-3,item.height,1),v},{id:13,p:new THREE.Vector3(3,item.height,1),v}]);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-2.8,item.height,1),v},{id:13,p:new THREE.Vector3(2.8,item.height,1),v}]);assert.equal(world.pickups.length,1);world.update(.01,main,v,false,new Map(),[{id:12,p:item.p.clone(),v}]);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'heavy');});
 
-test('Nine-type arena pool retains 1/2/2 onboarding and 2–5 unique later powers', () => {
+test('Nine-type arena pool retains 1/2/2 counts and caps powerful later arenas at 2–3', () => {
   const expectedKinds = ['pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'].sort();
   assert.deepEqual(Object.keys(BONUS_DEFS).sort(), expectedKinds);
   const seen = new Set();
@@ -350,11 +350,13 @@ test('Nine-type arena pool retains 1/2/2 onboarding and 2–5 unique later power
     for (const seed of [0, 1, 0xffffffff, 0x00c57a11]) {
       setArenaRunSeed(seed);
       assert.deepEqual(arenaDefinition(1).bonuses, ['pulse']);
-      assert.deepEqual(arenaDefinition(2).bonuses.sort(), ['pulse', 'split']);
-      assert.deepEqual(arenaDefinition(3).bonuses.sort(), ['pierce', 'split']);
-      for (let level = 4; level <= 120; level++) {
+      for (let level = 2; level <= 120; level++) {
         const bonuses = arenaDefinition(level).bonuses;
         assert.ok(bonuses.length >= 2 && bonuses.length <= 5);
+        if (level <= 3) assert.equal(bonuses.length, 2);
+        const powerful = bonuses.filter(kind => kind === 'gravity' || kind === 'blackhole');
+        assert.ok(powerful.length <= 1, 'Tornado and Black Hole cannot share an arena');
+        if (powerful.length) assert.ok(bonuses.length <= 3);
         assert.equal(new Set(bonuses).size, bonuses.length);
         assert.deepEqual(arenaDefinition(level).bonuses, bonuses, 'preview cannot reroll the selection');
         for (const kind of bonuses) { assert.ok(expectedKinds.includes(kind)); seen.add(kind); }

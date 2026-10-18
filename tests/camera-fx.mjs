@@ -82,9 +82,9 @@ test('All effects and repeated Bomb triggers obey combined world-space and zoom 
  assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 }, 'combined effects leave no residual drift');
 });
 
-test('Black Hole dolly and growth start softly, continue all 3.5 seconds, then return in 0.3 seconds', () => {
+test('Black Hole dolly and growth start softly, continue all 3 seconds, then return in 0.3 seconds', () => {
  const fx = new CameraFX(); let previous = 0;
- for (let i = 0; i < 420; i++) {
+ for (let i = 0; i < 360; i++) {
   const pose = fx.update(DT, { blackHoleActive: true });
   assert.ok(pose.dolly > previous, 'dolly must progress throughout the active duration');
   assert.ok(pose.dolly - previous < .002);
@@ -110,10 +110,10 @@ test('Black Hole dolly and growth start softly, continue all 3.5 seconds, then r
  assert.equal(fx.offsets.growth, 1);
 });
 
-test('Black Hole custom duration scales the continuous dolly, and invalid durations use 3.5 seconds', () => {
+test('Black Hole custom duration scales the continuous dolly, and invalid durations use 3 seconds', () => {
  for (const blackHoleDuration of [undefined, 0, -1, Infinity, NaN]) {
   const fx = new CameraFX();
-  fx.update(3.5, { blackHoleActive: true, blackHoleDuration });
+  fx.update(3, { blackHoleActive: true, blackHoleDuration });
   near(fx.offsets.dolly, .58); near(fx.offsets.growth, 1.4);
  }
  const fx = new CameraFX();
@@ -200,7 +200,7 @@ test('Black Hole focus and dolly both start at t0 with a soft focus ramp', () =>
  fx.update(DT, { blackHoleActive: true });
  assert.ok(fx.offsets.focus > 0 && fx.offsets.focus < .001);
  assert.ok(fx.offsets.dolly > 0 && fx.offsets.dolly < .00002);
- tick(fx, .7, { blackHoleActive: true });
+ tick(fx, .6, { blackHoleActive: true });
  assert.equal(fx.offsets.focus, 1);
  assert.ok(fx.offsets.dolly > 0 && fx.offsets.dolly < .12);
  tick(fx, .31);
@@ -245,10 +245,10 @@ test('Production THREE dolly zoom grows the subject 1.4×, moves throughout life
   for (let cycle = 0; cycle < 3; cycle++) {
    context.secondary.blackHole = { point: hole, intensity: 0 };
    let lastDistance = baseDistance;
-   for (let frame = 0; frame < 420; frame++) {
+   for (let frame = 0; frame < 360; frame++) {
     context.updateAimCamera(DT);
     const distance = camera.position.distanceTo(worldHole);
-    assert.ok(distance < lastDistance, 'camera keeps moving closer through all 3.5 seconds');
+    assert.ok(distance < lastDistance, 'camera keeps moving closer through all 3 seconds');
     assert.ok(distance >= baseDistance * .42 - 1e-9, 'dolly remains bounded');
     lastDistance = distance;
     assert.ok(camera.position.y > worldHole.y && camera.position.y > .5, 'dolly remains above the hole and floor');
@@ -261,7 +261,7 @@ test('Production THREE dolly zoom grows the subject 1.4×, moves throughout life
     control.fov = 42; control.updateProjectionMatrix(); control.updateMatrixWorld();
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
     near(width(camera, right), width(control, right) * context.cameraFX.offsets.growth, 5e-6);
-    if (frame >= 84) {
+    if (frame >= 72) {
      const projected = worldHole.clone().project(camera);
      near(projected.x, 0, 1e-9); near(projected.y, 0, 1e-9);
     }
@@ -286,7 +286,7 @@ test('Production THREE dolly zoom grows the subject 1.4×, moves throughout life
 
 test('Black Hole reactivation during return preserves the partial pose without snapping', () => {
  const fx = new CameraFX();
- tick(fx, 3.5, { blackHoleActive: true });
+ tick(fx, 3, { blackHoleActive: true });
  tick(fx, .1);
  const before = { ...fx.offsets };
  assert.ok(before.focus > .5 && before.focus < 1);
@@ -296,7 +296,7 @@ test('Black Hole reactivation during return preserves the partial pose without s
  assert.ok(after.dolly >= before.dolly && after.dolly - before.dolly < .00001);
  assert.ok(after.growth >= before.growth && after.growth - before.growth < .00001);
  let prior = after.dolly;
- for (let i = 0; i < 420; i++) {
+ for (let i = 0; i < 360; i++) {
   fx.update(DT, { blackHoleActive: true });
   assert.ok(fx.offsets.dolly >= prior && fx.offsets.dolly <= .58);
   prior = fx.offsets.dolly;
@@ -309,9 +309,9 @@ test('Black Hole reactivation during return preserves the partial pose without s
 
 test('Gaze uses C2 quintic easing while dolly becomes visibly active in the first 0.1 seconds', () => {
  const fx = new CameraFX(); fx.update(.1, { blackHoleActive: true });
- const t = .1 / .7, expected = t ** 3 * (t * (t * 6 - 15) + 10);
+ const t = .1 / .6, expected = t ** 3 * (t * (t * 6 - 15) + 10);
  near(fx.offsets.focus, expected);
- assert.ok(fx.offsets.dolly > .009 && fx.offsets.dolly < .012);
+ assert.ok(fx.offsets.dolly > .009 && fx.offsets.dolly < .013);
  const before = fx.offsets.dolly;
  fx.update(.1, { blackHoleActive: true });
  assert.ok(fx.offsets.dolly - before > .008, 'sustained linear motion follows short velocity ease');

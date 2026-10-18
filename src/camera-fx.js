@@ -1,7 +1,7 @@
 // Deterministic camera feedback. Apply ABSOLUTE translation to the normal aim
 // position and target; blend focus and dolly toward the Black Hole, compensating
 // FOV in the camera integrator for gradual subject growth. Pause with dt = 0.
-export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, dolly: .58, growth: 1.4, durationSeconds: 3.5, focusSeconds: .7, returnSeconds: .3 });
+export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, dolly: .58, growth: 1.4, durationSeconds: 3, focusSeconds: .6, returnSeconds: .3 });
 
 const TAU = Math.PI * 2;
 const clamp01 = value => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;

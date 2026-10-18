@@ -21,7 +21,7 @@ function fixture(run, gravity = 0) {
   try { run({ world, scaler, ball, step }); } finally { scaler.reset(); world.free(); }
 }
 
-test('free ball travels at smooth .35 scale, normal cube and world timestep untouched', () => fixture(({ world, scaler, ball, step }) => {
+test('free ball travels at smooth .10 scale, normal cube and world timestep untouched', () => fixture(({ world, scaler, ball, step }) => {
   const b = ball(); b.setLinvel({ x: 2, y: 0, z: 0 }, true);
   const cube = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, -10, 0));
   world.createCollider(RAPIER.ColliderDesc.cuboid(.3, .3, .3), cube);
@@ -29,7 +29,7 @@ test('free ball travels at smooth .35 scale, normal cube and world timestep unto
   let expected = 0;
   for (let i = 0; i < 900; i++) { step([b]); expected += 2 * DT * scaler.scale; }
   near(b.translation().x, expected, .002); near(cube.translation().x, 20, .002);
-  near(b.linvel().x, 2, .001); near(scaler.scale, .35); near(world.timestep, DT);
+  near(b.linvel().x, 2, .001); near(scaler.scale, .10); near(world.timestep, DT);
 }));
 
 test('external impulse during effect changes logical momentum and persists, release returns normal speed', () => fixture(({ scaler, ball, step }) => {
@@ -71,7 +71,7 @@ test('solver bounce preserved rather than overwritten by stale pre-collision vel
   world.createCollider(RAPIER.ColliderDesc.cuboid(.2, 5, 5).setRestitution(1).setFriction(0), wall);
   const b = ball(); b.setLinvel({ x: 5, y: 0, z: 0 }, true);
   let bounced = false;
-  for (let i = 0; i < 120; i++) { step([b]); if (b.linvel().x < -1) bounced = true; }
+  for (let i = 0; i < 360; i++) { step([b]); if (b.linvel().x < -1) bounced = true; }
   assert.ok(bounced); assert.ok(b.linvel().x < -1);
 }));
 
@@ -88,7 +88,7 @@ test('pause, removal, reset and bad inputs remain finite with exact property res
   near(scaler.scale, scale); near(b.linvel().x, 2);
   scaler.beforeStep(DT, [b], 1); scaler.reset(); near(scaler.scale, 1); near(b.linvel().x, 2);
   const removed = ball(10); scaler.beforeStep(DT, [removed], 1); world.removeRigidBody(removed); scaler.afterStep();
-  for (const intensity of [NaN, Infinity, -100, 100]) { step([b], intensity); assert.ok(Number.isFinite(b.linvel().x)); assert.ok(scaler.scale >= .35 && scaler.scale <= 1); }
+  for (const intensity of [NaN, Infinity, -100, 100]) { step([b], intensity); assert.ok(Number.isFinite(b.linvel().x)); assert.ok(scaler.scale >= .10 && scaler.scale <= 1); }
   scaler.reset(); near(b.gravityScale(), 1);
 }));
 
@@ -98,7 +98,7 @@ test('moving normal-time cube transfers a finite elastic impulse to a slow ball 
   // time solver stores that as 6 / s logical velocity, but the next integration
   // must use 6 again, NOT amplify that impulse repeatedly on successive frames.
   for (let i = 0; i < 400; i++) step([]);
-  near(scaler.scale, .35);
+  near(scaler.scale, .10);
   const b = ball(2); b.enableCcd(true);
   const cube = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 10, 0).setCcdEnabled(true));

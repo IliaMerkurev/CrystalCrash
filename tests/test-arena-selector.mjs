@@ -17,6 +17,7 @@ import {BallTimeScale} from '../src/ball-time-scale.js';
 import {AimTimeScale} from '../src/aim-time-scale.js';
 import {BlackHoleImpactGuard} from '../src/blackhole-impact-guard.js';
 import {CaptureCollisionProxy} from '../src/capture-collision-proxy.js';
+import {BlackHoleRelease} from '../src/blackhole-release.js';
 
 const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
 function code(name){
@@ -49,7 +50,7 @@ await RAPIER.init();
 const v3=(...n)=>new THREE.Vector3(...n),powers=new BonusController(),scene=new THREE.Scene();
 let effectsCleared=0,notices=[],windowEvents={};
 const context={
- CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
+ BlackHoleRelease,CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
  arenaDefinition,arenaBlocks,document,window:{addEventListener:(name,fn)=>windowEvents[name]=fn},$ :id=>elements.get(id),
  v3,clamp:THREE.MathUtils.clamp,C:{...TUNE},GROUP:{table:0x0001001f,ball:0x00020017,structure:0x0004001f,debris:0x00080005},
  scene,powers,camera:new THREE.PerspectiveCamera(42,390/844,.1,100),cameraBase:v3(0,15,17),

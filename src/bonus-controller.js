@@ -7,7 +7,7 @@ export const BONUS_DEFS = Object.freeze({
   split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, sourceType: 'all-live-balls', persistent: true, angleDegrees: 18, damage: 1, description: 'On pickup, every live ball creates two more; collect again to multiply them' }),
   gravity: Object.freeze({ kind: 'gravity', name: 'Tornado', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'On pickup, a roaming tornado lifts, spins and throws nearby cubes for 4 seconds' }),
   bomb: Object.freeze({ kind: 'bomb', name: 'Bomb', color: 0xff9438, colorCss: '#FF9438', automatic: true, countdown: 3, radiusD: 4.4, damage: 8, maxBallSpeed: 30, kickSpeed: 22, description: 'Automatically explodes after 3 seconds, blasting nearby cubes and kicking balls away' }),
-  blackhole: Object.freeze({ kind: 'blackhole', name: 'Black Hole', color: 0x8e49ff, colorCss: '#8E49FF', charges: 1, duration: 3.5, radiusD: 6.6, rampDuration: 7/6, acceleration: 50, speedCap: 14, maxTargets: 64, description: 'On pickup, pulls nearby cubes inward for 3.5 seconds, building strength over 1.2 seconds' }),
+  blackhole: Object.freeze({ kind: 'blackhole', name: 'Black Hole', color: 0x8e49ff, colorCss: '#8E49FF', charges: 1, duration: 3, radiusD: 6.6, rampDuration: 1, acceleration: 50, speedCap: 14, maxTargets: 64, description: 'On pickup, pulls nearby cubes inward for 3 seconds, building strength over 1 second' }),
   heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3, description: 'Stores a 3-damage charge for the next direct hit; collect again to add charges' }),
 });
 

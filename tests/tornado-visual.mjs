@@ -23,7 +23,7 @@ test('smoke and debris stay within the local storm bounds',()=>{
  const v=make(),m=new THREE.Matrix4(),p=new THREE.Vector3(),q=new THREE.Quaternion(),s=new THREE.Vector3();
  for(let t=0;t<5;t+=.17){v.update(well(),.17,10+t);for(const mesh of [v.smoke,v.debris])for(let i=0;i<mesh.count;i++){
   mesh.getMatrixAt(i,m);m.decompose(p,q,s);const radius=Math.max(s.x,s.y,s.z);
-  assert.ok((Math.hypot(p.x,p.z)+radius)*1.1<LIMITS.maxRadius);assert.ok(p.y+radius<LIMITS.maxHeight);assert.ok(p.y-radius>-.6);
+  assert.ok((Math.hypot(p.x,p.z)+radius)*1.1<LIMITS.maxRadius);assert.ok(p.y+radius<LIMITS.maxHeight);assert.ok(p.y-(mesh===v.smoke&&i<28?s.y:radius)>-.6);
  }}v.dispose();
 });
 test('warmup exposes every variant without releasing live shared geometry/materials',()=>{
@@ -44,4 +44,26 @@ test('clear is reusable and dispose releases resources once',()=>{
 test('ribbons use broad triangle geometry and all smoke stays depth-tested',()=>{
  const v=make();for(const ribbon of v.ribbons){assert.ok(ribbon.geometry.index.count>1000);assert.equal(ribbon.isLine,undefined);assert.equal(ribbon.material.depthTest,true);assert.equal(ribbon.material.depthWrite,false);}
  assert.equal(v.smoke.material.depthTest,true);assert.equal(v.outer.material.depthTest,true);v.dispose();
+});
+
+test('polished storm keeps gold filaments batched and cyan edges feathered',()=>{
+ const v=make();assert.equal(v.ribbons.length,4);
+ assert.equal(v.ribbons[3].geometry.index.count,v.ribbons[0].geometry.index.count*2);
+ assert.match(v.ribbons[0].material.fragmentShader,/shoulder=exp/);
+ assert.match(v.ribbons[0].material.fragmentShader,/smoothstep\(.45,1.,cross\)/);
+ const gold=new THREE.Color();v.debris.getColorAt(0,gold);assert.ok(gold.r>1);assert.ok(gold.g>gold.b);
+ for(const mesh of v.meshes){assert.equal(mesh.material.depthWrite,false);if(mesh.material.side===THREE.DoubleSide)assert.equal(mesh.material.forceSinglePass,true);}
+ v.dispose();
+});
+test('ground skirt stays local and low, with fixed warmup and resource budget',()=>{
+ const v=make(),flow=v.groundFlow,g=flow.geometry;g.computeBoundingBox();
+ assert.ok(g.boundingBox.max.y<.0001);assert.ok(g.boundingBox.min.y>-.0001);
+ assert.ok(g.boundingBox.max.x<=2.051);assert.ok(flow.position.y<.04);
+ v.update(well(),.016,12);const m=new THREE.Matrix4(),p=new THREE.Vector3(),q=new THREE.Quaternion(),s=new THREE.Vector3();
+ for(let i=0;i<28;i++){v.smoke.getMatrixAt(i,m);m.decompose(p,q,s);assert.ok(p.y+s.y<.24);assert.ok(s.x>s.y*7);}
+ assert.equal(v.meshes.length,9);assert.equal(v.smoke.count,80);assert.equal(v.debris.count,44);
+ let triangles=0;for(const mesh of v.meshes)triangles+=(mesh.geometry.index?mesh.geometry.index.count:mesh.geometry.attributes.position.count)/3*(mesh.isInstancedMesh?mesh.count:1);
+ assert.ok(triangles<28000,`triangle budget: ${triangles}`);
+ const warm=v.warmupObjects();assert.ok(warm.children.some(x=>x.geometry===g));
+ for(const clone of warm.children){if(clone.isInstancedMesh)clone.dispose();clone.material.dispose();}v.dispose();
 });

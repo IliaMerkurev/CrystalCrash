@@ -1,6 +1,6 @@
 // Local procedural storm volume. All geometries/materials/pools are allocated once.
 // Coordinates use the game's Y-up ground plane; well.point is the physical center.
-export const TORNADO_VISUAL_LIMITS = Object.freeze({height:4.7, smoke:80, debris:44, drawCalls:8, maxRadius:2.9, maxHeight:5.2});
+export const TORNADO_VISUAL_LIMITS = Object.freeze({height:4.7, smoke:80, debris:44, drawCalls:9, maxRadius:2.9, maxHeight:5.2});
 const NOISE = `
 float hash(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
 float noise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);}`;
@@ -22,13 +22,43 @@ void main(){float h=vUv.y;float a=atan(vLocal.z,vLocal.x);vec3 p=vec3(cos(a+time
   const coneGeo=new THREE.CylinderGeometry(1.9,.19,4.7,64,36,true);coneGeo.translate(0,2.35,0);
   this.outer=add(coneGeo,coneMaterial);this.inner=add(coneGeo,coneMaterial);this.inner.scale.set(.82,1,.82);this.inner.rotation.y=1.9;
   // Flat broad helix strips, rather than device-dependent WebGL line widths.
-  const ribbonGeometry=(phase,turns,width)=>{const steps=240,positions=[],uv=[],indices=[];
-   for(let i=0;i<=steps;i++){const t=i/steps,a=phase+t*Math.PI*2*turns,r=.22+1.71*Math.pow(t,.88);for(let side=0;side<2;side++){const y=t*4.62+(side-.5)*width;positions.push(Math.cos(a)*r,y,Math.sin(a)*r);uv.push(t,side);}if(i<steps){let k=i*2;indices.push(k,k+2,k+1,k+1,k+2,k+3);}}
+  const ribbonGeometry=(phase,turns,width,strands=1)=>{const steps=240,positions=[],uv=[],indices=[];
+   // Multiple warm filaments share one geometry/material and one draw call.
+   for(let strand=0;strand<strands;strand++)for(let i=0;i<=steps;i++){
+    const t=i/steps,a=phase+strand*2.9+t*Math.PI*2*(turns+strand*.24),r=.22+1.71*Math.pow(t,.88)+strand*.055;
+    for(let side=0;side<2;side++){const y=t*4.62+(side-.5)*width;positions.push(Math.cos(a)*r,y,Math.sin(a)*r);uv.push(t,side);}
+    if(i<steps){const k=(strand*(steps+1)+i)*2;indices.push(k,k+2,k+1,k+1,k+2,k+3);}
+   }
    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(indices);g.computeVertexNormals();g.computeBoundingSphere();return g;};
-  const ribbon=(orange)=>material(`uniform float time,strength;varying vec2 vUv;varying vec3 vLocal,vNormal;
-void main(){float cross=abs(vUv.y-.5)*2.;float edge=pow(1.-cross,1.4);float core=pow(1.-cross,9.);float ends=smoothstep(0.,.025,vUv.x)*(1.-smoothstep(.9,1.,vUv.x));float flow=.65+.35*pow(.5+.5*sin(vUv.x*55.-time*9.),4.);vec3 tint=${orange?'vec3(1.,.25,.025)':'vec3(.025,.65,1.)'};gl_FragColor=vec4(tint*(1.1+core*1.8)+vec3(core*.6),strength*edge*ends*flow*${orange?'.63':'.95'});}`,{blending:THREE.AdditiveBlending});
-  const cyan=ribbon(false),orange=ribbon(true);this.ribbons=[];
-  for(let i=0;i<4;i++)this.ribbons.push(add(ribbonGeometry(i*2.1,i===3?2.6:3.2,i===3?.055:.19),i===3?orange:cyan));
+  const ribbon=(gold)=>material(`uniform float time,strength;varying vec2 vUv;varying vec3 vLocal,vNormal;
+void main(){
+ float cross=abs(vUv.y-.5)*2.;
+ // A broad dim shoulder and feathered outer edge soften the geometry silhouette.
+ // Restrain the center peak so additive overlaps do not become hard white bands.
+ float shoulder=exp(-cross*cross*3.8)*(1.-smoothstep(.45,1.,cross));
+ float core=exp(-cross*cross*38.);
+ float ends=smoothstep(0.,.045,vUv.x)*(1.-smoothstep(.86,1.,vUv.x));
+ float flow=.52+.48*pow(.5+.5*sin(vUv.x*55.-time*9.),3.);
+ vec3 tint=${gold?'vec3(1.,.60,.13)':'vec3(.045,.58,.85)'};
+ float profile=shoulder*.62+core*.28;
+ gl_FragColor=vec4(tint*(.85+core*.55)+vec3(core*.09),strength*profile*ends*flow*${gold?'.83':'.68'});
+}`,{blending:THREE.AdditiveBlending});
+  const cyan=ribbon(false),gold=ribbon(true);this.ribbons=[];
+  for(let i=0;i<4;i++)this.ribbons.push(add(ribbonGeometry(i*2.1,i===3?2.6:3.2,i===3?.10:.32,i===3?2:1),i===3?gold:cyan));
+  // Small world-space skirt only: transparent, depth-tested, no scene-wide fog.
+  const groundMaterial=material(`uniform float time,strength;varying vec2 vUv;varying vec3 vLocal,vNormal;${NOISE}
+void main(){
+ float r=length(vLocal.xz),a=atan(vLocal.z,vLocal.x);
+ float envelope=smoothstep(.22,.52,r)*(1.-smoothstep(1.05,2.05,r));
+ float n=noise(vec3(vLocal.xz*3.,time*.45));
+ float flow=.5+.5*sin(a*5.+r*14.-time*4.+n*3.);
+ float wisps=pow(flow,3.);float glint=pow(.5+.5*sin(a*3.+r*22.+time*3.),18.);
+ vec3 tint=mix(vec3(.24,.34,.42),vec3(.43,.67,.76),wisps);
+ tint+=vec3(1.,.58,.12)*glint*.16;
+ gl_FragColor=vec4(tint,strength*envelope*(.035+wisps*.14)*(.55+n*.45));
+}`);
+  const groundGeo=new THREE.RingGeometry(.2,2.05,96,6);groundGeo.rotateX(-Math.PI/2);
+  this.groundFlow=add(groundGeo,groundMaterial);this.groundFlow.position.y=.025;
   const smokeMaterial=material(`uniform float time,strength;varying vec2 vUv;varying vec3 vLocal,vNormal;${NOISE}
 void main(){float n=noise(vLocal*5.+vec3(time*.2));float rim=pow(abs(normalize(vNormal).z),1.5);vec3 c=mix(vec3(.20,.25,.30),vec3(.65,.72,.77),n);gl_FragColor=vec4(c,strength*rim*(.09+n*.14));}`);
   const smokeGeo=new THREE.IcosahedronGeometry(1,2);this.geometries.add(smokeGeo);
@@ -36,22 +66,23 @@ void main(){float n=noise(vLocal*5.+vec3(time*.2));float rim=pow(abs(normalize(v
   const debrisGeo=new THREE.OctahedronGeometry(1,0);this.geometries.add(debrisGeo);
   this.debrisMaterial=new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,toneMapped:false});this.materials.add(this.debrisMaterial);
   this.debris=new THREE.InstancedMesh(debrisGeo,this.debrisMaterial,TORNADO_VISUAL_LIMITS.debris);this.debris.frustumCulled=false;this.debris.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.group.add(this.debris);this.meshes.push(this.debris);
-  const color=new THREE.Color();for(let i=0;i<TORNADO_VISUAL_LIMITS.debris;i++)this.debris.setColorAt(i,color.setHex(i%9===0?0xffa34b:i%3===0?0x7debff:0x526677));
+  const color=new THREE.Color();for(let i=0;i<TORNADO_VISUAL_LIMITS.debris;i++)this.debris.setColorAt(i,color.setHex(i%3===0?0xffd67b:i%3===1?0x7debff:0x526677).multiplyScalar(i%3===0?1.8:1));
   this.animate(0);
  }
  animate(time){
   this.uniforms.time.value=time;
   this.outer.rotation.y=time*.45;this.inner.rotation.y=-time*.28+1.9;
   for(let i=0;i<this.ribbons.length;i++)this.ribbons[i].rotation.y=time*(i===3?-1.6:-2.15)+i*.3;
+  this.groundFlow.rotation.y=-time*.27;
   const d=this.dummy;
   for(let i=0;i<TORNADO_VISUAL_LIMITS.smoke;i++){
    const dust=i<28,t=dust?(i%7)/55:((i-28)/52+time*.065)%1;
    const a=i*2.39996-time*(dust?1.3:1.9),r=dust?.35+(i%7)*.17:.22+1.7*Math.pow(t,.88);
    const s=dust?.24+(i%4)*.045:.13+t*.24;
-   d.position.set(Math.cos(a)*r,dust?.13+(i%3)*.1:t*4.63,Math.sin(a)*r);d.rotation.set(i*.7,a,i*.3);d.scale.set(s*1.4,s*.8,s);d.updateMatrix();this.smoke.setMatrixAt(i,d.matrix);
+   d.position.set(Math.cos(a)*r,dust?.08+(i%3)*.035:t*4.63,Math.sin(a)*r);d.rotation.set(dust?0:i*.7,dust?-a+Math.PI/2:a,dust?0:i*.3);d.scale.set(s*(dust?1.9:1.4),s*(dust?.22:.8),s*(dust?.65:1));d.updateMatrix();this.smoke.setMatrixAt(i,d.matrix);
   }
   for(let i=0;i<TORNADO_VISUAL_LIMITS.debris;i++){
-   const t=(i/44+time*(.07+(i%3)*.014))%1,a=i*2.39996-time*2.8,r=.35+1.85*t,s=i%3===0?.021:.035+(i%4)*.013;
+   const t=(i/44+time*(.07+(i%3)*.014))%1,a=i*2.39996-time*2.8,r=.35+1.85*t,s=i%3===0?.029:.035+(i%4)*.013;
    d.position.set(Math.cos(a)*r,t*4.7,Math.sin(a)*r);d.rotation.set(time+i,a,time*.8);d.scale.set(s,s*(1+i%2),s);d.updateMatrix();this.debris.setMatrixAt(i,d.matrix);
   }
   this.smoke.instanceMatrix.needsUpdate=true;this.debris.instanceMatrix.needsUpdate=true;

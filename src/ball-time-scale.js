@@ -8,13 +8,13 @@ const scaled = (value, factor) => ({ x: value.x * factor, y: value.y * factor, z
 const validGlobalScale = value => Number.isFinite(value) && value > 0 ? Math.min(1, value) : 1;
 
 // The effective wall-clock speed is min(globalScale, absoluteScale), not their
-// product. For example .4 global plus .35 Black Hole needs .875 relative speed.
+// product. For example .3 global plus .1 Black Hole needs one-third relative speed.
 export const relativeBallTimeScale = (absoluteScale, globalScale = 1) =>
   Math.min(1, Math.max(0, finite(absoluteScale, 1)) / validGlobalScale(globalScale));
 
 export class BallTimeScale {
-  constructor({ minimumScale = .35, attack = .25, release = .4 } = {}) {
-    this.minimumScale = Math.min(1, Math.max(.05, finite(minimumScale, .35)));
+  constructor({ minimumScale = .10, attack = .25, release = .4 } = {}) {
+    this.minimumScale = Math.min(1, Math.max(.05, finite(minimumScale, .10)));
     this.attack = Math.max(.001, finite(attack, .25));
     this.release = Math.max(.001, finite(release, .4));
     this.scale = 1;
@@ -44,6 +44,10 @@ export class BallTimeScale {
     for (const body of bodies ?? []) {
       if (!body || seen.has(body.handle) || !body.isValid() || !body.isDynamic()) continue;
       seen.add(body.handle);
+      // Rapier sleeping thresholds are in solver-space speed. A genuinely moving
+      // ball must not fall asleep just because its temporary time scale is .1.
+      const logicalVelocity=body.linvel(),logicalSpin=body.angvel();
+      if(Math.hypot(logicalVelocity.x,logicalVelocity.y,logicalVelocity.z)> .05||Math.hypot(logicalSpin.x,logicalSpin.y,logicalSpin.z)> .05)body.wakeUp();
       const state = {
         body, scale: s, gravity: body.gravityScale(),
         linearDamping: body.linearDamping(), angularDamping: body.angularDamping(),
