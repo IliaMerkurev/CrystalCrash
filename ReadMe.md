@@ -179,3 +179,5 @@ Visual refinement: planar polished chamfers replace rounded cube edges, with geo
 Floor reflection refinement: mirror-pass-only glass specular suppression removes pale bevel hotspots without changing visible cubes, ball or rail materials. Shared uniform restored in finally; no new render pass or per-frame material recompilation. Floor coat roughness .34 with adjacent-texel Gaussian filtering.
 
 Score UI: compact frosted glass backplate with local CSS backdrop blur, Safari prefix and translucent opaque fallback; pointer events remain disabled and combo sits below the plate.
+
+Gate barrier height increased from 0.75 to 1.5 for both visible geometry and collider; upper-edge framing follows its height. Existing open-gate-only transition guard prevents airborne bypass from advancing the section. Glass material unchanged.
