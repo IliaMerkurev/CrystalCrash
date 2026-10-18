@@ -221,9 +221,9 @@ function progression(level, index, source) {
 function assignBonuses(arena, level) {
   const schedule = bonusSchedule(level);
   const candidates = [];
-  // Retain deliberate foreground container positions before filling other low,
-  // accessible T1 hosts. Each selected kind decorates a distinct original cube;
-  // no random choice changes the geometry, tier, or number of targets.
+  // Stamp the stable kind set onto temporary hosts for metadata. Once every
+  // rear group has been placed, spreadBonusHosts selects the final world-space
+  // towers without changing the geometry, tier, or number of targets.
   for (const [foreground, groups] of [[true, arena.stacks], [false, arena.reinforcements || []]]) {
     groups.forEach(([, row, tiers], order) => tiers.forEach((token, height) => {
       const { type, bonus } = decode(token);
@@ -279,7 +279,7 @@ export function arenaDefinition(level) {
  * The host retains final tapered-table edge clamping and pickup safe points.
  */
 export function arenaBlocks(level, { cube = .88, layoutZ = z => z, bounds = {} } = {}) {
-  const { arena } = selected(level), specs = [];
+  const { arena, level: n } = selected(level), specs = [];
   const pitch = cube * Math.SQRT2 + .14;
   const depthScale = Math.abs(layoutZ(0) - layoutZ(-1));
   if (!(cube > 0) || !Number.isFinite(cube) || !(depthScale > 0)) {
@@ -304,7 +304,71 @@ export function arenaBlocks(level, { cube = .88, layoutZ = z => z, bounds = {} }
   }
   if (arena.rear) addRearFormation(specs, arena, cube, pitch, layoutZ, bounds);
   if (arena.reinforcements) addProgressionFormation(specs, arena, cube, pitch, layoutZ, bounds);
+  if (n !== 1) spreadBonusHosts(specs, bounds);
   return specs;
+}
+
+/** Distribute the already chosen bonus kinds in horizontal world space. Measuring
+ * final positions includes rear rows, short-field fallback and tapered-edge
+ * clamping. Same level, seed and bounds always produce the same assignments. */
+function spreadBonusHosts(specs, bounds) {
+  const kinds = specs.filter(spec => spec[7]).map(spec => spec[7]);
+  if (!kinds.length) return;
+  const halfAt = typeof bounds.half === 'function' ? bounds.half
+    : () => Number.isFinite(bounds.half) ? bounds.half : 6.25;
+  const candidates = [], byTower = new Map();
+  specs.forEach((spec, index) => {
+    if (spec[7]) spec.length = 7;
+    if (spec[3] !== 0) return;
+    const rotated = spec[4] === spec[5] && spec[5] === spec[6];
+    const ex = rotated ? (spec[4] + spec[6]) * Math.SQRT1_2 / 2 : spec[4] / 2;
+    const ez = rotated ? ex : spec[6] / 2;
+    const limit = Math.min(halfAt(spec[2] - ez), halfAt(spec[2] + ez)) - ex - .34;
+    const x = Math.max(-limit, Math.min(limit, spec[0])), z = spec[2];
+    const key = `${Math.round(x * 1e6)}:${Math.round(z * 1e6)}`;
+    const candidate = { spec, index, x, z, key };
+    candidates.push(candidate);
+    const current = byTower.get(key);
+    if (!current || spec[1] < current.spec[1]) byTower.set(key, candidate);
+  });
+  if (candidates.length < kinds.length) throw new RangeError('Arena lacks distinct T1 bonus hosts');
+  const order = (a, b) => b.z - a.z || a.x - b.x || a.spec[1] - b.spec[1] || a.index - b.index;
+  const towers = [...byTower.values()].sort(order), chosen = [];
+  const distance = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
+  if (kinds.length > 1 && towers.length > 1) {
+    // Start with the globally farthest pair so two-bonus arenas use opposite
+    // regions instead of neighboring tiers or adjacent front containers.
+    let pair = [towers[0], towers[1]], separation = -1;
+    for (let i = 0; i < towers.length; i++) for (let j = i + 1; j < towers.length; j++) {
+      const d = distance(towers[i], towers[j]);
+      if (d > separation + 1e-9) { separation = d; pair = [towers[i], towers[j]]; }
+    }
+    chosen.push(...pair);
+  } else chosen.push(towers[0]);
+  const pickFarthest = pool => {
+    let best = null, bestMin = -1, bestSum = -1;
+    for (const candidate of pool) {
+      if (chosen.includes(candidate)) continue;
+      const distances = chosen.map(other => distance(candidate, other));
+      const min = Math.min(...distances), sum = distances.reduce((a, b) => a + b, 0);
+      if (min > bestMin + 1e-9 || Math.abs(min - bestMin) <= 1e-9 &&
+        (sum > bestSum + 1e-9 || Math.abs(sum - bestSum) <= 1e-9 && (!best || order(candidate, best) < 0))) {
+        best = candidate; bestMin = min; bestSum = sum;
+      }
+    }
+    return best;
+  };
+  while (chosen.length < Math.min(kinds.length, towers.length)) chosen.push(pickFarthest(towers));
+  // Only extremely narrow/short custom bounds can leave fewer towers than
+  // bonuses. Keep every kind on a distinct original, balancing occupied towers
+  // before reusing one; never silently drop a pickup to satisfy spacing.
+  while (chosen.length < kinds.length) {
+    const remaining = candidates.filter(candidate => !chosen.includes(candidate));
+    const occupancy = candidate => chosen.filter(other => other.key === candidate.key).length;
+    const leastUsed = Math.min(...remaining.map(occupancy));
+    chosen.push(pickFarthest(remaining.filter(candidate => occupancy(candidate) === leastUsed)));
+  }
+  chosen.forEach((candidate, index) => { candidate.spec[7] = kinds[index]; });
 }
 
 /** Rear additions contain only T1, never a second random pickup. Work in world

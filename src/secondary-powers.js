@@ -3,9 +3,9 @@
 export class SecondaryPowers {
  constructor({THREE,RAPIER,scene,world,colliders,radius,tableGroup=1,structureGroup=4,onEchoHit,onFinishSplit}) {
   Object.assign(this,{THREE,RAPIER,scene,world,colliders,radius,onEchoHit,onFinishSplit});
-  this.echoRadius=radius*.65;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.well=null;this.marks=new Map();this.markPool=[];this.transitionParked=false;
+  this.echoRadius=radius*.65;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.marks=new Map();this.markPool=[];this.transitionParked=false;
   const membership=g=>g>0xffff?(g>>>16):g;
-  this.echoGroups=(16<<16)|(membership(tableGroup)|membership(structureGroup));
+  this.echoGroups=(16<<16)|(membership(tableGroup)|membership(structureGroup)|2|16);
   this.echoGeometry=new THREE.SphereGeometry(this.echoRadius,20,14);
   this.echoMaterial=new THREE.MeshStandardMaterial({color:0xF27ED2,emissive:0xF27ED2,emissiveIntensity:.5,metalness:.7,roughness:.18});
   this.ensureEchoCapacity(32);
@@ -32,7 +32,7 @@ export class SecondaryPowers {
   this.echoInstances?.removeFromParent();this.echoInstances?.dispose();
   this.echoInstances=mesh;this.echoCapacity=capacity;this.scene.add(mesh);
  }
- spawnSplit(effect,point,incoming,now,sources) {
+ spawnSplit(effect,point,incoming,now,sources,bounds=null) {
   // Compatibility for the original (point, velocity, now, effect) call shape.
   if(typeof incoming==='number') [effect,point,incoming,now]=[now||{},effect,point,incoming];
   effect=effect||{};
@@ -41,12 +41,42 @@ export class SecondaryPowers {
   // Copy every source before creating any body. New children never join this
   // activation's snapshot, even if the caller supplied a mutable collection.
   const initial=sources??[{position:point,velocity:incoming},...this.echoes.filter(e=>this.isValid(e)).map(e=>({position:e.b.translation(),velocity:e.b.linvel()}))];
-  const snapshot=initial.map(source=>({position:{...source.position},velocity:{...source.velocity}})).filter(source=>
+  const snapshot=initial.map(source=>({position:{...source.position},velocity:{...source.velocity},radius:Number.isFinite(source.radius)&&source.radius>0?source.radius:this.radius})).filter(source=>
    ['x','y','z'].every(axis=>Number.isFinite(source.position[axis]))&&['x','z'].every(axis=>Number.isFinite(source.velocity[axis])));
   if(!snapshot.length)return false;
   if(activationId!=null)this.splitActivations.add(activationId);
   this.ensureEchoCapacity(this.echoes.length+snapshot.length*2);
+  this.time=now;
   const {THREE,RAPIER}=this,r=this.echoRadius,axis=new THREE.Vector3(0,1,0);
+  // Sphere separation uses true radii and a local spatial hash, not one search
+  // over every body for each candidate. Sources and newly spawned children all
+  // occupy space, so enabling ball-to-ball collision never starts interpenetrated.
+  const occupied=new Map(),maxRadius=snapshot.reduce((largest,source)=>Math.max(largest,source.radius),Math.max(this.radius,r)),cell=2*maxRadius+.1,gap=.035;
+  const key=(x,y,z)=>`${x},${y},${z}`;
+  const occupy=(position,radius)=>{const k=key(Math.floor(position.x/cell),Math.floor(position.y/cell),Math.floor(position.z/cell));if(!occupied.has(k))occupied.set(k,[]);occupied.get(k).push({position:{...position},radius});};
+  for(const source of snapshot)occupy(source.position,source.radius);
+  for(const echo of this.echoes)if(this.isValid(echo))occupy(echo.b.translation(),r);
+  const low=Number.isFinite(bounds?.top)?bounds.top+r+.12:-Infinity,high=Number.isFinite(bounds?.bottom)?bounds.bottom-r-.12:Infinity;
+  const halfAt=z=>typeof bounds?.tableHalf==='function'?bounds.tableHalf(z):(bounds?.halfWidth??bounds?.half??Infinity);
+  const free=p=>{
+   if(p.z<low||p.z>high||Math.abs(p.x)>halfAt(p.z)-r-.26||p.y<r+.03)return false;
+   const cx=Math.floor(p.x/cell),cy=Math.floor(p.y/cell),cz=Math.floor(p.z/cell);
+   for(let x=cx-1;x<=cx+1;x++)for(let y=cy-1;y<=cy+1;y++)for(let z=cz-1;z<=cz+1;z++)for(const other of occupied.get(key(x,y,z))||[]){
+    const distance=(p.x-other.position.x)**2+(p.y-other.position.y)**2+(p.z-other.position.z)**2;
+    if(distance<(r+other.radius+gap)**2)return false;
+   }
+   return true;
+  };
+  const place=desired=>{
+   const base=desired.clone();base.z=Math.max(low,Math.min(high,base.z));const limit=Math.max(0,halfAt(base.z)-r-.26);base.x=Math.max(-limit,Math.min(limit,base.x));base.y=Math.max(r+.03,base.y);
+   const spacing=2*r+gap;
+   // No count/search cap: a finite population always leaves a free height layer.
+   for(let shell=0;;shell++)for(let up=0;up<=shell;up++)for(let x=-shell;x<=shell;x++)for(let z=-shell;z<=shell;z++){
+    if(Math.max(Math.abs(x),Math.abs(z),up)!==shell)continue;
+    const candidate=new THREE.Vector3(base.x+x*spacing,base.y+up*spacing,base.z+z*spacing);
+    if(free(candidate))return candidate;
+   }
+  };
   const angle=Number.isFinite(effect.angleDegrees)?effect.angleDegrees*Math.PI/180:Math.PI/10;
   for(const origin of snapshot){
    const source=new THREE.Vector3(origin.velocity.x,origin.velocity.y||0,origin.velocity.z);
@@ -55,13 +85,15 @@ export class SecondaryPowers {
    source.normalize().multiplyScalar(speed);
    for(const side of [-1,1]) {
     const velocity=source.clone().applyAxisAngle(axis,side*angle),direction=velocity.clone().normalize();
-    const p=new THREE.Vector3(origin.position.x,Math.max(r+.03,origin.position.y),origin.position.z).addScaledVector(direction,r+this.radius*.25);
+    const tangent=new THREE.Vector3(-source.z,0,source.x);if(tangent.lengthSq()<1e-8)tangent.set(1,0,0);tangent.normalize();
+    const desired=new THREE.Vector3().copy(origin.position).addScaledVector(direction,origin.radius+r+.08).addScaledVector(tangent,-side*(r+.08));
+    const p=place(desired);occupy(p,r);
     const b=this.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(p.x,p.y,p.z).setCcdEnabled(true).setLinearDamping(.035).setAngularDamping(.12));
     const c=this.world.createCollider(RAPIER.ColliderDesc.ball(r).setCollisionGroups(this.echoGroups).setSolverGroups(this.echoGroups).setDensity(2).setFriction(.16).setRestitution(.7).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),b);
     const mass=b.mass();b.applyImpulse({x:velocity.x*mass,y:velocity.y*mass,z:velocity.z*mass},true);
     // Keep the per-ball transform API without allocating a draw call per ball.
     const mesh=new THREE.Object3D();mesh.position.copy(p);
-    const echo={id:++this.echoSerial,index:this.echoes.length,b,c,mesh,hitCount:0,born:now,activationId,removed:false,valid:true,isHeld:false,heldPoint:null,transitionParked:false,inLowerZone:false};
+    const echo={id:++this.echoSerial,index:this.echoes.length,b,c,mesh,hitCount:0,born:now,activationId,removed:false,valid:true,isHeld:false,heldPoint:null,transitionParked:false,staged:false,inLowerZone:false,catchUntil:null,returning:false,launching:false,launchGraceUntil:null};
     this.echoes.push(echo);this.liveEchoes.add(echo);this.colliders.set(c.handle,{kind:'echo',echo});
    }
   }
@@ -76,9 +108,9 @@ export class SecondaryPowers {
   echo.hitCount++;this.onEchoHit?.(echo);return true;
  }
  holdEcho(echo) {
-  if(!this.isValid(echo)||echo.transitionParked)return false;
+  if(!this.isValid(echo)||echo.transitionParked||echo.staged)return false;
   if(echo.isHeld)return true;
-  echo.heldPoint={...echo.b.translation()};echo.isHeld=true;
+  echo.heldPoint={...echo.b.translation()};echo.isHeld=true;echo.catchUntil=null;echo.returning=false;echo.launching=false;
   echo.b.resetForces(true);echo.b.resetTorques(true);
   echo.b.setLinvel({x:0,y:0,z:0},true);echo.b.setAngvel({x:0,y:0,z:0},true);
   echo.b.setBodyType(this.RAPIER.RigidBodyType.KinematicPositionBased,true);
@@ -86,17 +118,17 @@ export class SecondaryPowers {
   return true;
  }
  releaseEcho(echo,velocity={x:0,y:0,z:0}) {
-  if(!this.isValid(echo)||echo.transitionParked)return false;
-  echo.isHeld=false;echo.heldPoint=null;echo.inLowerZone=true;
+  if(!this.isValid(echo)||echo.transitionParked||echo.staged)return false;
+  echo.isHeld=false;echo.heldPoint=null;echo.inLowerZone=true;echo.catchUntil=this.time+this.catchDuration;echo.returning=false;echo.launching=true;echo.launchGraceUntil=echo.catchUntil;
   echo.b.setBodyType(this.RAPIER.RigidBodyType.Dynamic,true);
   echo.b.resetForces(true);echo.b.resetTorques(true);echo.b.setAngvel({x:0,y:0,z:0},true);
   echo.b.setLinvel({x:velocity.x||0,y:velocity.y||0,z:velocity.z||0},true);
   return true;
  }
  parkForTransition(mainPoint,bounds=null) {
-  this.endWell();this.transitionParked=true;
+  this.endWell();this.transitionParked=true;this.stagedAnchor=null;
   for(const echo of this.echoes){
-   this.holdEcho(echo);echo.transitionParked=true;echo.isHeld=true;
+   echo.staged=false;this.holdEcho(echo);echo.transitionParked=true;echo.isHeld=true;
    echo.c.setCollisionGroups(0);echo.c.setSolverGroups(0);
   }
   this.followTransition(mainPoint,Infinity,bounds);
@@ -147,17 +179,33 @@ export class SecondaryPowers {
  }
  resumeAfterTransition(now) {
   if(!this.transitionParked)return;
-  this.transitionParked=false;this.transitionAnchor=null;
+  this.time=now;this.transitionParked=false;this.stagedAnchor=this.transitionAnchor?{...this.transitionAnchor}:null;this.transitionAnchor=null;
   for(const echo of this.echoes){
    if(!this.isValid(echo))continue;
-   echo.transitionParked=false;echo.c.setCollisionGroups(this.echoGroups);echo.c.setSolverGroups(this.echoGroups);
-   this.releaseEcho(echo);
+   echo.transitionParked=false;echo.staged=true;echo.isHeld=true;echo.catchUntil=null;echo.returning=false;echo.launching=false;
+   echo.c.setCollisionGroups(this.echoGroups);echo.c.setSolverGroups(this.echoGroups);
+   // Keep the transferred formation kinematic until the first MAIN launch.
+   echo.heldPoint={...echo.b.translation()};echo.b.setNextKinematicTranslation(echo.heldPoint);
+   echo.b.resetForces(true);echo.b.resetTorques(true);echo.b.setLinvel({x:0,y:0,z:0},true);echo.b.setAngvel({x:0,y:0,z:0},true);
   }
+ }
+ launchStaged(velocity) {
+  const group=this.echoes.filter(echo=>this.isValid(echo)&&echo.staged);
+  const source=new this.THREE.Vector3(velocity?.x||0,velocity?.y||0,velocity?.z||0);
+  if(!group.length||source.lengthSq()<1e-8)return 0;
+  const center=this.stagedAnchor||group[0].b.translation(),right=new this.THREE.Vector3(-source.z,0,source.x).normalize();
+  const lateral=group.map(echo=>{const p=echo.b.translation();return (p.x-center.x)*right.x+(p.z-center.z)*right.z;});
+  const extent=lateral.reduce((largest,offset)=>Math.max(largest,Math.abs(offset)),1);
+  group.forEach((echo,index)=>{
+   const shot=source.clone().applyAxisAngle(new this.THREE.Vector3(0,1,0),-.1*lateral[index]/extent);
+   echo.staged=false;this.releaseEcho(echo,shot);
+  });
+  this.stagedAnchor=null;return group.length;
  }
  removeEcho(echo,notify=true) {
   if(!this.liveEchoes.has(echo))return;
   const last=this.echoes.pop();if(last!==echo){this.echoes[echo.index]=last;last.index=echo.index;}
-  this.liveEchoes.delete(echo);echo.index=-1;echo.removed=true;echo.valid=false;echo.isHeld=false;echo.heldPoint=null;
+  this.liveEchoes.delete(echo);echo.index=-1;echo.removed=true;echo.valid=false;echo.isHeld=false;echo.staged=false;echo.heldPoint=null;echo.catchUntil=null;echo.returning=false;
   this.colliders.delete(echo.c.handle);if(echo.b.isValid())this.world.removeRigidBody(echo.b);echo.mesh.removeFromParent();
   this.echoInstances.count=this.echoes.length;
   if(notify&&!this.echoes.length)this.onFinishSplit?.();
@@ -185,10 +233,10 @@ export class SecondaryPowers {
   return this.well;
  }
  step(dt,now,bounds={}) {
-  dt=Math.max(0,Math.min(dt,.1));
+  dt=Math.max(0,Math.min(dt,.1));this.time=now;this.catchDuration=Math.max(0,bounds.lowerCatchDuration??1);
   for(const echo of [...this.echoes]) {
    if(!this.isValid(echo)){this.removeEcho(echo);continue;}
-   if(echo.isHeld||echo.transitionParked){
+   if(echo.isHeld||echo.transitionParked||echo.staged){
     // Kinematic bodies are immune to gravity and collision forces while aiming.
     echo.b.resetForces(true);echo.b.resetTorques(true);echo.b.setLinvel({x:0,y:0,z:0},true);echo.b.setAngvel({x:0,y:0,z:0},true);
     if(echo.heldPoint){echo.b.setTranslation(echo.heldPoint,true);echo.b.setNextKinematicTranslation(echo.heldPoint);}
@@ -198,13 +246,30 @@ export class SecondaryPowers {
    const bottom=bounds.bottom??bounds.BOTTOM??bounds.lossZ??Infinity,top=bounds.top??bounds.TOP??-Infinity;
    if(p.y<(bounds.fallY??-2)||p.z>bottom+this.echoRadius||p.z<top-2||Math.abs(p.x)>half+this.echoRadius*3){this.removeEcho(echo);continue;}
    echo.b.resetForces(true);
-   const inLowerZone=p.z>=(bounds.lowerZoneZ??bottom-3.2);
-   if(inLowerZone&&!echo.inLowerZone){
+   const line=bounds.lowerZoneZ??bottom-3.2,hysteresis=Math.max(0,bounds.lowerZoneHysteresis??Math.max(.3,this.echoRadius*1.5));
+   if(echo.inLowerZone&&p.z<line-hysteresis){echo.inLowerZone=false;echo.catchUntil=null;echo.returning=false;echo.launching=false;}
+   if(!echo.inLowerZone&&p.z>=line){
+    echo.inLowerZone=true;echo.catchUntil=now+this.catchDuration;echo.returning=false;
     const v=echo.b.linvel(),scale=Math.max(0,Math.min(1,bounds.lowerZoneSpeedScale??.32));
     echo.b.setLinvel({x:v.x*scale,y:v.y,z:v.z*scale},true);
    }
-   echo.inLowerZone=inLowerZone;
-   // Deliberately no return, pointer-attraction, or magnetic acceleration.
+   if(echo.launching&&now<echo.launchGraceUntil)continue;
+   if(echo.inLowerZone){
+    if(!echo.launching&&echo.catchUntil!==null&&now<echo.catchUntil){
+     const v=echo.b.linvel(),speed=Math.hypot(v.x,v.z),limit=Math.max(0,bounds.lowerCatchSpeed??2.8);
+     if(speed>limit){const scale=limit/speed;echo.b.setLinvel({x:v.x*scale,y:v.y,z:v.z*scale},true);}
+    }else{
+     echo.returning=true;const acceleration=Math.max(0,bounds.lowerReturnAcceleration??8);
+     echo.b.applyImpulse({x:0,y:0,z:acceleration*echo.b.mass()*dt},true);
+    }
+   }else{
+    const v=echo.b.linvel();
+    if(Math.hypot(v.x,v.z)<(bounds.upperStallSpeed??3)){
+     const acceleration=Math.max(0,bounds.upperStallAcceleration??3.2);
+     echo.b.applyImpulse({x:0,y:0,z:acceleration*echo.b.mass()*dt},true);
+    }
+   }
+   // These are downward anti-stall/return impulses, never pointer attraction.
   }
   const well=this.well;if(!well)return;
   if(now>=well.expires){this.endWell();return;}
@@ -242,8 +307,9 @@ export class SecondaryPowers {
   for(const echo of this.echoes){
    if(!this.isValid(echo))continue;
    const p=new this.THREE.Vector3().copy(echo.b.translation());fn(p);echo.b.setTranslation(p,true);echo.mesh.position.copy(p);
-   if(echo.isHeld||echo.transitionParked){echo.heldPoint={x:p.x,y:p.y,z:p.z};echo.b.setNextKinematicTranslation(p);}
+   if(echo.isHeld||echo.transitionParked||echo.staged){echo.heldPoint={x:p.x,y:p.y,z:p.z};echo.b.setNextKinematicTranslation(p);}
   }
+  if(this.stagedAnchor){const p=new this.THREE.Vector3().copy(this.stagedAnchor);fn(p);this.stagedAnchor={x:p.x,y:p.y,z:p.z};}
   if(this.transitionAnchor){const p=new this.THREE.Vector3().copy(this.transitionAnchor);fn(p);this.transitionAnchor={x:p.x,y:p.y,z:p.z};}
   if(this.well){const p=new this.THREE.Vector3().copy(this.well.point);fn(p);Object.assign(this.well.point,p);this.wellMesh.position.set(p.x,.035,p.z);}
  }
@@ -265,7 +331,7 @@ export class SecondaryPowers {
   this.well=null;this.wellMesh.visible=false;
  }
  clear() {
-  for(const echo of [...this.echoes])this.removeEcho(echo,false);this.transitionParked=false;this.transitionAnchor=null;this.splitActivations.clear();this.endWell();
+  for(const echo of [...this.echoes])this.removeEcho(echo,false);this.transitionParked=false;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.splitActivations.clear();this.endWell();
   for(const mesh of this.marks.values()){mesh.visible=false;this.markPool.push(mesh);}this.marks.clear();
  }
  dispose() {this.clear();this.echoInstances.removeFromParent();this.echoInstances.dispose();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.wellGeometry.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();this.frostGeometry.dispose();this.frostMaterial.dispose();}

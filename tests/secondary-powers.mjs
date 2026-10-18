@@ -77,7 +77,7 @@ test('Split uses fast impulse launches and survives time/hit allowances without 
     const positions = echoes.map(echo => ({ ...echo.b.translation() }));
     for (let i = 0; i < 900; i++) {
       // The legacy fourth argument must not introduce any return/magnetic force.
-      powers.step(DT, 1000 + i * DT, BOUNDS, () => {
+      powers.step(DT, 1000 + i * DT, { ...BOUNDS, upperStallAcceleration: 0, lowerReturnAcceleration: 0 }, () => {
         attractionCalls++;
         return { x: 100, y: 100, z: 100 };
       });
@@ -96,24 +96,37 @@ test('Split uses fast impulse launches and survives time/hit allowances without 
   }, { x: 0, y: 0, z: 0 });
 });
 
-test('Lower-zone slowdown happens once per crossing and preserves relaunch speed', () => {
+test('Lower-zone catch window lasts one second, has hysteresis, and preserves deliberate relaunch', () => {
   withPhysics(({ powers }) => {
     const [echo] = split(powers);
     echo.b.setTranslation({ x: 0, y: 1, z: 5 }, true);
     echo.b.setLinvel({ x: 6, y: 2, z: 10 }, true);
     powers.step(DT, 1, BOUNDS);
-    vectorNear(echo.b.linvel(), { x: 1.92, y: 2, z: 3.2 }, 'first lower-zone crossing');
-    powers.step(DT, 2, BOUNDS);
-    vectorNear(echo.b.linvel(), { x: 1.92, y: 2, z: 3.2 }, 'same crossing is not slowed again');
-    echo.b.setTranslation({ x: 0, y: 1, z: 0 }, true);
-    powers.step(DT, 3, BOUNDS);
-    echo.b.setTranslation({ x: 0, y: 1, z: 5 }, true);
-    powers.step(DT, 4, BOUNDS);
-    near(echo.b.linvel().z, 1.024, 'second lower-zone crossing');
+    const slowed = { ...echo.b.linvel() };
+    near(Math.hypot(slowed.x, slowed.z), 2.8, 'one-second catch speed');
+    near(slowed.y, 2, 'vertical velocity unchanged');
+    near(echo.catchUntil, 2, 'one-second deadline');
+    for (const [now, z] of [[1.1, 3.95], [1.2, 4.05], [1.3, 3.9], [1.4, 4.1]]) {
+      echo.b.setTranslation({ x: 0, y: 1, z }, true);
+      powers.step(DT, now, BOUNDS);
+      near(echo.catchUntil, 2, 'small boundary oscillations never restart the timer');
+      vectorNear(echo.b.linvel(), slowed, 'catch period stays slow');
+    }
+    powers.step(.1, 2.01, BOUNDS);
+    assert.equal(echo.returning, true);
+    near(echo.b.linvel().z, slowed.z + .8, 'expired catch window adds downward acceleration');
     assert.equal(powers.holdEcho(echo), true);
+    powers.step(.1, 5, BOUNDS);
+    near(speed(echo.b), 0, 'held echo receives no return force');
     assert.equal(powers.releaseEcho(echo, { x: 3, y: 0, z: -20 }), true);
-    powers.step(DT, 5, BOUNDS);
-    vectorNear(echo.b.linvel(), { x: 3, y: 0, z: -20 }, 'freshly launched echo');
+    powers.step(DT, 5.01, BOUNDS);
+    vectorNear(echo.b.linvel(), { x: 3, y: 0, z: -20 }, 'deliberate launch is not catch-speed capped');
+    echo.b.setTranslation({ x: 0, y: 1, z: 3.5 }, true);
+    powers.step(DT, 5.1, BOUNDS);
+    assert.equal(echo.inLowerZone, false, 'full upper-zone excursion rearms entry');
+    echo.b.setTranslation({ x: 0, y: 1, z: 5 }, true);
+    powers.step(DT, 5.2, BOUNDS);
+    near(echo.catchUntil, 6.2, 'a genuine new crossing receives a new window');
   });
 });
 
@@ -148,7 +161,7 @@ test('Held echoes resist real gravity, preserve remapped position/orientation, a
   });
 });
 
-test('Parked echoes survive travel, follow smoothly, and resume catchable without old momentum', () => {
+test('Parked echoes survive travel and stage until the first main launch', () => {
   withPhysics(({ powers, world }) => {
     const echoes = split(powers);
     powers.parkForTransition({ x: 0, y: .41, z: 4 });
@@ -177,11 +190,30 @@ test('Parked echoes survive travel, follow smoothly, and resume catchable withou
     echoes.forEach(echo => {
       assert.equal(echo.c.collisionGroups(), powers.echoGroups);
       assert.equal(echo.c.solverGroups(), powers.echoGroups);
-      assert.equal(echo.b.bodyType(), RAPIER.RigidBodyType.Dynamic);
-      assert.equal(echo.isHeld, false);
+      assert.equal(echo.b.bodyType(), RAPIER.RigidBodyType.KinematicPositionBased);
+      assert.equal(echo.isHeld, true);
+      assert.equal(echo.staged, true);
       assert.equal(echo.transitionParked, false);
-      near(speed(echo.b), 0, 'stationary resume');
-      assert.equal(powers.holdEcho(echo), true, 'resumed echo remains catchable');
+      near(speed(echo.b), 0, 'stationary staged survivor');
+      assert.equal(powers.holdEcho(echo), false, 'staged echo cannot be picked separately');
+      assert.equal(powers.releaseEcho(echo, { x: 0, y: 0, z: -20 }), false);
+    });
+    const stagedPositions = echoes.map(echo => ({ ...echo.b.translation() }));
+    for (let i = 0; i < 180; i++) { powers.step(DT, 2101 + i * DT, BOUNDS); world.step(); }
+    echoes.forEach((echo, index) => vectorNear(echo.b.translation(), stagedPositions[index], 'staged position resists gravity'));
+    assert.equal(powers.launchStaged({ x: 0, y: 0, z: -20 }), 2);
+    assert.equal(powers.launchStaged({ x: 0, y: 0, z: -20 }), 0, 'main-shot release happens once');
+    const launchTime = powers.time;
+    powers.step(DT, launchTime + DT, BOUNDS);
+    world.step();
+    assert.ok(echoes.every(echo => Math.hypot(echo.b.linvel().x, echo.b.linvel().z) > 19.5), 'real physics tick preserves full staged-launch speed');
+    echoes.forEach(echo => {
+      assert.equal(echo.staged, false);
+      assert.equal(echo.isHeld, false);
+      assert.equal(echo.b.bodyType(), RAPIER.RigidBodyType.Dynamic);
+      near(Math.hypot(echo.b.linvel().x, echo.b.linvel().z), 20, 'coherent main-shot speed after damping', .02);
+      assert.ok(echo.b.linvel().z < -19.8, 'small angular spread keeps the same direction');
+      assert.equal(powers.holdEcho(echo), true, 'launched echo is catchable again');
     });
   });
 });
@@ -305,15 +337,15 @@ test('Gravity pulls across a high-friction floor, brakes at its center, and rest
 
 function liveSnapshot(powers, main) {
   return Object.freeze([
-    { position: { ...main.position }, velocity: { ...main.velocity } },
-    ...powers.echoes.map(echo => ({ position: { ...echo.b.translation() }, velocity: { ...echo.b.linvel() } })),
-  ].map(source => Object.freeze({ position: Object.freeze(source.position), velocity: Object.freeze(source.velocity) })));
+    { position: { ...main.position }, velocity: { ...main.velocity }, radius: RADIUS },
+    ...powers.echoes.map(echo => ({ position: { ...echo.b.translation() }, velocity: { ...echo.b.linvel() }, radius: powers.echoRadius })),
+  ].map(source => Object.freeze({ position: Object.freeze(source.position), velocity: Object.freeze(source.velocity), radius: source.radius })));
 }
 
-function multiplySplit(powers, main, activationId) {
+function multiplySplit(powers, main, activationId, bounds = null) {
   const sources = liveSnapshot(powers, main);
   const before = powers.echoes.map(echo => ({ echo, position: { ...echo.b.translation() }, velocity: { ...echo.b.linvel() } }));
-  assert.equal(powers.spawnSplit({ activationId, angleDegrees: 18 }, main.position, main.velocity, activationId, sources), true);
+  assert.equal(powers.spawnSplit({ activationId, angleDegrees: 18 }, main.position, main.velocity, activationId, sources, bounds), true);
   assert.equal(powers.echoes.length, before.length + sources.length * 2, 'only the activation snapshot creates children');
   for (const old of before) {
     assert.equal(powers.isValid(old.echo), true, 'original echo remains live');
@@ -382,6 +414,7 @@ test('A 27-ball transition formation fits the lower zone without overlaps and ev
     assert.ok(powers.echoes.every(echo => echo.b.translation().z < -45), 'unbounded travel follows the convoy');
     powers.followTransition(main.position, Infinity, bounds);
     powers.resumeAfterTransition(210);
+    assert.equal(powers.launchStaged(main.velocity), 26);
     for (const echo of powers.echoes) {
       assert.equal(powers.isValid(echo), true);
       assert.equal(powers.holdEcho(echo), true, 'every survivor can be caught');
@@ -414,7 +447,9 @@ test('Instanced echo rendering grows through 27/81/243 balls without a gameplay 
       if (total < 27) continue;
       powers.parkForTransition(main.position, { lowerZoneZ: 0, bottom: 6, halfWidth: 6.25 });
       powers.resumeAfterTransition(0);
+      assert.equal(powers.launchStaged(main.velocity), total - 1);
       for (const echo of powers.echoes) echo.b.setLinvel({ x: Math.sin(echo.id) * 15, y: 0, z: Math.cos(echo.id) * 15 }, true);
+      assert.ok(powers.echoes.every(echo => echo.b.isDynamic() && (echo.c.collisionGroups() & 16) !== 0), 'benchmark uses active mutually colliding dynamic balls');
       const start = performance.now();
       for (let step = 0; step < 120; step++) {
         powers.step(DT, step * DT, BOUNDS);
@@ -434,3 +469,142 @@ test('Instanced echo rendering grows through 27/81/243 balls without a gameplay 
 });
 
 test('Non-transfer main reposition leaves live and held extra balls unchanged',()=>withPhysics(({powers})=>{const [held,moving]=split(powers);powers.holdEcho(held);const before={...moving.b.linvel()};powers.resumeAfterTransition(5);assert.equal(held.isHeld,true);vectorNear(moving.b.linvel(),before,'Moving extra retains velocity');}));
+
+test('Real Rapier contacts bounce extra↔extra and main↔extra, including Pierce-compatible solver masks', () => {
+  const neutral = { ...BOUNDS, upperStallAcceleration: 0, lowerReturnAcceleration: 0, lowerZoneZ: 50 };
+  withPhysics(({ powers, world }) => {
+    const [left, right] = split(powers);
+    left.b.setTranslation({ x: -1, y: .5, z: 0 }, true);
+    right.b.setTranslation({ x: 1, y: .5, z: 0 }, true);
+    left.b.setLinvel({ x: 5, y: 0, z: 0 }, true);
+    right.b.setLinvel({ x: -5, y: 0, z: 0 }, true);
+    for (const echo of [left, right]) { echo.c.setRestitution(1); echo.c.setFriction(0); }
+    const queue = new RAPIER.EventQueue(true);
+    let pairContact = false;
+    try {
+      for (let i = 0; i < 50; i++) {
+        powers.step(DT, i * DT, neutral);
+        world.step(queue);
+        queue.drainCollisionEvents((a, b, start) => {
+          if (start && [a, b].includes(left.c.handle) && [a, b].includes(right.c.handle)) pairContact = true;
+        });
+      }
+      assert.equal(pairContact, true, 'extra spheres produce a real contact event');
+      assert.ok(left.b.linvel().x < -4 && right.b.linvel().x > 4, 'extra balls bounce away from each other');
+    } finally { queue.free(); }
+  }, { x: 0, y: 0, z: 0 });
+  withPhysics(({ powers, world }) => {
+    const [echo, other] = split(powers);
+    powers.removeEcho(other, false);
+    const main = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(-1, .5, 0).setCcdEnabled(true));
+    const mainCollider = world.createCollider(RAPIER.ColliderDesc.ball(RADIUS).setDensity(2)
+      .setFriction(0).setRestitution(1).setCollisionGroups(0x00020017).setSolverGroups(0x00020013)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS), main);
+    echo.c.setSolverGroups(0x00100013);
+    echo.c.setFriction(0); echo.c.setRestitution(1);
+    echo.b.setTranslation({ x: 1, y: .5, z: 0 }, true);
+    echo.b.setLinvel({ x: -5, y: 0, z: 0 }, true);
+    main.setLinvel({ x: 5, y: 0, z: 0 }, true);
+    const queue = new RAPIER.EventQueue(true);
+    let pairContact = false;
+    try {
+      for (let i = 0; i < 50; i++) {
+        powers.step(DT, i * DT, neutral);
+        world.step(queue);
+        queue.drainCollisionEvents((a, b, start) => {
+          if (start && [a, b].includes(mainCollider.handle) && [a, b].includes(echo.c.handle)) pairContact = true;
+        });
+      }
+      assert.equal(pairContact, true, 'main and extra spheres still contact during Pierce');
+      assert.ok(echo.b.linvel().x > 0, 'extra ball reverses after the main-ball collision');
+      assert.ok(main.linvel().x < 4.9, 'main ball also receives the collision impulse');
+    } finally { queue.free(); }
+  }, { x: 0, y: 0, z: 0 });
+});
+
+test('Repeated Split places 81 mutually colliding balls without overlaps or rail/loss-edge violations', () => {
+  withPhysics(({ powers }) => {
+    const main = { position: { x: 1.6, y: .41, z: 5.3 }, velocity: { x: 9, y: 0, z: 10 } };
+    const bounds = { top: -6, bottom: 6, tableHalf: () => 2.4 };
+    for (const activationId of [601, 602, 603, 604]) {
+      multiplySplit(powers, main, activationId, bounds);
+      const occupied = [{ position: main.position, radius: RADIUS },
+        ...powers.echoes.map(echo => ({ position: echo.b.translation(), radius: powers.echoRadius }))];
+      occupied.forEach((sphere, index) => {
+        if (index) {
+          assert.ok(Math.abs(sphere.position.x) + sphere.radius < bounds.tableHalf(sphere.position.z));
+          assert.ok(sphere.position.z - sphere.radius > bounds.top);
+          assert.ok(sphere.position.z + sphere.radius < bounds.bottom);
+          assert.ok(sphere.position.y >= sphere.radius);
+        }
+        for (let j = 0; j < index; j++) {
+          const other = occupied[j];
+          assert.ok(Math.hypot(sphere.position.x - other.position.x, sphere.position.y - other.position.y,
+            sphere.position.z - other.position.z) >= sphere.radius + other.radius,
+          `overlapping physical spawn pair ${index}/${j}`);
+        }
+      });
+    }
+    assert.equal(powers.echoes.length, 80);
+    assert.ok(powers.echoes.some(echo => echo.b.translation().y > main.position.y + powers.echoRadius),
+      'dense rail-adjacent populations can use separated height layers');
+  });
+});
+
+test('Upper-zone anti-stall impulse starts a settled extra ball rolling on a real floor', () => {
+  withPhysics(({ powers, world }) => {
+    const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -.2, 0));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(20, .2, 20).setFriction(.35), floor);
+    const [echo, other] = split(powers);
+    powers.removeEcho(other, false);
+    echo.b.setTranslation({ x: 0, y: powers.echoRadius + .01, z: -3 }, true);
+    echo.b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    for (let i = 0; i < 90; i++) world.step();
+    const before = echo.b.translation().z;
+    for (let i = 0; i < 180; i++) {
+      powers.step(DT, i * DT, { ...BOUNDS, lowerZoneZ: 4 });
+      world.step();
+    }
+    assert.ok(echo.b.translation().z - before > 1, 'anti-stall force overcomes rolling/floor resistance');
+    assert.ok(echo.b.linvel().z > .5, 'upper low-speed ball moves down the table');
+    echo.b.setLinvel({ x: 10, y: 0, z: -8 }, true);
+    const fast = { ...echo.b.linvel() };
+    powers.step(DT, 3, BOUNDS);
+    vectorNear(echo.b.linvel(), fast, 'fast upper-zone ball is not given a forced return impulse');
+  });
+});
+
+test('A rested upper-zone extra traverses the real floor, gets one catch second, then returns through loss', () => {
+  withPhysics(({ powers, world, finished }) => {
+    const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -.2, 0));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(20, .2, 20).setFriction(.35), floor);
+    const [echo, other] = split(powers);
+    powers.removeEcho(other, false);
+    echo.b.setTranslation({ x: 0, y: powers.echoRadius + .01, z: -3 }, true);
+    echo.b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    for (let i = 0; i < 90; i++) world.step();
+    const bounds = { top: -10, bottom: 6, halfWidth: 20, lowerZoneZ: 0 };
+    let entryTime = null, returnTime = null, lostTime = null;
+    for (let i = 0; i < 900; i++) {
+      const now = i * DT;
+      powers.step(DT, now, bounds);
+      if (!powers.isValid(echo)) { lostTime = now; break; }
+      if (echo.inLowerZone && entryTime === null) entryTime = now;
+      if (echo.returning && returnTime === null) returnTime = now;
+      if (echo.inLowerZone && !echo.returning) {
+        assert.ok(Math.hypot(echo.b.linvel().x, echo.b.linvel().z) <= 2.8001,
+          'real catch-window motion remains slow');
+      }
+      world.step();
+    }
+    assert.notEqual(entryTime, null, 'anti-stall acceleration reaches the lower zone');
+    assert.notEqual(returnTime, null, 'one-second catch window expires');
+    assert.ok(returnTime - entryTime >= 1 - 1e-6 && returnTime - entryTime <= 1 + DT + 1e-6,
+      'catch period is one actual simulation second');
+    assert.notEqual(lostTime, null, 'downward return eventually crosses the loss boundary');
+    assert.ok(lostTime > returnTime);
+    assert.equal(echo.valid, false);
+    assert.equal(powers.echoes.length, 0);
+    assert.deepEqual(finished, [undefined]);
+  });
+});
