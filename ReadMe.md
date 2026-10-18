@@ -96,3 +96,8 @@ The effect uses a pooled gray-blue storm cone, broad luminous cyan spiral ribbon
 
 ### Any-ball aim framing
 Catching any ball now uses the same smooth aim-camera pose and pullback space. The camera follows the held ball through a parallel translation, preserving the centered shooting direction without drag-driven yaw; input remains on its frozen gesture projection. Global aim time approaches 30% speed and restores smoothly on release/cancel. Black Hole's selective ball slowdown is normalized against that global scale, so the two effects do not multiply into excessive slowdown.
+
+### Captured-cluster collision optimization
+While Black Hole or Tornado captures a playable cluster, its existing glass colliders keep their exact ball/extra-ball collision geometry. A temporary mass-zero local bounding box handles cube/table contacts instead. Visible meshes, fracture cells, Frost state, mass properties and velocities are retained. Shared field ownership keeps this representation until the final capture ends; release, direct-hit fracture, effect reset and arena cleanup restore/remove it safely. Direct ball and Bomb damage continue through the existing original-cube rules.
+
+Focused real-Rapier checks cover collision masks, holes, mass/center-of-mass/inertia, overlapping field ownership, stale bodies, friction and repeated cleanup. Synthetic dense-contact CPU comparisons are development diagnostics, not device FPS guarantees; rendering quality and FX geometry are unchanged.

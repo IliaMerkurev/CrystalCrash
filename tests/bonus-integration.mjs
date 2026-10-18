@@ -82,3 +82,8 @@ assert(source.includes('ballTimeScale.beforeStep(dt,slowedBalls,secondary.blackH
 assert(source.includes('render(simulationActive?dt*aimTimeScale.scale:0,dt)'));
 assert(source.includes('updateAimCamera(cameraDt)'));
 console.log('PASS any-ball aim-only simulation scale, modal freeze, real-time camera and normalized Black Hole composition wiring');
+// Temporary environment proxies never replace visual/fracture state or ball hulls.
+assert(source.includes('captureCollisionProxy.sync([secondary.blackHole,secondary.well],blocks);updatePierce()'));
+assert(code('removeCluster').indexOf('captureCollisionProxy?.release(o)')<code('removeCluster').indexOf('world.removeRigidBody'));
+for(const name of ['loadTestArena','generateSection','equipTestBonus'])assert(code(name).includes('captureCollisionProxy?.reset()'),name);
+console.log('PASS capture proxy sync precedes physics, and fracture/scene/effect resets restore collision representation');
