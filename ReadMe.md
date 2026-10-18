@@ -209,3 +209,5 @@ The first implementation includes Pulse, Pierce, Arc and Safety Halo, one active
 Validation for this iteration: production build and static source review only. No browser, gameplay or scripted simulation tests were run, at the owner's request. Playability and phone performance await owner review.
 
 Contact integration explicitly sets both collision groups and solver groups: Pierce keeps floor/gate response while suppressing structural glass response. Contact points for non-solving manifolds are transformed from collider-local coordinates. HUD includes shape icons and live charge segments, with DOM updates only when inventory changes.
+
+Completion polish: upcoming arenas show the same assigned core types; shared core instance buffers are released on transition. Nonblocking labels queue instead of overwriting each other and disappear when their action is completed. Pickups have compact contact shadows and visible colored safe-return paths. Pierce displays its three segments, active countdown and exit state. Arena sequence and bonus values live in separate data modules for later expansion.
