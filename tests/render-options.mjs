@@ -1,0 +1,6 @@
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import {environmentVariant,withHidden,reflectionProfile} from '../src/render-options.js';
+let enabled=true;const m=new THREE.MeshPhysicalMaterial();m.onBeforeCompile=s=>{s.fragmentShader+='\n// existing melt/bevel';};m.customProgramCacheKey=()=> 'existing-key';environmentVariant(m,()=>enabled);let s={vertexShader:'v',fragmentShader:'f'};m.onBeforeCompile(s);assert(!s.fragmentShader.includes('#undef'));const on=m.customProgramCacheKey();enabled=false;s={vertexShader:'v',fragmentShader:'f'};m.onBeforeCompile(s);assert(s.fragmentShader.startsWith('#undef USE_ENVMAP'));assert(s.vertexShader.startsWith('#undef USE_ENVMAP'));assert(s.fragmentShader.includes('existing melt/bevel'));assert.notEqual(m.customProgramCacheKey(),on);
+const a={visible:true},b={visible:false};assert.throws(()=>withHidden([a,a,b,null],()=>{assert(!a.visible);throw Error('draw');}));assert.equal(a.visible,true);assert.equal(b.visible,false);assert(reflectionProfile(128).roughness>reflectionProfile(512).roughness);assert(reflectionProfile(128).blur<1.5);
+console.log('PASS no-env shader branch preserves hooks, distinct cache keys, reflection exclusions restore on failure, coherent roughness mapping');

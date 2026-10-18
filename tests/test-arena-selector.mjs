@@ -6,6 +6,8 @@ import vm from 'node:vm';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import {GLASS,TUNE} from '../src/config.js';
+import {DEFAULT_PERFORMANCE_SETTINGS} from '../src/performance-settings.js';
+import {environmentVariant} from '../src/render-options.js';
 import {RenderQuality,QUALITY_TIERS} from '../src/render-quality.js';
 import {intactShellColliderDesc} from '../src/intact-shell-collider.js';
 import {FractureTemplateCache} from '../src/fracture-template-cache.js';
@@ -53,7 +55,7 @@ await RAPIER.init();
 const v3=(...n)=>new THREE.Vector3(...n),powers=new BonusController(),scene=new THREE.Scene();
 let effectsCleared=0,notices=[],windowEvents={};
 const context={tutorialEvent(){},tutorial:null,
- QUALITY_TIERS,renderQuality:new RenderQuality(),REFLECTION_RES:1024,applyRenderQuality(){},intactShellColliderDesc,fractureTemplates:new FractureTemplateCache(),BlackHoleRelease,CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
+ performanceSettings:{...DEFAULT_PERFORMANCE_SETTINGS},environmentMaterials:{cube:new Set(),debris:new Set()},environmentVariant,performanceUI:null,performanceDiagnostics(){return {};},createPerformanceSettingsUI(){return {refresh(){}};},QUALITY_TIERS,renderQuality:new RenderQuality(),REFLECTION_RES:1024,applyRenderQuality(){},intactShellColliderDesc,fractureTemplates:new FractureTemplateCache(),BlackHoleRelease,CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
  arenaDefinition,arenaBlocks,document,window:{addEventListener:(name,fn)=>windowEvents[name]=fn},$ :id=>elements.get(id),
  v3,clamp:THREE.MathUtils.clamp,C:{...TUNE},GROUP:{table:0x0001001f,ball:0x00020017,structure:0x0004001f,debris:0x00080005},
  scene,powers,camera:new THREE.PerspectiveCamera(42,390/844,.1,100),cameraBase:v3(0,15,17),
@@ -70,7 +72,7 @@ const context={tutorialEvent(){},tutorial:null,
  qaPower:'bomb',started:true,paused:false,bonusTestOpen:false,bonusTestPanel:null,blackHoleLookPoint:null,reduced:false,
  tell:(message)=>notices.push(message),tableHalf:()=>6.25,
 };
-vm.createContext(context);
+vm.createContext(context);vm.runInContext(code('registerEnvironmentMaterial'),context);
 for(const name of ['rand','layoutZ','fixed','arenaPhysics','setupPhysics','addBlock','removeCluster','disposeDebris','resetBall','sectionBlocks','generateSection','closeGate','makePreview','cancelDrag','updateRailLighting','updateAimCamera','loadTestArena','setupBonusTestMenu','syncModalBlur'])vm.runInContext(code(name),context);
 context.setupPhysics();
 context.bonusWorld=new BonusWorld({scene,controller:powers,radius:context.C.ballRadius,bounds:()=>({top:context.TOP,mid:0,bottom:7,half:context.tableHalf}),blocked:()=>false,onSound(){},onNotice(){},onActivate(){}});
@@ -128,8 +130,8 @@ for(const level of [2,14,2,14,14,2]){
  for(const collider of context.colliders.keys())assert(context.world.getCollider(collider),'no stale collider reference');
  for(const body of [...old.oldBodies,...old.oldEchoBodies,old.oldGate])assert(!body.isValid(),'old body was removed');
  assert.equal(old.oldPreview.parent,null);assert(old.oldPreviewCores.every(core=>core.parent===null));assert.notEqual(context.previewGroup,old.oldPreview);
- assert.equal(context.previewGroup.children.filter(o=>o.geometry&&o!==context.previewGroup.children.at(-1)).length,arenaDefinition(level+1).blockCount);
- assert.equal(old.fragment.mesh.parent,null);assert(old.tracked.every(resource=>old.disposed.has(resource)),'cluster, child and fracture geometry disposed');
+ assert.equal(context.previewGroup.userData.cheap.children.length,arenaDefinition(level+1).blockCount);
+ assert.equal(context.previewGroup.userData.full.visible,false);assert(context.previewGroup.userData.cheap.children.every(m=>m.geometry.type==='BoxGeometry'&&!m.castShadow&&!m.receiveShadow));assert.equal(old.fragment.mesh.parent,null);assert(old.tracked.every(resource=>old.disposed.has(resource)),'cluster, child and fracture geometry disposed');
  assert.equal(context.fragments.length,0);assert.equal(context.dust.length,0);assert(context.dustMeshes.every(mesh=>mesh.count===0));assert.equal(context.glints.count,0);assert.equal(context.particleGlow.count,0);
  assert.equal(context.bonusWorld.pickups.length,0);assert(old.oldPickups.every(p=>p.mesh.parent===null&&p.shadow.parent===null));assert.equal(old.timer.parent,null);
  assert.equal(context.bonusWorld.pendingTips.length,0);assert.equal(context.bonusWorld.tip,null);assert([...context.bonusWorld.rings,...context.bonusWorld.arcs].every(fx=>!fx.mesh.visible));
