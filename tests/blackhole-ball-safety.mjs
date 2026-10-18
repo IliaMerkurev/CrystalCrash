@@ -8,5 +8,5 @@ vm.createContext(context);vm.runInContext(source.slice(a,b),context);context.par
 context.parkBlackHoleReturns();assert.equal(resets,1);assert.equal(holds,1,'no repeated teleport');context.secondary.blackHole=null;context.parkBlackHoleReturns();assert.equal(echo.isHeld,true,'safe hold survives field expiry');
 // Existing manual release can restore dynamic motion without any special state.
 echo.isHeld=false;echoBody.setBodyType(RAPIER.RigidBodyType.Dynamic,true);echoBody.setLinvel({x:0,y:0,z:-12},true);world.step();assert(echoBody.translation().z<3);assert.equal(context.blackHoleBallSafety.previous.size,0);
-assert.match(source,/function checkLoss\(\)\{parkBlackHoleReturns\(\);const p=/);assert.match(source,/function generateSection\(reposition=false\)\{blackHoleBallSafety.reset\(\)/);
+assert.match(source,/function checkLoss\(\)\{parkBlackHoleReturns\(\);const p=/);assert.match(source,/function generateSection\(reposition=false\)\{chargedLaunches.reset\(\);blackHoleBallSafety.reset\(\)/);
 world.free();console.log('PASS returning main/extra parking, outgoing escape, held exclusion, expiry, identity, no repeated reset, normal inactive behavior and production pre-loss wiring');

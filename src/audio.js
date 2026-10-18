@@ -404,7 +404,7 @@ export class AudioFX {
       void this.unlock({retry:false});
       return;
     }
-    const known = ['launch', 'wall', 'hit', 'glassTap', 'ballLand', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
+    const known = ['perfect', 'launch', 'wall', 'hit', 'glassTap', 'ballLand', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
     if (!known.includes(name)) return;
     try {
       const now = this.context.currentTime;
@@ -440,6 +440,8 @@ export class AudioFX {
           noise(.24,.055,3200,'highpass',.09); tone(42,.55,.075,'sine',23,.12);
           break;
         case 'heavy': tone(130,.28,.13,'sine',32);noise(.14,.09,700,'lowpass');break;
+        case 'perfect':
+          tone(660,.16,.09,'sine',880);tone(990,.22,.075,'sine',1320,.055);break;
         case 'launch':
           tone(290, 0.14, 0.15, 'sine', 115); noise(0.07, 0.065, 1300, 'bandpass'); break;
         case 'wall':

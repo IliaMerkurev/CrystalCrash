@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {GameTutorial,TUTORIAL_STORAGE_KEY,projectTutorialPoint} from '../src/game-tutorial.js';
+import {GameTutorial,TUTORIAL_STORAGE_KEY,projectTutorialPoint,TUTORIAL_STEPS} from '../src/game-tutorial.js';
 const node=()=>({style:{},children:[],hidden:false,attrs:{},appendChild(n){this.children.push(n);},setAttribute(k,v){this.attrs[k]=v;},remove(){this.removed=true;}});
 const doc={head:node(),body:node(),createElement:node};
 const data=new Map(),storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};
@@ -8,11 +8,11 @@ const base={started:true,state:'HELD',mainUpper:false,mainPoint:{x:200,y:250},lo
 t.update(base);assert.equal(t.visible,true);assert.equal(t.step,'catch');assert.equal(t.notify('unrelated'),false);assert.equal(t.notify('catch'),true);
 t.update({...base,drag:{mode:'aim'},state:'AIMING'});assert.equal(t.step,'aim');assert.equal(t.visible,true);assert.equal(t.notify('aim'),true);assert.equal(t.notify('release'),true);
 t.update({...base,state:'BALL_ACTIVE'});assert.equal(t.visible,false);assert.equal(t.notify('attract'),false);
-t.update({...base,state:'BALL_ACTIVE',mainUpper:true});assert.equal(t.visible,true);assert.equal(t.notify('attract'),true);
+t.update({...base,state:'BALL_ACTIVE',mainUpper:true});assert.equal(t.visible,true);assert.equal(t.notify('attract'),true);assert.equal(t.notify('attractMove',{drag:{mode:'attract',age:.25,steerDistance:32}}),true);
 t.update({...base,state:'BALL_ACTIVE'});assert.equal(t.step,'pickup');assert.equal(t.visible,false);
 t.update({...base,eligiblePickupPoint:{x:240,y:300}});assert.equal(t.visible,true);assert.equal(t.notify('pickup'),true);
 t.update({...base,gatePoint:{x:200,y:200}});assert.equal(t.visible,false);assert.equal(t.notify('gate'),false);
-t.update({...base,gatePoint:{x:200,y:200},gateReady:true,gateOpen:true});assert.equal(t.visible,true);assert.equal(t.notify('gate'),true);assert.equal(t.completed,false);assert.equal(t.notify('extraCatch'),true);assert.equal(t.notify('extraRelease'),true);assert.equal(t.controlsCompleted,true);assert.equal(t.completed,false);assert.equal(JSON.parse(data.get(TUTORIAL_STORAGE_KEY)).done.length,8);
+t.update({...base,gatePoint:{x:200,y:200},gateReady:true,gateOpen:true});assert.equal(t.visible,true);assert.equal(t.notify('gate'),true);assert.equal(t.completed,false);assert.equal(t.notify('extraCatch'),true);assert.equal(t.notify('extraRelease'),true);assert.equal(t.controlsCompleted,true);assert.equal(t.completed,false);assert.equal(JSON.parse(data.get(TUTORIAL_STORAGE_KEY)).done.length,TUTORIAL_STEPS.length);
 const saved=new GameTutorial({document:doc,storage});assert.equal(saved.controlsCompleted,true);assert.equal(saved.completed,false);saved.replay();assert.equal(saved.step,'catch');assert.deepEqual(JSON.parse(data.get(TUTORIAL_STORAGE_KEY)).done,[]);
 for(const c of [{paused:true},{menu:true},{test:true},{started:false},{state:'TRANSITION'},{state:'REPOSITION'},{drag:{echo:{}}}]){saved.update({...base,...c});assert.equal(saved.visible,false);}
 for(const c of [{paused:true},{menu:true},{test:true},{started:false},{state:'TRANSITION'},{drag:{echo:{}}}]){saved.update({...base,...c});assert.equal(saved.notify('catch'),false);}
@@ -41,7 +41,7 @@ console.log('game-tutorial: queued power explanations, stale target rejection an
 
 const gateCue=new GameTutorial({document:doc,storage:null,project:p=>p});gateCue.update({...base,gateReady:true,gateOpen:false,gatePoint:{x:200,y:20}});assert.equal(gateCue.displayStep,'gateBreak');assert.equal(gateCue.visible,true);assert.equal(gateCue.notify('gate'),false);assert.equal(gateCue.pointer.style.top,'104px');
 
-const all=new GameTutorial({document:doc,storage,project:p=>p});all.replay();all.update(base);for(const action of ['catch','aim','release','pickup','extraCatch','extraRelease'])assert.equal(all.notify(action),true);assert.equal(all.notify('attract',{mainUpper:true}),true);assert.equal(all.notify('gate',{gateReady:true,gateOpen:true}),true);
+const all=new GameTutorial({document:doc,storage,project:p=>p});all.replay();all.update(base);for(const action of ['catch','aim','release','pickup','extraCatch','extraRelease'])assert.equal(all.notify(action),true);assert.equal(all.notify('attract',{mainUpper:true}),true);assert.equal(all.notify('attractMove',{state:'BALL_ACTIVE',mainUpper:true,drag:{mode:'attract',age:.25,steerDistance:32}}),true);assert.equal(all.notify('gate',{gateReady:true,gateOpen:true}),true);
 for(const kind of ['pulse','pierce','arc','frost','split','gravity','heavy','blackhole','bomb']){
  const context={...base,dt:.1,bonusTargets:[{kind,point:{x:200,y:300}}]};
  for(let i=0;i<15;i++)all.update(context);
