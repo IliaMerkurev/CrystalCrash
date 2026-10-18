@@ -129,7 +129,7 @@ export class AudioFX {
       this.lastPlayed.set(name, now);
       const v = this._voice(now), t = now + 0.002;
       const power = Number.isFinite(strength) ? Math.max(0, Math.min(1.5, strength)) : 1;
-      const level = Math.sqrt(power);
+      const level = Math.sqrt(power) * (['pulse','pierce','arc','halo','frost','split','gravity','heavy'].includes(name)?1.22:1);
       const names = ['blue', 'emerald', 'amber', 'violet', 'ruby'];
       const index = typeof type === 'string' ? Math.max(0, names.indexOf(type.toLowerCase())) : Math.abs(Math.trunc(Number(type) || 0)) % 5;
       const pitch = [980, 1175, 740, 1397, 880][index] * (0.985 + Math.random() * 0.03);

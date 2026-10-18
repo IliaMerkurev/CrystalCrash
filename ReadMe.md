@@ -8,19 +8,19 @@ Live preview: https://crystal-crash.pearly-haven-3558.chatgpt.site
 
 Use Node.js 24 LTS. Run `npm ci`, then `npm run dev`. `npm run build` creates a standalone `dist/index.html`; `npm run preview` serves it. Use HTTP rather than file://. Vite is build tooling, not an embedded development server. Three.js 0.186.1 and Rapier compatibility/WASM 0.19.3 are pinned in the lockfile.
 
-The HTML embeds the runtime, generated reflection environment, procedural models and synthesized sounds. No runtime CDN or external media is needed. The build rejects exports at or above 5,000,000 bytes; current export is approximately 3.48 MB. This is a playable prototype, not an ad-network-certified MRAID package.
+The HTML embeds the runtime, generated reflection environment, procedural models and synthesized sounds. No runtime CDN or external media is needed. The build rejects exports at or above 5,000,000 bytes; current export is approximately 3.49 MB. This is a playable prototype, not an ad-network-certified MRAID package.
 
 ## Controls and progression
 
 Press PLAY to unlock audio. Grab the ball anywhere in the lower half, keep holding, pull back and release. Holding elsewhere below the middle line attracts the ball; when it reaches the pointer the same gesture becomes aiming. Crossing the bottom loss line cannot be rescued by attraction. Pause or tab switching suspends gameplay.
 
-Fourteen authored arenas introduce five glass tiers with 1/2/4/6/8 direct-hit durability. Arena 01 contains exactly 12 T1 cubes and one Pulse. Arenas 01–10 introduce Pulse, Pierce, Arc and Halo; arenas 11–14 introduce Frost, Split, Gravity Well and Heavy Hit. The fourteen-arena sequence then repeats. Clear all targets, manually break the unlocked green-pulsing gate, and launch through it to travel to the next arena.
+Fourteen authored arenas introduce five glass tiers with 1/2/4/6/8 direct-hit durability. Arena 01 contains 30 T1 cubes and exactly one Pulse. The first five arenas contain 30/36/41/45/48 blocks after added T1 rear formations; existing stronger-tier structures remain intact. Arenas 01–10 introduce Pulse, Pierce, Arc and Halo; arenas 11–14 introduce Frost, Split, Gravity Well and Heavy Hit. The fourteen-arena sequence then repeats. Clear all targets, manually break the unlocked green-pulsing gate, and launch through it to travel to the next arena.
 
 Both rails fill green from bottom to top according to original shell area removed. Partial chipping counts; detached debris never counts twice.
 
 ## Powers
 
-Break a cube containing a small colored sun, then touch its landed 3D pickup with the moving main ball. A colored cue appears around the ball. Attack powers apply automatically on the next valid glass impact; there is no activation button. One active attack and one FIFO queued attack are allowed. Halo occupies an independent save slot. Queued pickups remain visibly labelled as queued. Uncollected pickups do not block completion; inaccessible pickups visibly return to a safe point.
+Break a cube containing a large colored particle sun, then touch its landed 3D pickup with the moving main ball. A colored cue appears around the ball. Attack powers apply automatically on the next valid glass impact; there is no activation button. One active attack and one FIFO queued attack are allowed. Halo occupies an independent save slot. Queued pickups remain visibly labelled as queued. Uncollected pickups do not block completion; inaccessible pickups visibly return to a safe point.
 
 - Pulse: one normal impact plus one damage to at most six nearby originals within 2.2 ball diameters, excluding the struck original.
 - Pierce: three distinct original hits, at most six seconds after the first, without glass bounce. Normal response resumes only after leaving all remaining shell volumes.
@@ -52,6 +52,8 @@ Polished chamfers, tinted transparent surfaces, procedural normal detail, an emb
 
 ## Verification status
 
-This iteration received production builds, byte-budget checks and static source review only. No browser, gameplay, simulation or device-performance tests were run, at the owner's request. The owner will validate playability and balance. Previous visual checks do not establish acceptance of the new power system.
+Following owner approval, focused controller dispatch, Rapier secondary-effect, particle lifecycle, pooled feedback and early-arena layout checks passed. Browser rendering and device-performance validation remain pending; these logic checks do not establish visual or full gameplay acceptance.
 
 Work is on `prototype/0.3`. Main remains the approved prior version until an explicit merge request. Important iterations are committed and pushed, and every deployment reuses the same public Site. Keep caches, recordings and test artifacts outside Git.
+
+Contained powers use a dense 32-particle sun and layered additive sprites, without an embedded pickup model. Destruction removes the sun, grows the pickup over 0.38 seconds, and retains 16 smaller attached orbit particles. Each power has pooled world feedback and a distinct synthesized sound. The default lower-zone ball position projects near 64% screen height.

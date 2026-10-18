@@ -28,8 +28,8 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   for (const kind of kinds) {
     surfaces[kind] = ownMaterial(new THREE.MeshStandardMaterial({color: colors[kind], emissive: colors[kind], emissiveIntensity: .48, metalness: .42, roughness: .23}));
     lights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color: colors[kind], toneMapped: false}));
-    coreLights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color:new THREE.Color(colors[kind]).multiplyScalar(2.2),transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
-    coreGlows[kind] = ownMaterial(new THREE.SpriteMaterial({map:glowTexture,color:new THREE.Color(colors[kind]).multiplyScalar(1.6),transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+    coreLights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color:new THREE.Color(colors[kind]).multiplyScalar(2.2),transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
+    coreGlows[kind] = ownMaterial(new THREE.SpriteMaterial({map:glowTexture,color:new THREE.Color(colors[kind]).multiplyScalar(1.6),transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
     glows[kind] = ownMaterial(new THREE.SpriteMaterial({map: glowTexture, color: colors[kind], transparent: true, opacity: .28, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false}));
   }
   const sphere = ownGeometry(new THREE.SphereGeometry(1, 16, 10));
@@ -166,33 +166,69 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     return root;
   }
   function createCore(kind) {
+    return createParticleSun(kind, false);
+  }
+  /** A small release aura, in pickup-model local units. No central sun or icon.
+   * Attach to the model root and call animateCore(aura, seconds).
+   */
+  function createPickupAura(kind) {
+    return createParticleSun(kind, true);
+  }
+  function createParticleSun(kind, pickup) {
     kind = key(kind);
-    const group = new THREE.Group(); group.name = `core-${kind}`;
-    const sun = mesh(group, sphere, coreLights[kind], 0, 0, -.025, .052);
-    const pin = mesh(group, sphere, coreLights[kind], 0, 0, .006, .025);
-    const silhouette = createModel(kind); silhouette.scale.multiplyScalar(.145); silhouette.position.z = .015; group.add(silhouette);
-    const orbit = mesh(group, thinRing, coreLights[kind]); orbit.rotation.set(.8, .25, .2);
-    const dots = new THREE.InstancedMesh(dotGeometry, coreLights[kind], 12);
+    const group = new THREE.Group(); group.name = `${pickup ? 'pickup-aura' : 'core'}-${kind}`;
+    const sun = pickup ? null : new THREE.Sprite(coreGlows[kind]);
+    const pin = pickup ? null : new THREE.Sprite(coreGlows[kind]);
+    if(sun){sun.scale.set(.22,.22,1);group.add(sun);pin.scale.set(.12,.12,1);pin.position.set(-.012,.012,.058);group.add(pin);}
+    const orbit = mesh(group, thinRing, pickup ? lights[kind] : coreLights[kind]);
+    orbit.scale.setScalar(pickup ? 1.8 : 2.05); orbit.rotation.set(.8, .25, .2);
+    const orbit2 = pickup ? null : mesh(group, thinRing, coreLights[kind]);
+    if (orbit2) {orbit2.scale.setScalar(1.66); orbit2.rotation.set(-.65, .6, -.5);}
+    const count = pickup ? 16 : 32;
+    const dots = new THREE.InstancedMesh(dotGeometry, coreLights[kind], count);
     dots.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     dots.frustumCulled = false; group.add(dots);
-    const glow = new THREE.Sprite(coreGlows[kind]); glow.scale.set(.46, .46, 1); group.add(glow);
-    for(const o of [sun,pin,orbit,dots,glow])o.renderOrder=6;
+    // Deterministic variations are allocated once, never inside the frame loop.
+    const particles = new Float32Array(count * 5);
+    for (let i = 0; i < count; i++) {
+      const dense = !pickup && i < 10, j = i * 5;
+      particles[j] = i * 2.39996323;
+      particles[j + 1] = dense ? .045 + (i % 5) * .012 : .17 + (i % 6) * .022;
+      particles[j + 2] = (.34 + (i % 5) * .085) * (i % 2 ? 1 : -1);
+      particles[j + 3] = .58 + (i % 4) * .12;
+      particles[j + 4] = pickup ? 1 + (i % 4) * .28 : 1.8 + (i % 5) * .48;
+    }
+    const glow = new THREE.Sprite(pickup ? glows[kind] : coreGlows[kind]);
+    const glowDiameter = pickup ? .22 : .62;
+    glow.scale.set(glowDiameter, glowDiameter, 1); group.add(glow);
+    if (!pickup) {
+      // Compact stacked halos give a dense bright sun while keeping the cube rim readable.
+      const innerHalo = new THREE.Sprite(coreGlows[kind]); innerHalo.scale.set(.34, .34, 1); group.add(innerHalo);
+      const centerHalo = new THREE.Sprite(coreGlows[kind]); centerHalo.scale.set(.18, .18, 1); group.add(centerHalo);
+    }
+    group.traverse(object => {object.renderOrder = 6;});
     group.userData.bonusKind = kind;
-    group.userData.coreAnimation = {sun, pin, orbit, dots, silhouette, matrix: new THREE.Matrix4(), particleScale: new THREE.Vector3(2.8,2.8,2.8)};
+    group.userData.coreAnimation = {sun, pin, orbit, orbit2, dots, particles, pickup,
+      matrix: new THREE.Matrix4(), particleScale: new THREE.Vector3()};
     animateCore(group, 0);
     return group;
   }
-  /** Time in seconds; no allocations and no position/lifecycle changes. */
+  /** Time in seconds; no allocations and no position/lifecycle changes.
+   * Supports sealed suns and released pickup auras.
+   */
   function animateCore(group, time) {
     const data = group.userData.coreAnimation;
     if (!data) return;
-    data.sun.scale.setScalar(.052 * (1 + .08 * Math.sin(time * 2.2)));
+    if (data.sun) data.sun.scale.setScalar(.22 * (1 + .055 * Math.sin(time * 2.2)));
     data.orbit.rotation.z = .2 + time * .22;
-    data.silhouette.rotation.y = Math.sin(time * .65) * .24;
-    for (let i = 0; i < 12; i++) {
-      const angle = i * Math.PI / 6 + time * (.5+(i%3)*.11);
-      const radius = .125 + (i % 3) * .021;
-      data.matrix.makeTranslation(Math.cos(angle) * radius, Math.sin(angle) * radius * .64, Math.sin(angle * 2 + i) * .035);
+    if (data.orbit2) data.orbit2.rotation.z = -.5 - time * .16;
+    for (let i = 0; i < data.dots.count; i++) {
+      const j = i * 5, angle = data.particles[j] + time * data.particles[j + 2];
+      const radius = data.particles[j + 1], tilt = data.particles[j + 3];
+      const pulse = 1 + .12 * Math.sin(time * 2.6 + i * 1.7);
+      data.matrix.makeTranslation(Math.cos(angle) * radius, Math.sin(angle) * radius * tilt,
+        Math.sin(angle + i * .9) * radius * .42);
+      data.particleScale.setScalar(data.particles[j + 4] * pulse);
       data.matrix.scale(data.particleScale);
       data.dots.setMatrixAt(i, data.matrix);
     }
@@ -235,6 +271,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     const group = new THREE.Group(); group.name = 'bonus-visual-warmup';
     for (let i = 0; i < kinds.length; i++) {
       const model = createModel(kinds[i]), core = createCore(kinds[i]), accent = createBallAccent(kinds[i]);
+      model.add(createPickupAura(kinds[i]));
       model.position.x = (i - (kinds.length - 1) / 2) * 1.2; core.position.set(model.position.x, .8, .1); accent.position.set(model.position.x, -.8, .1);
       group.add(model, core, accent);
     }
@@ -255,5 +292,5 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     materials.forEach(material => material.dispose());
     glowTexture.dispose();
   }
-  return {createModel, createCore, animateCore, createBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
+  return {createModel, createCore, createPickupAura, animateCore, createBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
 }

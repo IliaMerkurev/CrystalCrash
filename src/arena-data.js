@@ -8,6 +8,7 @@ const F = '1:frost', S = '1:split', G = '1:gravity', B = '1:heavy';
 const ARENAS = [
   {
     name: 'First Spark', skill: 'Release, return, collect',
+    rear: [[-1, 0, 3], [0, 0, 4], [1, 0, 3], [-1, 1, 4], [1, 1, 4]],
     stacks: [
       [-1.5, 1, [1, 1, 1]], [-.5, 1, [1, P, 1]],
       [.5, 1, [1, 1, 1]], [1.5, 1, [1, 1, 1]],
@@ -15,6 +16,7 @@ const ARENAS = [
   },
   {
     name: 'Double Tap', skill: 'Repeat a hit or choose a support',
+    rear: [[-2, 0, 3], [-1, 0, 3], [1, 0, 3], [2, 0, 3], [-1, 1, 4], [1, 1, 4]],
     stacks: [
       [-2, 1, [2, 1, 1, 1]], [-1, 1, [2, P, 1, 1]],
       [1, 1, [2, 1, 1, 1]], [2, 1, [2, 1, 1, 1]],
@@ -22,6 +24,7 @@ const ARENAS = [
   },
   {
     name: 'Split Decision', skill: 'Choose either branch around the strong node',
+    rear: [[-2, 0, 3], [0, 0, 4], [2, 0, 3], [-1, 1, 5], [1, 1, 6]],
     stacks: [
       [-1, 0, [2, P, 1]], [1, 0, [2, I, 1]],
       [-2, 1, [2, 1, 1]], [2, 1, [2, 1, 1]],
@@ -31,6 +34,7 @@ const ARENAS = [
   },
   {
     name: 'Glass Bridge', skill: 'Remove the two accessible bridge supports',
+    rear: [[-2, 0, 4], [-1, 0, 3], [1, 0, 3], [2, 0, 4], [-1, 1, 4], [1, 1, 4]],
     stacks: [
       [-1, 1, [1, 2, 1]], [1, 1, [1, 2, 1]],
       [-2, 1, [2, 1, 1]], [2, 1, [2, 1, 1]],
@@ -41,6 +45,7 @@ const ARENAS = [
   },
   {
     name: 'The Core', skill: 'Open the sides around the single strong core',
+    rear: [[-2, 0, 4], [-1, 0, 4], [1, 0, 4], [2, 0, 4], [-1, 1, 4], [1, 1, 4]],
     stacks: [
       [-1, 1, [1, 2, 1]], [1, 1, [1, 2, 1]],
       [-2, 1, [2, 1, 1]], [2, 1, [2, 1, 1]],
@@ -159,6 +164,7 @@ export function arenaDefinition(level) {
     tierCounts[type]++;
     if (bonus) bonuses.push(bonus);
   }
+  tierCounts[0] += (arena.rear || []).reduce((sum, [, , height]) => sum + height, 0);
   if (arena.bridge) tierCounts[3]++;
   if (arena.core) tierCounts[4]++;
   return {
@@ -175,7 +181,7 @@ export function arenaDefinition(level) {
  * compensates for that mapping so rotated neighboring cubes cannot intersect.
  * The host retains final tapered-table edge clamping and pickup safe points.
  */
-export function arenaBlocks(level, { cube = .88, layoutZ = z => z } = {}) {
+export function arenaBlocks(level, { cube = .88, layoutZ = z => z, bounds = {} } = {}) {
   const { arena } = selected(level), specs = [];
   const pitch = cube * Math.SQRT2 + .14;
   const depthScale = Math.abs(layoutZ(0) - layoutZ(-1));
@@ -199,5 +205,58 @@ export function arenaBlocks(level, { cube = .88, layoutZ = z => z } = {}) {
   if (arena.core) {
     specs.push([0, cube * 4.5 + .015, rowZ(1), 4, cube, cube, cube]);
   }
+  if (arena.rear) addRearFormation(specs, arena, cube, pitch, layoutZ, bounds);
   return specs;
+}
+
+/** Rear additions contain only T1, never a second random pickup. Work in world
+ * units after layoutZ: normalized spacing alone shrinks on short aspect ratios.
+ * bounds.half may be tableHalf(z) or a constant half-width. Existing formations
+ * retain their authored locations; only additions adapt to the available space.
+ */
+function addRearFormation(specs, arena, cube, pitch, layoutZ, bounds) {
+  const extent = cube * Math.SQRT1_2;
+  const top = Number.isFinite(bounds.top) ? bounds.top : layoutZ(-6.15);
+  const halfAt = typeof bounds.half === 'function' ? bounds.half
+    : () => Number.isFinite(bounds.half) ? bounds.half : 6.25;
+  const rearLimit = top + extent + .4;
+  const farthestFace = Math.min(...specs.map(s => s[2] -
+    (s[4] === s[5] && s[5] === s[6] ? (s[4] + s[6]) * Math.SQRT1_2 / 2 : s[6] / 2)));
+  const frontLimit = farthestFace - extent - .14;
+  if (frontLimit >= rearLimit) {
+    const twoRows = frontLimit - rearLimit >= pitch;
+    // Put the back row near the gate; stretch a second row into the empty rear
+    // area while retaining at least one full collision-safe pitch between rows.
+    const rows = twoRows
+      ? [Math.max(rearLimit + pitch, Math.min(frontLimit, layoutZ(-3.8))), rearLimit]
+      : [(frontLimit + rearLimit) / 2];
+    const columns = new Map();
+    for (const [column, band, height] of arena.rear) {
+      const row = twoRows ? band : 0, z = rows[row];
+      const usable = Math.min(3.8, halfAt(z - extent) - extent - .34, halfAt(z + extent) - extent - .34);
+      const slots = Math.max(0, Math.floor(usable / pitch));
+      const slot = Math.max(-slots, Math.min(slots, column));
+      const key = `${row}:${slot}`;
+      const current = columns.get(key) || { x: slot * pitch, z, height: 0 };
+      current.height += height;
+      columns.set(key, current);
+    }
+    for (const { x, z, height } of columns.values()) {
+      for (let i = 0; i < height; i++) specs.push([x, cube * (i + .5) + .015, z, 0, cube, cube, cube]);
+    }
+    return;
+  }
+  // On an unusually short upper field no separate physical rear row can fit.
+  // Extend existing front columns, which are clear of the bridge/core, instead
+  // of placing cubes through the gate or silently dropping authored targets.
+  const nearestRow = Math.min(...arena.stacks.map(([, row]) => row));
+  const columns = arena.stacks.filter(([, row]) => row === nearestRow)
+    .map(([column, row, tiers]) => ({ x: column * pitch,
+      z: layoutZ(-1.1 - row * pitch / Math.abs(layoutZ(0) - layoutZ(-1))), height: tiers.length }));
+  const count = arena.rear.reduce((sum, [, , height]) => sum + height, 0);
+  for (let i = 0; i < count; i++) {
+    const column = columns.reduce((best, next) => next.height < best.height ? next : best);
+    specs.push([column.x, cube * (column.height + .5) + .015, column.z, 0, cube, cube, cube]);
+    column.height++;
+  }
 }

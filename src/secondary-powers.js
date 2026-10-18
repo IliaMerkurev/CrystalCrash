@@ -11,6 +11,7 @@ export class SecondaryPowers {
   this.ringGeometry=new THREE.TorusGeometry(1,.025,4,48);
   this.wellMaterial=new THREE.MeshBasicMaterial({color:0x7887FF,transparent:true,opacity:.7,depthWrite:false});
   this.iceMaterial=new THREE.MeshBasicMaterial({color:0xB8E9F5,transparent:true,opacity:.8,depthWrite:false});
+  this.frostGeometry=new THREE.BoxGeometry(1,1,1);this.frostMaterial=new THREE.MeshBasicMaterial({color:0xb8e9f5,transparent:true,opacity:.16,depthWrite:false});
   this.wellMesh=new THREE.Mesh(this.ringGeometry,this.wellMaterial);this.wellMesh.rotation.x=-Math.PI/2;this.wellMesh.visible=false;scene.add(this.wellMesh);
  }
  spawnSplit(point,reflectedVelocity,now,effect={}) {
@@ -77,19 +78,19 @@ export class SecondaryPowers {
   for(const id of wanted){
    let largest=null;for(const o of blocks.values())if(o.origin?.id===id&&(!largest||(o.ids?.length||0)>(largest.ids?.length||0)))largest=o;
    if(!largest){const mesh=this.marks.get(id);if(mesh){mesh.visible=false;this.markPool.push(mesh);this.marks.delete(id);}continue;}
-   let mesh=this.marks.get(id);if(!mesh){mesh=this.markPool.pop()||new this.THREE.Mesh(this.ringGeometry,this.iceMaterial);this.scene.add(mesh);this.marks.set(id,mesh);}
-   mesh.visible=true;mesh.position.copy(largest.b.translation());mesh.quaternion.copy(largest.b.rotation());mesh.rotateX(Math.PI/2);mesh.scale.set(Math.max(.18,largest.sx*.72),Math.max(.18,largest.sz*.72),1);
+   let mesh=this.marks.get(id);if(!mesh){mesh=this.markPool.pop();if(!mesh){mesh=new this.THREE.Group();const ring=new this.THREE.Mesh(this.ringGeometry,this.iceMaterial);ring.rotation.x=Math.PI/2;ring.scale.setScalar(.72);const veil=new this.THREE.Mesh(this.frostGeometry,this.frostMaterial);veil.scale.setScalar(1.025);mesh.add(ring,veil);}this.scene.add(mesh);this.marks.set(id,mesh);}
+   mesh.visible=true;mesh.position.copy(largest.b.translation());mesh.quaternion.copy(largest.b.rotation());mesh.scale.set(largest.sx,largest.sy,largest.sz);
   }
  }
  remap(fn){for(const echo of this.echoes){const p=new this.THREE.Vector3().copy(echo.b.translation());fn(p);echo.b.setTranslation(p,true);echo.mesh.position.copy(p);}if(this.well){const p=new this.THREE.Vector3().copy(this.well.point);fn(p);Object.assign(this.well.point,p);this.wellMesh.position.set(p.x,.035,p.z);}}
  render() {for(const echo of this.echoes){echo.mesh.position.copy(echo.b.translation());echo.mesh.quaternion.copy(echo.b.rotation());}}
  warmupObjects() {
-  const group=new this.THREE.Group();group.add(new this.THREE.Mesh(this.echoGeometry,this.echoMaterial),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.ringGeometry,this.iceMaterial));return group;
+  const group=new this.THREE.Group();group.add(new this.THREE.Mesh(this.echoGeometry,this.echoMaterial),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.ringGeometry,this.iceMaterial),new this.THREE.Mesh(this.frostGeometry,this.frostMaterial));return group;
  }
  endWell(){if(this.well)for(const target of this.well.targets)for(const saved of target.friction||[]){const c=this.world.getCollider(saved.handle);if(c){c.setFriction(saved.friction);c.setFrictionCombineRule(saved.rule);}}this.well=null;this.wellMesh.visible=false;}
  clear() {
   for(const echo of [...this.echoes])this.removeEcho(echo,false);this.endWell();
   for(const mesh of this.marks.values()){mesh.visible=false;this.markPool.push(mesh);}this.marks.clear();
  }
- dispose() {this.clear();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();}
+ dispose() {this.clear();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();this.frostGeometry.dispose();this.frostMaterial.dispose();}
 }
