@@ -97,9 +97,10 @@ export class EditorDocument {
   }
 
   /** Call only after the caller has confirmed its save succeeded. */
-  markSaved() {
-    if (!this.dirty) return false;
-    this.#saved = this.#current;
+  markSaved(value = this.value) {
+    const saved = validatedSnapshot(value, this.#validate);
+    if (saved === this.#saved) return false;
+    this.#saved = saved;
     this.#notify('saved', 'Save document');
     return true;
   }

@@ -36,7 +36,9 @@ root.innerHTML = `
     <div class="header-actions">
       <button id="import-button" title="Import a validated editor JSON file">${svg('import')}<span>Import</span></button>
       <button id="export-button" title="Download the current editor document as JSON">${svg('export')}<span>Export JSON</span></button>
-      <button id="save-button" class="primary" title="Choose where to save this JSON file">${svg('save')}<span>Save<span class="save-label"> as…</span></span></button>
+      <button id="save-as-button" title="Save a separate editor JSON file">${svg('save')}<span>Save as…</span></button>
+      <button id="save-button" class="primary" title="Save changes directly to the configured project source">${svg('save')}<span>Save</span></button>
+      <button id="settings-button" class="icon-button" title="Source save settings" aria-label="Source save settings">${svg('settings')}</button>
     </div>
     <input id="import-file" type="file" accept=".json,application/json" hidden>
   </header>
@@ -79,9 +81,19 @@ root.innerHTML = `
       <div class="panel-heading"><h2>Inspector</h2><span id="property-count" class="small-count">—</span></div>
       <div id="inspector-readonly" class="inspector-readonly" hidden>Play mode is a temporary test. Return to Edit to reset the scene and keep editing.</div>
       <div id="inspector" class="inspector-content"><div class="empty-state">${svg('cube')}<strong>Select an object</strong>Its editable properties will appear here.</div></div>
-      <div class="project-note"><strong>Local workflow</strong><br>Changes stay in this session until you export or save JSON. Import the JSON into project source with the project’s import command before publishing.</div>
+      <div class="project-note"><strong>Local workflow</strong><br><span id="workflow-description">Save updates your configured project source. Save As and Export JSON keep separate copies.</span></div>
     </aside>
   </main>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title" aria-describedby="settings-description">
+    <div class="settings-heading"><h2 id="settings-title">Source save settings</h2><button id="settings-close-button" class="icon-button subtle" aria-label="Close settings" title="Close settings">×</button></div>
+    <p id="settings-description">Choose the repository folder on the machine running the local editor server. Save writes to this project’s source files.</p>
+    <label class="settings-label" for="source-root">Repository root</label>
+    <input id="source-root" type="text" placeholder="/absolute/path/to/crystal-crash" autocomplete="off" spellcheck="false" aria-describedby="source-root-help">
+    <p id="source-root-help" class="settings-help">Paste or type the folder path. The local server remembers it on this machine.</p>
+    <div id="source-status" class="source-status" role="status" aria-live="polite">Checking the local editor server…</div>
+    <div class="settings-actions"><button id="source-reload-button">Reload from source</button><button id="source-configure-button" class="primary">Use this repository</button></div>
+    <p class="settings-help">Reload replaces the current scene with source. Use Save As or Export JSON first to keep a separate copy.</p>
+  </dialog>
   <footer id="status-bar" class="status-bar" data-tone="busy"><span class="status-led"></span><span id="status-text" class="status-text" role="status" aria-live="polite">Connecting to the game viewport…</span><span class="local-indicator">${svg('lock')}LOCAL SESSION</span></footer>
 `;
 
@@ -100,6 +112,21 @@ let suggestedName = sampleScene ? 'sample-scene.json' : 'crystal-crash-scene.jso
 let bridgeGeneration = 0;
 let bridgeCleanup = [];
 let refreshPending = false;
+const source = {
+  available: false,
+  loading: !sampleScene,
+  token: null,
+  root: null,
+  revision: null,
+  project: null,
+  document: null,
+  blocked: false,
+  conflict: false,
+  message: sampleScene ? 'Source save is unavailable for the sample scene. Use Save As or Export JSON.' : 'Checking the local editor server…',
+  tone: '',
+};
+let sourceSessionPromise;
+let sourceSaving = false;
 const validate = value => clone(api.validateDocument(clone(value)));
 
 function status(message, tone = '') {
@@ -116,7 +143,12 @@ function updateControls() {
   $('redo-button').disabled = !editable || !history?.canRedo;
   $('import-button').disabled = !editable;
   $('export-button').disabled = !ready || busy;
-  $('save-button').disabled = !ready || busy;
+  $('save-as-button').disabled = !ready || busy || sourceSaving;
+  $('save-button').disabled = !ready || busy || sourceSaving || !source.available || source.blocked;
+  $('save-button').title = source.available && !source.blocked
+    ? (source.root ? `Save changes directly to ${source.root}` : 'Choose a repository root in Settings to enable source save')
+    : source.message;
+  updateSourceControls();
   $('arena-select').disabled = !editable;
   $('entity-search').disabled = !ready;
   $('focus-button').disabled = !editable || !selected || typeof api?.focus !== 'function';
@@ -167,7 +199,7 @@ async function applyEdit(next, label) {
     await api.applyDocument(clone(canonical));
     history.commit(canonical, label);
     if (selectedId) api.select?.(selectedId);
-  }, `${label}. Export or save JSON to keep your changes.`);
+  }, `${label}. Save to project source or keep a separate JSON copy.`);
 }
 
 function renderHierarchy() {
@@ -467,7 +499,7 @@ function exportJSON(message = 'JSON download started. Import the file into proje
 }
 
 async function saveAs() {
-  if (!history || busy) return;
+  if (!history || busy || sourceSaving) return;
   if (typeof window.showSaveFilePicker !== 'function') {
     exportJSON('This browser has no save-file picker. JSON download started instead.');
     return;
@@ -482,13 +514,230 @@ async function saveAs() {
     try { handle = await picker; }
     catch (error) { if (error.name === 'AbortError') { status('Save cancelled.'); return; } throw error; }
     status('Saving JSON…', 'busy');
-    await saveJSONFile(history.value, { handle, suggestedName });
-    history.markSaved();
+    const savingHistory = history;
+    const snapshot = savingHistory.value;
+    await saveJSONFile(snapshot, { handle, suggestedName });
+    if (history === savingHistory) savingHistory.markSaved(snapshot);
     suggestedName = handle.name || suggestedName;
     $('document-name').textContent = suggestedName;
     $('document-name').title = suggestedName;
     status('JSON saved. Import it into project source before publishing.', 'success');
   });
+}
+
+function updateSourceControls() {
+  const canConfigure = source.available && Boolean(api && history) && !busy && !sourceSaving && mode === 'edit';
+  $('source-root').disabled = !source.available || busy || sourceSaving;
+  $('source-configure-button').disabled = !canConfigure || !$('source-root').value.trim();
+  $('source-reload-button').disabled = !canConfigure || !source.root;
+  $('source-reload-button').classList.toggle('attention', source.conflict);
+  $('source-status').textContent = source.message;
+  $('source-status').dataset.tone = source.tone;
+  $('workflow-description').textContent = sampleScene
+    ? 'Use Save As or Export JSON to keep this sample scene. Direct source save is only available for the project scene.'
+    : source.available
+      ? (source.root ? 'Save writes to your configured repository. Save As and Export JSON keep separate copies.' : 'Choose a repository root in Settings, then Save directly to project source. You can also keep a JSON copy.')
+      : 'Run npm run editor locally to save directly to project source. Save As and Export JSON keep separate copies.';
+}
+
+function sourceStatus(message, tone = '') {
+  source.message = message;
+  source.tone = tone;
+  updateSourceControls();
+}
+
+function openSettings() {
+  $('source-root').value = source.root || '';
+  updateSourceControls();
+  if (!$('settings-dialog').open) $('settings-dialog').showModal();
+}
+
+async function sourceRequest(endpoint, body) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(`/__editor/source/${endpoint}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: body === undefined ? { Accept: 'application/json' } : {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Editor-Token': source.token,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    let result;
+    try { result = await response.json(); }
+    catch { throw new Error('The local editor server did not return a source-save response. Run npm run editor locally.'); }
+    if (!response.ok) {
+      const error = new Error(typeof result?.error === 'string' ? result.error : result?.message || `Source save request failed (${response.status}).`);
+      error.status = response.status;
+      throw error;
+    }
+    if (!result || typeof result !== 'object') throw new Error('The local editor server returned an invalid response.');
+    return result;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('The local editor server did not respond in time. Your edits are preserved.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function checkSourceSession(session) {
+  if (session.enabled !== true || typeof session.token !== 'string' || !session.token) {
+    throw new Error('Direct source save is not enabled by this server.');
+  }
+  if (session.root !== null && (typeof session.root !== 'string' || !session.root || session.revision == null || typeof session.project !== 'string' || !session.project || !session.document)) {
+    throw new Error('The local editor server returned an incomplete source session.');
+  }
+  return session;
+}
+
+async function loadSourceSession() {
+  if (sampleScene) { updateSourceControls(); return; }
+  try {
+    const session = checkSourceSession(await sourceRequest('session'));
+    source.available = true;
+    source.token = session.token;
+    source.root = session.root;
+    source.revision = session.revision;
+    source.project = session.project;
+    source.document = session.document;
+    sourceStatus(source.root
+      ? `Ready to save source in ${source.root}.`
+      : 'Choose a repository root to enable direct Save. Save As and Export JSON also remain available.');
+  } catch (error) {
+    source.available = false;
+    sourceStatus('Local source save is unavailable. Run npm run editor in the repository and open the local editor. Save As and Export JSON still work.', 'error');
+  } finally {
+    source.loading = false;
+    updateControls();
+  }
+}
+
+async function applySourceDocument(documentValue) {
+  const canonical = validate(documentValue);
+  await api.applyDocument(clone(canonical));
+  history.replace(canonical);
+  history.markSaved();
+  selectedId = null;
+  api.select?.(null);
+  $('document-name').textContent = 'Source configuration';
+  $('document-name').title = source.root || 'Source configuration';
+}
+
+async function configureSource() {
+  if (!source.available || !api || !history || busy || sourceSaving || mode !== 'edit') return;
+  const requestedRoot = $('source-root').value.trim();
+  if (!requestedRoot) { sourceStatus('Enter the repository folder path first.', 'error'); return; }
+  const warning = history.dirty ? '\n\nIf this selects a different repository, its source will replace your current scene and discard unsaved edits.' : '\n\nIf the repository changes, its source will be loaded into the editor.';
+  if (!window.confirm(`Use this repository for direct source saves?\n\n${requestedRoot}${warning}`)) return;
+  await operation('Configuring project source…', async () => {
+    const previousRoot = source.root;
+    let configured = false;
+    try {
+      const result = await sourceRequest('configure', { root: requestedRoot });
+      if (typeof result.root !== 'string' || !result.root || result.revision == null || typeof result.project !== 'string' || !result.project || !result.document) throw new Error('The local editor server returned an incomplete source configuration.');
+      source.root = result.root;
+      $('source-root').value = result.root;
+      configured = true;
+      if (result.root !== previousRoot) {
+        source.blocked = true;
+        await applySourceDocument(result.document);
+        source.revision = result.revision;
+        source.project = result.project;
+        source.document = clone(result.document);
+        source.blocked = false;
+        source.conflict = false;
+        sourceStatus(`Source loaded from ${source.root}. Future saves write to this repository.`, 'success');
+        status('Repository configured and its source loaded.', 'success');
+      } else {
+        // Configuring the same root is not a reload or a save. Preserve the
+        // previous optimistic lock as well as all existing unsaved edits.
+        sourceStatus(source.conflict
+          ? 'The repository is unchanged. Source changed on disk; reload explicitly before saving.'
+          : `Repository confirmed: ${source.root}. Your current edits are preserved.`, source.conflict ? 'error' : 'success');
+        status('Repository confirmed. Current edits are preserved.', 'success');
+      }
+    } catch (error) {
+      sourceStatus(`${error.message || error}${configured ? ' Reload from source before saving.' : ''}`, 'error');
+      throw error;
+    }
+  });
+}
+
+async function reloadSource() {
+  if (!source.available || !source.root || !api || !history || busy || sourceSaving || mode !== 'edit') return;
+  if (history.dirty && !window.confirm('Reload from source and discard your unsaved edits? Use Save As or Export JSON first if you need a separate copy.')) return;
+  await operation('Reloading project source…', async () => {
+    try {
+      const session = checkSourceSession(await sourceRequest('session'));
+      source.token = session.token;
+      if (!session.root) throw new Error('No repository is configured on the server. Choose a repository root first.');
+      source.blocked = true;
+      source.root = session.root;
+      $('source-root').value = session.root;
+      await applySourceDocument(session.document);
+      source.revision = session.revision;
+      source.project = session.project;
+      source.document = clone(session.document);
+      source.blocked = false;
+      source.conflict = false;
+      sourceStatus(`Latest source loaded from ${source.root}.`, 'success');
+      status('Latest source loaded. Save now uses this source revision.', 'success');
+    } catch (error) {
+      sourceStatus(`${error.message || error} Your current document is preserved unless the source was successfully loaded.`, 'error');
+      throw error;
+    }
+  });
+}
+
+async function mainSave() {
+  if (!api || !history || busy || sourceSaving) return;
+  if (!source.available || !source.root || source.blocked) {
+    openSettings();
+    status(source.message, source.available ? '' : 'error');
+    return;
+  }
+  // Capture the document, revision, and repository identity together. Never
+  // refresh a lock before writing: that would hide changes outside this tab.
+  const savingHistory = history;
+  const snapshot = savingHistory.value;
+  const revision = source.revision;
+  const project = source.project;
+  const savingRoot = source.root;
+  sourceSaving = true;
+  updateControls();
+  status('Saving project source…', 'busy');
+  try {
+    const result = await sourceRequest('save', { document: snapshot, revision, project });
+    if (result.revision == null || result.root !== savingRoot || result.project !== project) throw new Error('The save response did not identify the expected repository and revision. Your edits remain unsaved.');
+    source.revision = result.revision;
+    source.project = result.project;
+    source.document = clone(snapshot);
+    source.conflict = false;
+    const unchanged = history === savingHistory && same(history.value, snapshot);
+    if (history === savingHistory) savingHistory.markSaved(snapshot);
+    sourceStatus(`Source saved in ${source.root}.`, 'success');
+    status(unchanged ? 'Project source saved.' : 'Project source saved. Newer session edits are still unsaved.', 'success');
+  } catch (error) {
+    if (error.status === 409) {
+      source.conflict = true;
+      sourceStatus('Source or the configured repository changed outside this tab. Your edits are preserved. Keep a JSON copy if needed, then use Reload from source before saving again.', 'error');
+      openSettings();
+      status(source.message, 'error');
+    } else {
+      sourceStatus(`${error.message || error} Your edits are preserved.`, 'error');
+      status(source.message, 'error');
+    }
+  } finally {
+    sourceSaving = false;
+    refreshScene();
+    updateControls();
+  }
 }
 
 function resizeViewport() {
@@ -566,7 +815,21 @@ async function connectBridge() {
     if (candidate && typeof candidate.readDocument === 'function') {
       try {
         api = candidate;
-        const initial = validate(api.readDocument());
+        let initial = validate(api.readDocument());
+        if (!history) {
+          await sourceSessionPromise;
+          if (generation !== bridgeGeneration) return;
+          if (source.available && source.root && source.document) {
+            try {
+              initial = validate(source.document);
+              await api.applyDocument(clone(initial));
+            } catch (error) {
+              initial = validate(api.readDocument());
+              source.blocked = true;
+              sourceStatus(`The configured source could not be loaded: ${error.message || error} Reload from source before saving.`, 'error');
+            }
+          }
+        }
         if (generation !== bridgeGeneration) return;
         if (history) {
           await api.applyDocument(history.value);
@@ -574,7 +837,7 @@ async function connectBridge() {
         } else {
           history = new EditorDocument(initial, validate);
           history.markSaved();
-          status('Ready. Select an object to start editing.', 'success');
+          status(source.blocked ? source.message : 'Ready. Select an object to start editing.', source.blocked ? 'error' : 'success');
         }
         projectTitle = humanize(api.projectLabel || projectTitle);
         $('project-title').textContent = projectTitle;
@@ -626,7 +889,8 @@ function keyboard(event) {
   if (target?.closest?.('input,textarea,select,[contenteditable="true"]') || event.defaultPrevented) return;
   const key = event.key.toLowerCase();
   const modifier = event.ctrlKey || event.metaKey;
-  if (modifier && key === 's') { event.preventDefault(); saveAs(); return; }
+  if ($('settings-dialog').open) return;
+  if (modifier && key === 's') { event.preventDefault(); if (event.shiftKey) saveAs(); else mainSave(); return; }
   if (modifier && key === 'z') { event.preventDefault(); undoRedo(event.shiftKey ? 'redo' : 'undo'); return; }
   if (modifier && key === 'y') { event.preventDefault(); undoRedo('redo'); return; }
   if (modifier || event.altKey || mode !== 'edit') return;
@@ -651,7 +915,13 @@ $('import-file').addEventListener('change', async event => {
   }, 'JSON imported. You can undo the import.');
 });
 $('export-button').addEventListener('click', () => exportJSON());
-$('save-button').addEventListener('click', saveAs);
+$('save-button').addEventListener('click', mainSave);
+$('save-as-button').addEventListener('click', saveAs);
+$('settings-button').addEventListener('click', openSettings);
+$('settings-close-button').addEventListener('click', () => $('settings-dialog').close());
+$('source-root').addEventListener('input', updateSourceControls);
+$('source-configure-button').addEventListener('click', configureSource);
+$('source-reload-button').addEventListener('click', reloadSource);
 $('undo-button').addEventListener('click', () => undoRedo('undo'));
 $('redo-button').addEventListener('click', () => undoRedo('redo'));
 $('entity-search').addEventListener('input', renderHierarchy);
@@ -679,13 +949,14 @@ $('game-frame').addEventListener('load', connectBridge);
 $('game-frame').addEventListener('error', () => { status('The game viewport could not load.', 'error'); $('reload-button').hidden = false; });
 window.addEventListener('keydown', keyboard);
 window.addEventListener('beforeunload', event => {
-  if (history?.dirty) { event.preventDefault(); event.returnValue = ''; }
+  if (history?.dirty || sourceSaving) { event.preventDefault(); event.returnValue = ''; }
 });
 new ResizeObserver(resizeViewport).observe($('viewport-stage'));
 new ResizeObserver(() => {
   const frame = $('game-frame');
   $('viewport-size').textContent = `${frame.clientWidth} × ${frame.clientHeight}`;
 }).observe($('viewport-frame'));
+sourceSessionPromise = loadSourceSession();
 updateControls();
 resizeViewport();
 connectBridge();

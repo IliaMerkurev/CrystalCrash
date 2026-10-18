@@ -5,3 +5,6 @@ qa/
 dist/
 
 editor-dist/
+
+.editor-local/
+src/presets/.editor-*.tmp

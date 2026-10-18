@@ -25,11 +25,17 @@ Open http://localhost:5173/editor.html. Hardware-accelerated WebGL2 is required.
 
 Positions use arena-normalized depth, so a layout survives aspect-ratio changes. Edited objects are constrained inside the upper play area; their rendered dimensions and Rapier shell colliders are rebuilt together. Transient shards, active balls, scores and animation time are never saved. The MVP edits existing authored cubes, not object creation/deletion or imported model topology.
 
-## Persist changes into the game
+## Save directly into project source
 
-Export JSON downloads a preset. Save As uses the browser file picker when supported; otherwise use Export. Import restores a validated JSON document. Download requests cannot confirm that a file was actually saved, so Export retains the unsaved indicator.
+Run `npm run editor`, then open Settings and enter the absolute CrystalCrash repository folder once. Configure validates the Git checkout, package identity, source preset and schema. It loads the destination preset into this editor after any unsaved-change confirmation. The displayed destination is the project that Save will update; if it is a different checkout, only its preset is loaded (the renderer/code still comes from the checkout running Vite). Use matching game versions, or launch the editor from the destination checkout.
 
-The editor does not silently modify repository files. Explicitly apply the chosen file:
+Save writes only `src/presets/crystal-crash.json` in that configured project. No export/import command is needed. The setting persists locally in ignored `.editor-local/settings.json` in the checkout running Vite. Each successful overwrite first saves the exact previous bytes in `.editor-local/backups/`, then atomically replaces the target. Restore a backup through Import and Save, or copy it back manually. Review and commit source changes as usual; Save does not commit or publish them.
+
+If another editor or process changes the source, Save reports a conflict and leaves your edits unsaved. Export them if needed, then use Settings → Reload source to explicitly discard the current document and load the latest version. Save never silently overwrites a stale revision or a different destination selected by another tab. A completed save clears the dirty marker only if no newer edits were made during the request.
+
+This service exists only in the local Vite development server, bound to loopback. It checks local Host/Origin, a per-process session token, JSON limits, preset validation and source revision. The request cannot choose a target filename. Symlinks in the preset path are rejected. Published/static editor builds have no filesystem API; use Save As or Export there. The independent sample scene also uses Save As/Export.
+
+Import and Export remain available for sharing presets. Save As uses the browser file picker when supported; otherwise it downloads JSON. Export retains the dirty marker because download completion cannot be verified. An optional command-line importer remains available:
 
 ```sh
 npm run preset:import -- /path/to/preset.json --dry-run
@@ -37,7 +43,7 @@ npm run preset:import -- /path/to/preset.json
 npm run build
 ```
 
-The importer validates project/version, ranges, known arena object IDs and size, then atomically replaces only `src/presets/crystal-crash.json`. Review the Git diff and commit that source JSON. Production imports it directly. Local storage is not the persistence mechanism. Do not commit an exported sample-scene preset as a game preset.
+Production consumes the saved JSON on the next build. Local storage is not used for source persistence. Do not apply a sample-scene preset to CrystalCrash.
 
 ## Separate editor build
 
@@ -56,4 +62,4 @@ An adapter exposes `projectLabel`, `arenaCount`, `listEntities`, `getObject`, `r
 
 ## Verification and limits
 
-`npm run editor:check` runs the focused checks (the persistence check restores the original preset after exercising the importer). Automated checks cover schema rejection, JSON roundtrip, history, stable IDs, runtime poses and real Rapier shell collider correspondence. Production bundle checks reject editor symbols. UI rendering, gizmo feel, file-picker interactions and Play/Stop still require a WebGL browser smoke check; the cloud browser could not reach the local preview server during this delivery. Existing GLB/custom shader/game behavior is retained rather than reimplemented by the editor.
+`npm run editor:save-check` checks direct-save configuration, backup, conflicts and request protection. `npm run editor:check` runs the focused checks (the persistence check restores the original preset after exercising the importer). Automated checks cover schema rejection, JSON roundtrip, history, stable IDs, runtime poses and real Rapier shell collider correspondence. Production bundle checks reject editor symbols. UI rendering, gizmo feel, file-picker interactions and Play/Stop still require a WebGL browser smoke check; the cloud browser could not reach the local preview server during this delivery. Existing GLB/custom shader/game behavior is retained rather than reimplemented by the editor.

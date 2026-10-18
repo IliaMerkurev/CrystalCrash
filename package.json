@@ -7,11 +7,12 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build && node scripts/inline.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "editor": "vite --host 127.0.0.1 --open /editor.html",
+    "editor": "vite --config vite.editor.config.js --open /editor.html",
     "editor:build": "vite build --mode editor --config vite.editor.config.js",
     "editor:preview": "vite preview --config vite.editor.config.js",
     "preset:import": "node scripts/import-preset.mjs",
-    "editor:check": "node --test tests/editor-document.test.mjs && node tests/editor-schema.mjs && node tests/editor-runtime.mjs && node tests/editor-persistence.mjs"
+    "editor:check": "node --test tests/editor-document.test.mjs && node tests/editor-schema.mjs && node tests/editor-runtime.mjs && node tests/editor-persistence.mjs",
+    "editor:save-check": "node tests/editor-source-save.mjs"
   },
   "dependencies": {
     "three": "0.186.1",

@@ -130,3 +130,21 @@ button[aria-pressed=true]{background:var(--accent-soft);border-color:#a88551;col
 @media(max-width:1150px){.workspace{grid-template-columns:200px minmax(200px,1fr) 265px}.brand{min-width:180px}.app-header{gap:13px;padding:0 12px}.document-name{max-width:110px}.app-toolbar{gap:9px;padding:0 11px}.viewport-help{display:none}.transform-group button{gap:5px}.transform-group button span{display:none}.header-actions button{font-size:11px;padding:6px 8px}.field-row{grid-template-columns:minmax(75px,1fr) minmax(80px,105px)}}
 @media(max-width:940px){.workspace{grid-template-columns:180px minmax(190px,1fr) 235px}.document-state-label{display:none}.brand{min-width:170px}.brand-title{font-size:12px}.document-name{max-width:100px}.viewport-toolbar{padding:0 9px;gap:6px}.viewport-title span{display:none}.viewport-size{font-size:9px}.viewport-stage{padding:9px}.header-actions button{gap:5px}.header-actions .save-label{display:none}.viewport-footer{padding:7px 9px}.effects-bar{padding:8px;gap:5px}.effects-bar label{display:none}.field-row{grid-template-columns:minmax(65px,1fr) 100px;gap:6px}.field-section{padding-left:10px;padding-right:10px}.project-note{font-size:9px}.selection-heading{padding:12px 10px}.panel-heading{padding:0 10px}.app-toolbar{gap:7px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
+
+.settings-dialog{width:min(500px,calc(100vw - 40px));max-height:calc(100dvh - 40px);overflow:auto;padding:20px;border:1px solid #465161;border-radius:12px;background:#171c24;color:var(--text);box-shadow:0 22px 80px #0009}
+.settings-dialog::backdrop{background:#06090dbb;backdrop-filter:blur(3px)}
+.settings-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+.settings-heading h2{margin:0;font-size:15px;font-weight:650;color:#f0f2f6}
+.settings-heading .icon-button{font-size:23px;line-height:1;color:#a2aebf}
+.settings-dialog p{color:#a1adbd;font-size:12px;line-height:1.6;margin:0 0 17px}
+.settings-label{display:block;font-size:11px;font-weight:600;margin-bottom:7px;color:#bdc7d5}
+.settings-dialog #source-root{width:100%;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;padding:9px 10px;min-height:37px}
+.settings-dialog .settings-help{font-size:10px;color:#8997aa;margin:7px 0 16px}
+.source-status{border:1px solid #343e4c;border-radius:7px;padding:11px 12px;background:#10151c;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.source-status[data-tone=error]{border-color:#663c47;color:#ffb0b0;background:#2a1b21}
+.source-status[data-tone=success]{border-color:#355d47;color:#a9d7b9}
+.settings-actions{display:flex;justify-content:space-between;gap:10px;margin:17px 0 0}
+.settings-actions button{min-height:34px;font-size:11px}
+.settings-actions .attention{border-color:#e8ba76;color:#f0c98e;background:var(--accent-soft)}
+.settings-dialog .settings-actions + .settings-help{margin-bottom:0}
+@media(max-width:1050px){.app-header .document-name{display:none}.header-actions{gap:5px}.header-actions #import-button span,.header-actions #export-button span{display:none}.header-actions #import-button,.header-actions #export-button{width:31px;padding:6px}.app-header{gap:10px}}

@@ -248,3 +248,11 @@ test('fallback failure cleans resources and unsupported browsers reject', async 
     await assert.rejects(saveJSONFile({}), /cannot save/);
   });
 });
+
+test('Saving an earlier submitted snapshot preserves correct dirty state after in-flight undo', () => {
+ const document=new EditorDocument({n:1},validate);
+ document.commit({n:2});const submitted=document.value;
+ document.undo();document.markSaved(submitted);
+ assert.equal(document.value.n,1);assert.equal(document.dirty,true);
+ document.redo();assert.equal(document.value.n,2);assert.equal(document.dirty,false);
+});
