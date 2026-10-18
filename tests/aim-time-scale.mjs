@@ -23,15 +23,15 @@ function fixture(run, gravity = 0) {
   try { run({ world, scaler, ball, cube, step }); } finally { scaler.reset(); world.free(); }
 }
 
-test('aiming smoothly approaches .4 in real time and release/cancel smoothly restores one', () => {
+test('aiming smoothly approaches .3 in real time and release/cancel smoothly restores one', () => {
   const aim = new AimTimeScale();
   const first = aim.update(DT, true);
-  assert.ok(first < 1 && first > .4, 'aim begins with a blend, not a snap');
-  near(first, .4 + .6 * Math.exp(-DT / aim.attack), 1e-12);
+  assert.ok(first < 1 && first > .3, 'aim begins with a blend, not a snap');
+  near(first, .3 + .7 * Math.exp(-DT / aim.attack), 1e-12);
   for (let i = 0; i < 300; i++) aim.update(DT, true);
-  assert.equal(aim.scale, .4);
+  assert.equal(aim.scale, .3);
   const release = aim.update(DT, false);
-  assert.ok(release > .4 && release < 1, 'release/cancel shares the smooth return');
+  assert.ok(release > .3 && release < 1, 'release/cancel shares the smooth return');
   for (let i = 0; i < 600; i++) aim.update(DT, false);
   assert.equal(aim.scale, 1);
 });
@@ -47,7 +47,7 @@ test('aim envelope is frame-rate independent and safe through rapid gesture reve
   for (let i = 0; i < 500; i++) {
     const previous = highRate.scale, aiming = i % 2 === 0;
     highRate.update(DT, aiming);
-    assert.ok(highRate.scale >= .4 && highRate.scale <= 1);
+    assert.ok(highRate.scale >= .3 && highRate.scale <= 1);
     assert.ok(aiming ? highRate.scale <= previous : highRate.scale >= previous);
   }
 });
@@ -67,6 +67,9 @@ test('pause freezes the envelope exactly, invalid clocks do nothing, reset clear
 });
 
 test('absolute scales compose by minimum, never by multiplying the slowdowns', () => {
+  assert.equal(relativeBallTimeScale(.35, .3), 1);
+  near(.3 * relativeBallTimeScale(.35, .3), .3, 1e-12);
+  assert.notEqual(.3 * relativeBallTimeScale(.35, .3), .105);
   near(relativeBallTimeScale(.35, .4), .875, 1e-12);
   near(.4 * relativeBallTimeScale(.35, .4), .35, 1e-12);
   assert.equal(relativeBallTimeScale(.7, .4), 1);
@@ -89,8 +92,8 @@ test('Black Hole absolute envelope keeps real-time attack/release while world is
   assert.equal(aimed.scale, frozen);
 });
 
-test('real Rapier: .4 global world plus .875 relative ball produces .35 ball and .4 cube speed', () => fixture(({ world, scaler, ball, cube, step }) => {
-  const aim = new AimTimeScale();
+test('real Rapier: custom .4 global world plus .875 relative ball produces .35 ball and .4 cube speed', () => fixture(({ world, scaler, ball, cube, step }) => {
+  const aim = new AimTimeScale({ minimumScale: .4 });
   aim.update(10, true);
   scaler.beforeStep(4, [], 1, aim.scale);
   assert.equal(aim.scale, .4); assert.equal(scaler.scale, .35);
@@ -171,3 +174,19 @@ test('real Rapier composed gravity and persistent force advance at .35 and resto
   near(ball.linvel().y, -9 * .7 * .35, .002);
   near(cube.linvel().y, -9 * .4, .002);
 }, -9));
+
+
+test('real Rapier: default .3 aim plus .35 Black Hole moves both ball and world at .3, never .105', () => fixture(({ world, scaler, ball, cube, step }) => {
+  const aim = new AimTimeScale();
+  aim.update(10, true);
+  scaler.beforeStep(4, [], 1, aim.scale);
+  assert.equal(aim.scale, .3); assert.equal(scaler.scale, .35);
+  ball.setLinvel({ x: 2, y: 0, z: 0 }, true);
+  cube.setLinvel({ x: 2, y: 0, z: 0 }, true);
+  for (let i = 0; i < 900; i++) step(DT, aim.scale);
+  near(ball.translation().x, 6, .002);
+  near(cube.translation().x, 6, .002);
+  near(ball.linvel().x, 2, .001);
+  near(cube.linvel().x, 2, .001);
+  near(world.timestep, DT * .3, 1e-9);
+}));

@@ -4,8 +4,8 @@
 const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
 
 export class AimTimeScale {
-  constructor({ minimumScale = .4, attack = .12, release = .24 } = {}) {
-    this.minimumScale = Math.min(1, Math.max(.05, finite(minimumScale, .4)));
+  constructor({ minimumScale = .3, attack = .12, release = .24 } = {}) {
+    this.minimumScale = Math.min(1, Math.max(.05, finite(minimumScale, .3)));
     this.attack = Math.max(.001, finite(attack, .12));
     this.release = Math.max(.001, finite(release, .24));
     this.scale = 1;

@@ -21,7 +21,7 @@ for(const n of ['cancelDrag','aim','pointerDown','pointerMove','pointerUp'])vm.r
 context.pointerDown({pointerId:1,clientX:200,clientY:400,button:0});assert.equal(context.drag.echo,echo);assert.equal(held,1);assert.equal(context.state,'BALL_ACTIVE');
 context.pointerMove({pointerId:1,clientX:200,clientY:550});context.pointerUp({pointerId:1,clientX:200,clientY:550});assert(released.z< -10);assert.equal(mainMoves,0);assert.equal(context.drag,null);assert.equal(context.state,'BALL_ACTIVE');
 context.state='MISSED';context.pointerDown({pointerId:2,clientX:200,clientY:400,button:0});assert.equal(context.drag.echo,echo);context.pointerMove({pointerId:2,clientX:200,clientY:550});context.pointerUp({pointerId:2,clientX:200,clientY:550});assert.equal(context.state,'MISSED');assert.equal(context.drag,null);
-assert(source.includes("drag?.mode==='aim'&&!drag.echo"));assert(source.includes('secondary?.remap(p=>{p.z+=STRIDE;})'));assert(source.includes('bonusWorld?.reset({preservePowers:reposition})'));
+assert(source.includes("drag?.mode==='aim'&&!reduced"));assert(source.includes("drag.echo?drag.heldPosition:heldPosition"));assert(source.includes('secondary?.remap(p=>{p.z+=STRIDE;})'));assert(source.includes('bonusWorld?.reset({preservePowers:reposition})'));
 console.log('PASS production Pulse area/3-hit damage; Arc radius chain, gap stop, unique hits and upper exclusion; Pierce instant-tier damage; extra-ball catch/relaunch keeps main state and attraction untouched; persistence/clock wiring inspected');
 // A main-ball miss must not delete a healthy secondary ball.
 let cleared=false;echo.valid=true;echo.activationId=77;context.powers=new BonusController();context.powers.splitActive=true;context.powers.splitActivationId=77;

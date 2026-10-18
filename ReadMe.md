@@ -93,3 +93,6 @@ Frost activates on pickup with an arena-wide snow wave and a fading transparent 
 Tornado now follows a smooth randomized route through the upper arena, collecting nearby playable cube clusters as it moves. Captured cubes spin and rise briefly, then receive a bounded tangential/upward throw and cannot be recaptured by that Tornado. Environmental collision damage is suspended only during capture, with shared ownership when Black Hole overlaps; ordinary tier/Frost collision damage resumes on release. Ball physics remains outside the vortex.
 
 The effect uses a pooled gray-blue storm cone, broad luminous cyan spiral ribbons, restrained orange accents, dust and debris. Eight bounded renderables replace the old narrow funnel. The Frost border also now has an explicit layer beneath all HUD labels and controls.
+
+### Any-ball aim framing
+Catching any ball now uses the same smooth aim-camera pose and pullback space. The camera follows the held ball through a parallel translation, preserving the centered shooting direction without drag-driven yaw; input remains on its frozen gesture projection. Global aim time approaches 30% speed and restores smoothly on release/cancel. Black Hole's selective ball slowdown is normalized against that global scale, so the two effects do not multiply into excessive slowdown.

@@ -228,7 +228,7 @@ test('Production THREE dolly zoom grows the subject 1.4×, moves throughout life
    v3: (...xyz) => new THREE.Vector3(...xyz), clamp: THREE.MathUtils.clamp,
    drag: null, reduced: false, paused: false, bonusTestOpen: false, started: true,
    secondary: { blackHole: null, well: null }, blackHoleLookPoint: null,
-   aimBlend: 0, aimShift: 0, state: 'BALL_ACTIVE', transition: 0, TRAVEL: 1,
+   aimBlend: 0, aimShift: 0, aimPanX: 0, aimPanZ: 0, heldPosition: new THREE.Vector3(0, .38, 5), state: 'BALL_ACTIVE', transition: 0, TRAVEL: 1,
    STRIDE: 36, arenaOffset, C: { ballRadius: .38, startZ: 5 },
   };
   vm.createContext(context); vm.runInContext(source.slice(start, end), context);
@@ -315,4 +315,77 @@ test('Gaze uses C2 quintic easing while dolly becomes visibly active in the firs
  const before = fx.offsets.dolly;
  fx.update(.1, { blackHoleActive: true });
  assert.ok(fx.offsets.dolly - before > .008, 'sustained linear motion follows short velocity ease');
+});
+
+
+test('Production aim camera treats main and extra balls equally and tracks off-center holds by translation without yaw', async () => {
+ const [{ readFile }, vm, THREE] = await Promise.all([import('node:fs/promises'), import('node:vm'), import('three')]);
+ const source = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+ const start = source.indexOf('function updateAimCamera('), end = source.indexOf('\nfunction resize(', start);
+ assert.ok(start >= 0 && end > start);
+ function fixture(echo, point, aspect = 9 / 16) {
+  const camera = new THREE.PerspectiveCamera(42, aspect, .1, 200);
+  const view = Object.freeze({ marker: 'frozen gesture projection', position: Object.freeze({ x: 0, y: 15, z: 20 }) });
+  const context = {
+   THREE, camera, cameraFX: new CameraFX(), cameraBase: new THREE.Vector3(0, 15, 20),
+   v3: (...xyz) => new THREE.Vector3(...xyz), clamp: THREE.MathUtils.clamp,
+   drag: { mode: 'aim', echo, heldPosition: point.clone(), view }, heldPosition: point.clone(),
+   reduced: false, paused: false, bonusTestOpen: false, started: true,
+   secondary: { blackHole: null, well: null }, blackHoleLookPoint: null,
+   aimBlend: 0, aimShift: 0, aimPanX: 0, aimPanZ: 0,
+   state: 'BALL_ACTIVE', transition: 0, TRAVEL: 1, STRIDE: 36, arenaOffset: -36,
+   C: { ballRadius: .38, startZ: 5 },
+  };
+  vm.createContext(context); vm.runInContext(source.slice(start, end), context);
+  return context;
+ }
+ function samePose(a, b) {
+  near(a.camera.position.distanceTo(b.camera.position), 0);
+  near(a.camera.quaternion.angleTo(b.camera.quaternion), 0, 1e-7);
+  near(a.camera.fov, b.camera.fov);
+ }
+ for (const aspect of [9 / 16, 16 / 9]) {
+  const point = new THREE.Vector3(2.7, .38, -1.3);
+  const main = fixture(false, point, aspect), extra = fixture(true, point, aspect);
+  const centered = fixture(true, new THREE.Vector3(0, .38, 5), aspect);
+  // A stale main-ball hold must not affect an extra-ball gesture.
+  extra.heldPosition.set(-4, .38, 8);
+  const view = extra.drag.view, viewBefore = JSON.stringify(view);
+  for (let frame = 0; frame < 120; frame++) {
+   for (const context of [main, extra, centered]) context.updateAimCamera(DT);
+   samePose(main, extra);
+   const pan = extra.camera.position.clone().sub(centered.camera.position);
+   near(pan.x, point.x * (1 - Math.exp(-8 * DT * (frame + 1))));
+   near(pan.y, 0);
+   near(pan.z, (point.z - 5) * (1 - Math.exp(-8 * DT * (frame + 1))));
+   near(extra.camera.quaternion.angleTo(centered.camera.quaternion), 0, 1e-7);
+   near(extra.camera.fov, centered.camera.fov);
+  }
+  assert.equal(extra.drag.view, view);
+  assert.equal(JSON.stringify(extra.drag.view), viewBefore, 'camera updates cannot alter the captured drag projection');
+  const frozenPosition = extra.camera.position.clone(), frozenQuaternion = extra.camera.quaternion.clone();
+  const frozen = [extra.aimBlend, extra.aimShift, extra.aimPanX, extra.aimPanZ, extra.camera.fov];
+  extra.paused = true; extra.drag = null;
+  for (let i = 0; i < 10; i++) extra.updateAimCamera(.5);
+  assert.deepEqual([extra.aimBlend, extra.aimShift, extra.aimPanX, extra.aimPanZ, extra.camera.fov], frozen);
+  near(extra.camera.position.distanceTo(frozenPosition), 0);
+  near(extra.camera.quaternion.angleTo(frozenQuaternion), 0, 1e-7);
+  extra.paused = false; extra.updateAimCamera(DT);
+  assert.ok(extra.aimBlend > 0 && extra.aimBlend < frozen[0]);
+  assert.ok(extra.aimPanX > 0 && extra.aimPanX < frozen[2]);
+  near(extra.aimPanX, frozen[2] * Math.exp(-8 * DT));
+  near(extra.aimPanZ, frozen[3] * Math.exp(-8 * DT));
+  const idle = fixture(false, point, aspect); idle.drag = null; idle.updateAimCamera(DT);
+  for (let i = 0; i < 600; i++) extra.updateAimCamera(DT);
+  near(extra.camera.position.distanceTo(idle.camera.position), 0, 1e-9);
+  near(extra.camera.quaternion.angleTo(idle.camera.quaternion), 0, 1e-7);
+  near(extra.camera.fov, idle.camera.fov, .001);
+  const active = fixture(true, point, aspect);
+  active.updateAimCamera(.1);
+  const beforeHole = [active.aimBlend, active.aimShift, active.aimPanX, active.aimPanZ];
+  active.secondary.blackHole = { point: new THREE.Vector3(0, 2, -5), intensity: 1 };
+  active.drag.heldPosition.set(-3, .38, 8);
+  for (let i = 0; i < 30; i++) active.updateAimCamera(DT);
+  assert.deepEqual([active.aimBlend, active.aimShift, active.aimPanX, active.aimPanZ], beforeHole, 'Black Hole freezes the aim camera envelopes');
+ }
 });
