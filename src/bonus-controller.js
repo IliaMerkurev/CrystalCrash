@@ -113,6 +113,7 @@ export class BonusController {
    * direct damage destroys its body, so the caller can anchor the returned effect.
    */
   consumeDirect(snapshot, originalId, now = this._time) {
+    const originId = originalId;
     this.tick(now);
     const result = { damage: 0, effect: null, consumed: false,
       suppressReflection: this.suppressReflection, pierceExit: this.pierceExit };
