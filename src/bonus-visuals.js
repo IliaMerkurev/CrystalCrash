@@ -14,7 +14,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const ownMaterial = material => (materials.add(material), material);
   const metal = ownMaterial(new THREE.MeshStandardMaterial({color: 0xa6b3c5, metalness: .96, roughness: .18}));
   const darkMetal = ownMaterial(new THREE.MeshStandardMaterial({color: 0x202938, metalness: .9, roughness: .24}));
-  const surfaces = {}, lights = {}, glows = {}, coreLights = {}, coreGlows = {};
+  const surfaces = {}, lights = {}, glows = {}, coreLights = {}, coreGlows = {}, sunDisks = {};
   const glowSize = 32, pixels = new Uint8Array(glowSize * glowSize * 4);
   for (let y = 0; y < glowSize; y++) for (let x = 0; x < glowSize; x++) {
     const r = Math.hypot((x + .5) / glowSize * 2 - 1, (y + .5) / glowSize * 2 - 1);
@@ -25,11 +25,25 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const glowTexture = new THREE.DataTexture(pixels, glowSize, glowSize);
   glowTexture.magFilter = glowTexture.minFilter = THREE.LinearFilter;
   glowTexture.needsUpdate = true;
+  // Broad luminous disk: unlike the Gaussian halo, most of this quad is bright.
+  // Its .78 world diameter has a .61-wide dense center inside an .88-wide cube.
+  const sunSize = 64, sunPixels = new Uint8Array(sunSize * sunSize * 4);
+  for (let y = 0; y < sunSize; y++) for (let x = 0; x < sunSize; x++) {
+    const r = Math.hypot((x + .5) / sunSize * 2 - 1, (y + .5) / sunSize * 2 - 1);
+    const t = Math.max(0, Math.min(1, (r - .76) / .24));
+    const i = (y * sunSize + x) * 4;
+    sunPixels[i] = sunPixels[i + 1] = sunPixels[i + 2] = 255;
+    sunPixels[i + 3] = Math.round(255 * (1 - t * t * (3 - 2 * t)));
+  }
+  const sunTexture = new THREE.DataTexture(sunPixels, sunSize, sunSize);
+  sunTexture.magFilter = sunTexture.minFilter = THREE.LinearFilter;
+  sunTexture.needsUpdate = true;
   for (const kind of kinds) {
+    sunDisks[kind] = ownMaterial(new THREE.SpriteMaterial({map:sunTexture,color:new THREE.Color(colors[kind]).multiplyScalar(1.7),transparent:true,opacity:.9,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
     surfaces[kind] = ownMaterial(new THREE.MeshStandardMaterial({color: colors[kind], emissive: colors[kind], emissiveIntensity: .48, metalness: .42, roughness: .23}));
     lights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color: colors[kind], toneMapped: false}));
-    coreLights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color:new THREE.Color(colors[kind]).multiplyScalar(2.2),transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
-    coreGlows[kind] = ownMaterial(new THREE.SpriteMaterial({map:glowTexture,color:new THREE.Color(colors[kind]).multiplyScalar(1.6),transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
+    coreLights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color:new THREE.Color(colors[kind]).multiplyScalar(3.4),transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
+    coreGlows[kind] = ownMaterial(new THREE.SpriteMaterial({map:glowTexture,color:new THREE.Color(colors[kind]).multiplyScalar(2.1),transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
     glows[kind] = ownMaterial(new THREE.SpriteMaterial({map: glowTexture, color: colors[kind], transparent: true, opacity: .28, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false}));
   }
   const sphere = ownGeometry(new THREE.SphereGeometry(1, 16, 10));
@@ -177,9 +191,9 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   function createParticleSun(kind, pickup) {
     kind = key(kind);
     const group = new THREE.Group(); group.name = `${pickup ? 'pickup-aura' : 'core'}-${kind}`;
-    const sun = pickup ? null : new THREE.Sprite(coreGlows[kind]);
+    const sun = pickup ? null : new THREE.Sprite(sunDisks[kind]);
     const pin = pickup ? null : new THREE.Sprite(coreGlows[kind]);
-    if(sun){sun.scale.set(.22,.22,1);group.add(sun);pin.scale.set(.12,.12,1);pin.position.set(-.012,.012,.058);group.add(pin);}
+    if(sun){sun.scale.set(.78,.78,1);group.add(sun);pin.scale.set(.12,.12,1);pin.position.set(-.012,.012,.058);group.add(pin);}
     const orbit = mesh(group, thinRing, pickup ? lights[kind] : coreLights[kind]);
     orbit.scale.setScalar(pickup ? 1.8 : 2.05); orbit.rotation.set(.8, .25, .2);
     const orbit2 = pickup ? null : mesh(group, thinRing, coreLights[kind]);
@@ -199,7 +213,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       particles[j + 4] = pickup ? 1 + (i % 4) * .28 : 1.8 + (i % 5) * .48;
     }
     const glow = new THREE.Sprite(pickup ? glows[kind] : coreGlows[kind]);
-    const glowDiameter = pickup ? .22 : .62;
+    const glowDiameter = pickup ? .22 : 1.05;
     glow.scale.set(glowDiameter, glowDiameter, 1); group.add(glow);
     if (!pickup) {
       // Compact stacked halos give a dense bright sun while keeping the cube rim readable.
@@ -219,7 +233,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   function animateCore(group, time) {
     const data = group.userData.coreAnimation;
     if (!data) return;
-    if (data.sun) data.sun.scale.setScalar(.22 * (1 + .055 * Math.sin(time * 2.2)));
+    if (data.sun) data.sun.scale.setScalar(.78 * (1 + .055 * Math.sin(time * 2.2)));
     data.orbit.rotation.z = .2 + time * .22;
     if (data.orbit2) data.orbit2.rotation.z = -.5 - time * .16;
     for (let i = 0; i < data.dots.count; i++) {
@@ -291,6 +305,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     geometries.forEach(geometry => geometry.dispose());
     materials.forEach(material => material.dispose());
     glowTexture.dispose();
+    sunTexture.dispose();
   }
   return {createModel, createCore, createPickupAura, animateCore, createBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
 }
