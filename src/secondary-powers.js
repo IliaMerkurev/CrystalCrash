@@ -22,6 +22,34 @@ export class SecondaryPowers {
    ring.userData.radius=.15+i*.1125;ring.scale.setScalar(ring.userData.radius);
    this.wellRings.push(ring);this.wellMesh.add(ring);
   }
+  // A translucent shell gives the vortex volume; broad triangle ribbons stay
+  // readable at gameplay camera distance without relying on GPU line width.
+  const funnelProfile=[];
+  for(let i=0;i<=12;i++){const t=i/12;funnelProfile.push(new THREE.Vector2(.15+.45*t**1.25,t*2.5));}
+  this.wellFunnelGeometry=new THREE.LatheGeometry(funnelProfile,40);
+  this.wellFunnelMaterial=new THREE.MeshBasicMaterial({color:0x7887FF,transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide});
+  this.wellFunnelMaterial.forceSinglePass=true;
+  this.wellFunnel=new THREE.Mesh(this.wellFunnelGeometry,this.wellFunnelMaterial);
+  this.wellMesh.add(this.wellFunnel);
+  const ribbonPositions=[],ribbonIndices=[],segments=112;
+  for(let i=0;i<=segments;i++){
+   const t=i/segments,angle=t*Math.PI*3.4,width=(.14+.08*t)*Math.min(1,.12+Math.sin(Math.PI*t)*4);
+   for(const side of [-1,1]){
+    const y=Math.max(0,Math.min(2.5,t*2.5+side*width*.5)),height=y/2.5,r=.162+.45*height**1.25;
+    ribbonPositions.push(Math.cos(angle)*r,y,Math.sin(angle)*r);
+   }
+   if(i<segments){const n=i*2;ribbonIndices.push(n,n+1,n+2,n+1,n+3,n+2);}
+  }
+  this.wellRibbonGeometry=new THREE.BufferGeometry();
+  this.wellRibbonGeometry.setAttribute('position',new THREE.Float32BufferAttribute(ribbonPositions,3));
+  this.wellRibbonGeometry.setIndex(ribbonIndices);this.wellRibbonGeometry.computeVertexNormals();
+  this.wellRibbonMaterial=new THREE.MeshBasicMaterial({color:0x7887FF,transparent:true,opacity:.76,depthWrite:false,side:THREE.DoubleSide});
+  this.wellRibbonMaterial.forceSinglePass=true;
+  this.wellRibbons=[];
+  for(let i=0;i<3;i++){
+   const ribbon=new THREE.Mesh(this.wellRibbonGeometry,this.wellRibbonMaterial);
+   ribbon.rotation.y=i*Math.PI*2/3;this.wellRibbons.push(ribbon);this.wellMesh.add(ribbon);
+  }
   this.wellMesh.visible=false;scene.add(this.wellMesh);
  }
  ensureEchoCapacity(count) {
@@ -307,7 +335,7 @@ export class SecondaryPowers {
   });
   for(const target of targets){const o=blocks.get(target.id);target.friction=this.acquireFriction(o.cs,target);}
   this.well={point:{x:point.x,y:point.y,z:point.z},born:now,expires:now+duration,duration,targets,blocks,acceleration:value('accelerationD',35)*diameter,range};
-  this.wellMesh.position.set(point.x,.035,point.z);this.wellMesh.scale.set(range,1,range);this.wellMaterial.opacity=.7;this.wellMesh.visible=duration>0&&range>0;
+  this.wellMesh.position.set(point.x,.035,point.z);this.wellMesh.scale.set(range,1,range);this.wellMaterial.opacity=.7;this.wellFunnelMaterial.opacity=.18;this.wellRibbonMaterial.opacity=.76;this.wellMesh.visible=duration>0&&range>0;
   return this.well;
  }
  step(dt,now,bounds={}) {
@@ -367,6 +395,9 @@ export class SecondaryPowers {
   }
   const age=Math.max(0,Math.min(1,(now-well.born)/Math.max(.001,well.duration)));
   this.wellMaterial.opacity=.7*(1-age*.75);
+  const fade=1-age*.75;
+  this.wellFunnelMaterial.opacity=.18*fade;this.wellRibbonMaterial.opacity=.76*fade;
+  for(let i=0;i<this.wellRibbons.length;i++)this.wellRibbons[i].rotation.y=i*Math.PI*2/3-(now-well.born)*2.4;
   this.wellRings.forEach((ring,index)=>{
    ring.rotation.z=index*1.35+(now-well.born)*(1.8+index*.35);
    ring.scale.setScalar(ring.userData.radius*(.94+.06*Math.sin((now-well.born)*5-index)));
@@ -402,7 +433,7 @@ export class SecondaryPowers {
   this.echoInstances.count=this.echoes.length;this.echoInstances.instanceMatrix.needsUpdate=true;
  }
  warmupObjects() {
-  const group=new this.THREE.Group();group.add(new this.THREE.InstancedMesh(this.echoGeometry,this.echoMaterial,1),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.ringGeometry,this.iceMaterial),new this.THREE.Mesh(this.frostGeometry,this.frostMaterial));return group;
+  const group=new this.THREE.Group();group.add(new this.THREE.InstancedMesh(this.echoGeometry,this.echoMaterial,1),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.wellFunnelGeometry,this.wellFunnelMaterial),new this.THREE.Mesh(this.wellRibbonGeometry,this.wellRibbonMaterial),new this.THREE.Mesh(this.ringGeometry,this.iceMaterial),new this.THREE.Mesh(this.frostGeometry,this.frostMaterial));return group;
  }
  endWell(){
   if(this.well)for(const target of this.well.targets)this.releaseFriction(target.friction,target);
@@ -412,5 +443,5 @@ export class SecondaryPowers {
   for(const echo of [...this.echoes])this.removeEcho(echo,false);this.transitionParked=false;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.splitActivations.clear();this.endWell();this.endBlackHole();
   for(const mesh of this.marks.values()){mesh.visible=false;this.markPool.push(mesh);}this.marks.clear();
  }
- dispose() {this.clear();this.echoInstances.removeFromParent();this.echoInstances.dispose();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.wellGeometry.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();this.frostGeometry.dispose();this.frostMaterial.dispose();}
+ dispose() {this.clear();this.echoInstances.removeFromParent();this.echoInstances.dispose();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.wellGeometry.dispose();this.wellFunnelGeometry.dispose();this.wellRibbonGeometry.dispose();this.wellFunnelMaterial.dispose();this.wellRibbonMaterial.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();this.frostGeometry.dispose();this.frostMaterial.dispose();}
 }

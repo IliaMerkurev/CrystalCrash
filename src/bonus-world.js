@@ -26,7 +26,8 @@ export class BonusWorld {
  }
  warmupObjects(){const group=this.visuals.warmupObjects();group.add(new THREE.Mesh(this.bombTimerGeometry,this.bombTimerMaterial));for(const fx of [...this.rings,...this.arcs]){const m=fx.mesh.clone();m.visible=true;m.traverse(o=>{if(o.isInstancedMesh){o.count=1;o.setMatrixAt(0,new THREE.Matrix4().makeScale(.05,.05,.05));o.instanceMatrix.needsUpdate=true;}});group.add(m);}return group;}
  teach(key,text,point){if(this.seen.has(key)||this.pendingTips.some(t=>t.key===key))return;const tip={key,text,point};if(this.tipAge>0){this.pendingTips.push(tip);return;}this.seen.add(key);this.tip=tip;this.tipAge=3;}
- feedback(text,point){const arc=text.startsWith('ARC ');this.tip={key:'feedback',text,screenY:arc?.58:null,point:()=>this.currentBall||point};this.tipAge=arc?1.25:2.7;}
+ feedback(text,point){const activation=/^(ARC |BLACK HOLE |TORNADO |BOMB |PULSE |PIERCE |SPLIT |HEAVY |FROST |BRITTLE )/.test(text);this.tip={key:'feedback',text,screenY:activation?.58:null,point:()=>this.currentBall||point};this.tipAge=activation?1.25:2.7;}
+ dismissReadiness(kind){const name=BONUS_DEFS[kind]?.name.toUpperCase();const stale=t=>t&&(t.key==='power-'+kind||(t.text?.toUpperCase().includes(name)&&/READY|HIT GLASS/.test(t.text.toUpperCase())));this.pendingTips=this.pendingTips.filter(t=>!stale(t));if(stale(this.tip)){this.tip=null;this.tipAge=0;}}
  attach(origin){if(!origin.bonus)return;const mesh=this.visuals.createCore(origin.bonus);if(origin.bonusPose){mesh.position.copy(origin.bonusPose.p);mesh.quaternion.copy(origin.bonusPose.q);}this.scene.add(mesh);this.cores.set(origin.id,{origin,mesh});}
  dismiss(key){this.pendingTips=this.pendingTips.filter(t=>t.key!==key);if(this.tip?.key===key){this.tip=null;this.tipAge=0;}}
  capturePose(origin,body){origin.bonusPose={p:new THREE.Vector3().copy(body.translation()),q:new THREE.Quaternion().copy(body.rotation()),v:new THREE.Vector3().copy(body.linvel())};}

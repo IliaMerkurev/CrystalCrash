@@ -416,3 +416,7 @@ test('Black Hole lens adds one bounded post draw and restores renderer state',as
  const {BlackHoleLens}=await import('../src/blackhole-lens.js');let copies=0,draws=0;const renderer={autoClear:true,getDrawingBufferSize:s=>s.set(800,600),initTexture(){},compileAsync:async()=>{},copyFramebufferToTexture(){copies++;},render(){draws++;}};
  const lens=new BlackHoleLens(renderer),camera=new THREE.PerspectiveCamera(42,4/3,.1,100);camera.position.set(0,8,12);camera.lookAt(0,1,0);camera.updateMatrixWorld();await lens.warm();lens.render(camera,null);assert.equal(draws,0);lens.render(camera,{point:{x:0,y:2.8,z:0},range:6.08,intensity:.5});assert.equal(copies,1);assert.equal(draws,1);assert.equal(renderer.autoClear,true);assert(lens.material.uniforms.radius.value>0);renderer.render=()=>{throw Error('draw failed');};assert.throws(()=>lens.render(camera,{point:{x:0,y:2.8,z:0},range:6.08,intensity:1}));assert.equal(renderer.autoClear,true);lens.dispose();
 });
+
+ test('Activation clears stale readiness tips but preserves unrelated queued guidance',()=>{
+ const {world}=makeWorld();world.tip={key:'ready-12',text:'BLACK HOLE READY · HIT GLASS'};world.tipAge=3;world.pendingTips=[{key:'power-blackhole',text:'Black Hole ready'},{key:'ready-14',text:'PULSE READY · HIT GLASS'}];world.dismissReadiness('blackhole');assert.equal(world.tip,null);assert.equal(world.pendingTips.length,1);world.feedback('BLACK HOLE · PULL BUILDING',new THREE.Vector3());assert.equal(world.tip.screenY,.58);assert.equal(world.tipAge,1.25);
+ });
