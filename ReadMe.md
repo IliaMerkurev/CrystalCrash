@@ -173,3 +173,5 @@ Startup waits for the reflection environment before shader warmup. A narrow edge
 Floor follow-up: coating roughness is 0.28, with a tight five-sample one-texel reflection kernel. Samples remain adjacent instead of broad displaced UV copies, providing slight softening without separated duplicate silhouettes.
 
 First-hit preparation: before enabling PLAY, render representative fracture meshes, instanced chips and glow into a hidden full-size target, including floor reflection and shadows. Finish that startup GPU work before interaction; restore zero particle counts. Actual device frame-time improvement still requires user comparison.
+
+Visual refinement: planar polished chamfers replace rounded cube edges, with geometric bevel normals and stronger reflection on the bevel only. Removed painted emissive edge fill; inner cavity remains within the shell. The default start/recenter projects to 73.5% screen height in both layouts; active held touch retains priority.

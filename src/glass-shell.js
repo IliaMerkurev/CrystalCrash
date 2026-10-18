@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+import {ConvexGeometry} from 'three/addons/geometries/ConvexGeometry.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 export const wallThickness=type=>[.025,.04,.055,.07,.09][type];
 export function shellPanels(sx,sy,sz,t){return [
@@ -7,7 +7,19 @@ export function shellPanels(sx,sy,sz,t){return [
  {size:[t,sy-2*t,sz],p:[(sx-t)/2,0,0]}, {size:[t,sy-2*t,sz],p:[-(sx-t)/2,0,0]},
  {size:[sx-2*t,sy-2*t,t],p:[0,0,(sz-t)/2]}, {size:[sx-2*t,sy-2*t,t],p:[0,0,-(sz-t)/2]}
  ];}
-export function shellGeometry(sx,sy,sz,t){const outer=new RoundedBoxGeometry(sx,sy,sz,3,Math.min(.045,t*1.15));const inner=new THREE.BoxGeometry(sx-2*t,sy-2*t,sz-2*t).toNonIndexed();const p=inner.attributes.position,uv=inner.attributes.uv;for(let i=0;i<p.count;i+=3){for(const attr of [p,uv]){const size=attr.itemSize;for(let k=0;k<size;k++){const j=(i+1)*size+k,l=(i+2)*size+k,tmp=attr.array[j];attr.array[j]=attr.array[l];attr.array[l]=tmp;}}}inner.computeVertexNormals();const g=mergeGeometries([inner,outer],true);outer.dispose();inner.dispose();return g;}
+// A true flat polished bevel: face normals stay planar, bevel normals reflect
+// different softbox directions instead of relying on a painted luminous border.
+export function shellGeometry(sx,sy,sz,t){
+ const half=[sx/2,sy/2,sz/2],bevel=Math.min(Math.min(sx,sy,sz)*.09,Math.max(.045,t*.9),t*1.45),points=[];
+ for(let axis=0;axis<3;axis++)for(const x of [-1,1])for(const y of [-1,1])for(const z of [-1,1])points.push(new THREE.Vector3(...[x,y,z].map((sign,i)=>sign*(half[i]-(i===axis?0:bevel)))));
+ const outer=new ConvexGeometry(points),normals=outer.attributes.normal,pos=outer.attributes.position,uv=[],polish=[];
+ for(let i=0;i<pos.count;i++){const n=[normals.getX(i),normals.getY(i),normals.getZ(i)],axis=n.reduce((best,v,j)=>Math.abs(v)>Math.abs(n[best])?j:best,0),a=(axis+1)%3,b=(axis+2)%3;uv.push(pos.array[i*3+a]/(2*half[a])+.5,pos.array[i*3+b]/(2*half[b])+.5);polish.push(Math.abs(n[axis])<.999?1:0);}
+ outer.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));outer.setAttribute('bevel',new THREE.Float32BufferAttribute(polish,1));
+ const inner=new THREE.BoxGeometry(sx-2*t,sy-2*t,sz-2*t).toNonIndexed(),p=inner.attributes.position,u=inner.attributes.uv;
+ for(let i=0;i<p.count;i+=3)for(const attr of [p,u])for(let k=0;k<attr.itemSize;k++){const j=(i+1)*attr.itemSize+k,l=(i+2)*attr.itemSize+k,tmp=attr.array[j];attr.array[j]=attr.array[l];attr.array[l]=tmp;}
+ inner.computeVertexNormals();inner.setAttribute('bevel',new THREE.Float32BufferAttribute(new Float32Array(p.count),1));
+ const g=mergeGeometries([inner,outer],true);outer.dispose();inner.dispose();return g;
+}
 export function plateGeometry(points,t){const v=[];const tri=(a,b,c)=>v.push(...a,...b,...c);const back=points.map(p=>[p[0],p[1],-t/2]),front=points.map(p=>[p[0],p[1],t/2]);for(let i=1;i<points.length-1;i++){tri(front[0],front[i],front[i+1]);tri(back[i+1],back[i],back[0]);}for(let i=0;i<points.length;i++){let j=(i+1)%points.length;tri(front[i],back[i],back[j]);tri(front[i],back[j],front[j]);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.computeVertexNormals();const uv=[];for(let i=0;i<v.length;i+=9){const a=new THREE.Vector3(...v.slice(i,i+3)),b=new THREE.Vector3(...v.slice(i+3,i+6)),c=new THREE.Vector3(...v.slice(i+6,i+9)),n=b.clone().sub(a).cross(c.clone().sub(a));const axis=Math.abs(n.z)>=Math.max(Math.abs(n.x),Math.abs(n.y))?2:Math.abs(n.y)>=Math.abs(n.x)?1:0;for(const p of [a,b,c])uv.push(p.getComponent((axis+1)%3),p.getComponent((axis+2)%3));}g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));return g;}
 export function voronoiCells(w,h,count,random){const sites=[];while(sites.length<count){const p=[(random()-.5)*w,(random()-.5)*h];if(sites.every(q=>Math.hypot(q[0]-p[0],q[1]-p[1])>Math.min(w,h)*.035))sites.push(p);}const cells=[];for(let i=0;i<sites.length;i++){const a=sites[i];let poly=[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]];for(let j=0;j<sites.length&&poly.length;j++){if(i===j)continue;const b=sites[j],nx=b[0]-a[0],ny=b[1]-a[1],d=(b[0]*b[0]+b[1]*b[1]-a[0]*a[0]-a[1]*a[1])/2,out=[];for(let k=0;k<poly.length;k++){const p=poly[k],q=poly[(k+1)%poly.length],dp=p[0]*nx+p[1]*ny-d,dq=q[0]*nx+q[1]*ny-d;if(dp<=1e-10)out.push(p);if((dp<0)!==(dq<0)){const t=dp/(dp-dq);out.push([p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t]);}}poly=out;}if(poly.length>=3){const area=Math.abs(poly.reduce((sum,p,k)=>{const q=poly[(k+1)%poly.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;if(area>1e-5)cells.push(poly);}}return cells;}
 export function fractureFaces(sx,sy,sz,t,random){const result=[];for(let axis=0;axis<3;axis++)for(const sign of [-1,1]){const dims=[sx,sy,sz],u=(axis+1)%3,v=(axis+2)%3,w=dims[u],h=dims[v],normal=new THREE.Vector3().setComponent(axis,sign),basisU=new THREE.Vector3().setComponent(u,1),basisV=new THREE.Vector3().setComponent(v,sign),q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(basisU,basisV,normal));const cells=voronoiCells(w,h,Math.max(3,Math.min(14,Math.round(5*w*h/.7744)+Math.floor(random()*2))),random);for(const points of cells){const cx=points.reduce((s,p)=>s+p[0],0)/points.length,cy=points.reduce((s,p)=>s+p[1],0)/points.length,pos=new THREE.Vector3(cx,cy,0).applyQuaternion(q).addScaledVector(normal,dims[axis]/2-t/2);result.push({points:points.map(p=>[p[0]-cx,p[1]-cy]),pos,q,normal,t});}}return result;}
