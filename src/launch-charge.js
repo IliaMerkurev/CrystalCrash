@@ -1,8 +1,22 @@
+const WINDOW_START_MIN = 1;
+const WINDOW_START_MAX = 1.25;
+const WINDOW_DURATION = 1 / 3;
+const DIAL_DURATION = 2;
+const TIME_EPSILON = 1e-12;
+
 /** A single, real-active-time timing window for each launch gesture. */
 export class LaunchCharge {
-  constructor() { this.reset(); }
+  constructor({ random = Math.random } = {}) {
+    this.random = typeof random === 'function' ? random : Math.random;
+    this.reset();
+  }
 
   reset() {
+    // Choose once per fresh gesture, before pulling starts. Retreats never reroll.
+    const roll = this.random();
+    const unit = Number.isFinite(roll) ? Math.max(0, Math.min(1, roll)) : 0;
+    this.windowStart = WINDOW_START_MIN + unit * (WINDOW_START_MAX - WINDOW_START_MIN);
+    this.windowEnd = this.windowStart + WINDOW_DURATION;
     this.elapsed = 0;
     this.started = false;
     this.pulling = false;
@@ -26,17 +40,19 @@ export class LaunchCharge {
 
   multiplier() {
     // A tiny roundoff allowance keeps exact 1/60-second frame boundaries fair.
-    const epsilon = 1e-12;
-    return this.started && this.pulling && this.elapsed >= 1 - epsilon && this.elapsed <= 1.5 + epsilon ? 2 : 1;
+    return this.started && this.pulling && this.elapsed >= this.windowStart - TIME_EPSILON && this.elapsed <= this.windowEnd + TIME_EPSILON ? 2 : 1;
   }
 
   snapshot() {
-    const state = !this.started ? 'idle' : this.elapsed < 1 - 1e-12 ? 'charging' : this.elapsed <= 1.5 + 1e-12 ? 'window' : 'spent';
+    const state = !this.started ? 'idle' : this.elapsed < this.windowStart - TIME_EPSILON ? 'charging' : this.elapsed <= this.windowEnd + TIME_EPSILON ? 'window' : 'spent';
     return {
       state,
       elapsed: this.elapsed,
       window: this.multiplier() === 2,
-      progress: Math.min(1, Math.max(0, this.elapsed / 2)),
+      windowStart: this.windowStart,
+      windowEnd: this.windowEnd,
+      windowDuration: WINDOW_DURATION,
+      progress: Math.min(1, Math.max(0, this.elapsed / DIAL_DURATION)),
       pulling: this.pulling,
       started: this.started,
     };
@@ -85,7 +101,7 @@ export class LaunchChargeMeter {
     const svg = make('svg', { viewBox: '0 0 160 108', width: '100%', height: '100%', 'aria-hidden': 'true' });
     svg.style.display = 'block';
     svg.appendChild(make('path', { d: 'M 20 78 A 60 60 0 0 1 140 78', fill: 'none', stroke: '#2e475b', 'stroke-width': 7, 'stroke-linecap': 'round' }));
-    this.sector = make('path', { d: 'M 80 18 A 60 60 0 0 1 122.426 35.574', fill: 'none', stroke: '#69efbc', 'stroke-width': 9 });
+    this.sector = make('path', { fill: 'none', stroke: '#69efbc', 'stroke-width': 9 });
     svg.appendChild(this.sector);
     for (const progress of [0, .25, .5, .75, 1]) {
       const angle = Math.PI * (1 - progress);
@@ -95,8 +111,10 @@ export class LaunchChargeMeter {
         stroke: '#b5cfdf', 'stroke-width': 1.5,
       }));
     }
-    svg.appendChild(text('×2', { x: 104, y: 48, fill: '#a0ffcf', 'font-size': 15, 'font-weight': 800, 'text-anchor': 'middle' }));
-    svg.appendChild(text('1.0–1.5 s', { x: 80, y: 11, fill: '#c4dbe9', 'font-size': 10, 'text-anchor': 'middle' }));
+    this.bonusLabel = text('×2', { fill: '#a0ffcf', 'font-size': 15, 'font-weight': 800, 'text-anchor': 'middle' });
+    svg.appendChild(this.bonusLabel);
+    this.timingLabel = text('', { x: 80, y: 11, fill: '#c4dbe9', 'font-size': 10, 'text-anchor': 'middle' });
+    svg.appendChild(this.timingLabel);
     this.needle = make('line', { x1: 80, y1: 78, x2: 37, y2: 78, stroke: '#f2faff', 'stroke-width': 3, 'stroke-linecap': 'round' });
     svg.appendChild(this.needle);
     svg.appendChild(make('circle', { cx: 80, cy: 78, r: 4, fill: '#f2faff' }));
@@ -128,6 +146,19 @@ export class LaunchChargeMeter {
     const viewportWidth = Math.max(1, finite(width, view.innerWidth || 1));
     const viewportHeight = Math.max(1, finite(height, view.innerHeight || 1));
     this.viewport = { width: viewportWidth, height: viewportHeight };
+    const windowStart = clamp(finite(snapshot?.windowStart, WINDOW_START_MIN), 0, DIAL_DURATION);
+    const windowEnd = clamp(finite(snapshot?.windowEnd, windowStart + WINDOW_DURATION), windowStart, DIAL_DURATION);
+    if (windowStart !== this.renderedWindowStart || windowEnd !== this.renderedWindowEnd) {
+      const startAngle = Math.PI * (1 - windowStart / DIAL_DURATION);
+      const endAngle = Math.PI * (1 - windowEnd / DIAL_DURATION);
+      const middleAngle = (startAngle + endAngle) / 2;
+      this.sector.setAttribute('d', `M ${80 + Math.cos(startAngle) * 60} ${78 - Math.sin(startAngle) * 60} A 60 60 0 0 1 ${80 + Math.cos(endAngle) * 60} ${78 - Math.sin(endAngle) * 60}`);
+      this.bonusLabel.setAttribute('x', String(80 + Math.cos(middleAngle) * 38));
+      this.bonusLabel.setAttribute('y', String(83 - Math.sin(middleAngle) * 38));
+      this.timingLabel.textContent = `${windowStart.toFixed(2)}–${windowEnd.toFixed(2)} s`;
+      this.renderedWindowStart = windowStart;
+      this.renderedWindowEnd = windowEnd;
+    }
     if (!visible || !snapshot?.started) { this.element.style.display = 'none'; return; }
 
     // Normal phone width: about 132px. Never cover the whole screen on resize.

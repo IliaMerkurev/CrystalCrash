@@ -2,9 +2,9 @@
 export const TUTORIAL_STORAGE_KEY='crystal-crash.tutorial.v1';
 const LEGACY_TUTORIAL_STEPS=Object.freeze(['catch','aim','release','attract','pickup','gate','extraCatch','extraRelease']);
 export const TUTORIAL_STEPS=Object.freeze(['catch','aim','release','attract','attractMove','pickup','gate','extraCatch','extraRelease']);
-const LABELS={catch:'Grab the main ball',aim:'Pull back to aim',release:'Release in the x2 zone',attract:'HOLD the lower zone to attract',attractMove:'HOLD & MOVE to steer',pickup:'Roll into a bonus',gate:'Roll through the open gate',extraCatch:'Grab an extra ball directly',extraRelease:'Pull back and release · No attraction'};
+const LABELS={catch:'Grab the main ball',aim:'Pull back to aim',release:'Release to launch',attract:'HOLD the lower zone to attract',attractMove:'HOLD & MOVE to steer',pickup:'Roll into a bonus',gate:'Roll through the open gate',extraCatch:'Grab an extra ball directly',extraRelease:'Pull back and release · No attraction'};
 export const TUTORIAL_BONUSES=Object.freeze({pulse:'Pulse · Impacts blast nearby glass for 10s',pierce:'Pierce · Smash through glass for 10s',arc:'Arc · Chains through nearby bottom supports',frost:'Frost · Glass breaks one hit sooner this round',split:'Split · Every live ball creates two extras',gravity:'Tornado · Lifts and throws glass for 4s',heavy:'Heavy Hit · Adds a 3-damage strike',blackhole:'Black Hole · Pulls nearby glass inward for 3s',bomb:'Bomb · Explodes 3s after landing'});
-const GESTURE_DETAILS=Object.freeze({catch:'Pull back, then lift your finger',aim:'Release in the x2 zone',release:'Lift your finger to launch',attract:'Keep your finger down to pull the main ball',attractMove:'Slide your held finger around the lower zone',extraCatch:'Pull back, then lift your finger',extraRelease:'Release in the x2 zone'});
+const GESTURE_DETAILS=Object.freeze({catch:'Pull back, then lift your finger',aim:'Pull back, then release',release:'Lift your finger to launch',attract:'Keep your finger down to pull the main ball',attractMove:'Slide your held finger around the lower zone',extraCatch:'Pull back, then lift your finger',extraRelease:'Lift your finger to launch'});
 const PULL_STEPS=new Set(['catch','aim','release','extraCatch','extraRelease']);
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const transform=(v,m)=>[m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]];
@@ -76,6 +76,7 @@ export class GameTutorial {
   this.element.appendChild(this.pointer);(root||doc.body).appendChild(this.element);
  }
  get step(){return TUTORIAL_STEPS.find(step=>!this.done.has(step))||'done';}
+ get chargeUnlocked(){return this.done.has('release')&&this.done.has('attract');}
  get controlsCompleted(){return this.index>=TUTORIAL_STEPS.length;}
  get completed(){return this.controlsCompleted&&this.seenBonuses.size===Object.keys(TUTORIAL_BONUSES).length;}
  persist(){try{this.storage?.setItem(TUTORIAL_STORAGE_KEY,JSON.stringify({done:[...this.done],bonuses:[...this.seenBonuses]}));}catch{}}

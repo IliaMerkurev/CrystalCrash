@@ -24,11 +24,11 @@ test('launch guidance has a visible press, pull-back, hand-lift and launch loop'
  assert.equal(tutorial.done.size,0,'illustrative animations never complete a gameplay step');
 });
 
-test('aim and release cues explain the x2 release window without altering charge mechanics',()=>{
+test('initial aim and release cues teach normal launch before charge unlock',()=>{
  const tutorial=make();tutorial.update({...base,state:'AIMING',drag:{mode:'aim'}});
- assert.equal(tutorial.displayStep,'aim');assert.equal(tutorial.detail.textContent,'Release in the x2 zone');
+ assert.equal(tutorial.displayStep,'aim');assert.equal(tutorial.detail.textContent,'Pull back, then release');
  assert.equal(tutorial.notify('aim'),true);tutorial.update({...base,state:'AIMING',drag:{mode:'aim'}});
- assert.equal(tutorial.displayStep,'release');assert.equal(tutorial.label.textContent,'Release in the x2 zone');
+ assert.equal(tutorial.displayStep,'release');assert.equal(tutorial.label.textContent,'Release to launch');
  assert.equal(tutorial.element.attrs['data-gesture'],'pull-release');
  assert.equal(tutorial.done.has('release'),false);
 });
@@ -84,7 +84,7 @@ test('extra-ball and bonus eligibility is preserved and unrelated cues do not in
  ]};
  tutorial.update(extras);assert.equal(tutorial.displayStep,'extraCatch');assert.equal(tutorial.pointer.style.left,'224px');assert.equal(tutorial.element.attrs['data-gesture'],'pull-release');
  tutorial.update({...extras,drag:{mode:'aim',echo:{b:{handle:5}}},extraPoints:[{id:5,isHeld:true,point:{x:240,y:300,z:5}}]});
- assert.equal(tutorial.displayStep,'extraRelease');assert.equal(tutorial.detail.textContent,'Release in the x2 zone');assert.match(tutorial.label.textContent,/No attraction/);
+ assert.equal(tutorial.displayStep,'extraRelease');assert.equal(tutorial.detail.textContent,'Lift your finger to launch');assert.match(tutorial.label.textContent,/No attraction/);
  tutorial.update({...extras,extraPoints:[],bonusTargets:[{kind:'pulse',point:{x:210,y:300}}],dt:.1});
  assert.equal(tutorial.displayStep,'bonus-pulse');assert.equal(tutorial.element.attrs['data-gesture'],'point');assert.equal(tutorial.detail.hidden,true);assert.equal(tutorial.seenBonuses.size,0);
  for(let i=0;i<31;i++)tutorial.update({...extras,extraPoints:[],bonusTargets:[{kind:'pulse',point:{x:210,y:300}}],dt:.1});
@@ -101,3 +101,5 @@ test('animated overlays remain input-through, reduced-motion aware and within th
  assert.doesNotMatch(source,/addEventListener|setTimeout|setInterval/);
  tutorial.update({...attracting,paused:true});assert.equal(tutorial.visible,false);
 });
+
+test('charge unlock requires launch and stationary HOLD; replay relocks without needing HOLD MOVE',()=>{const t=make();assert.equal(t.chargeUnlocked,false);t.done.add('release');assert.equal(t.chargeUnlocked,false);t.done.add('attract');assert.equal(t.chargeUnlocked,true);assert.equal(t.done.has('attractMove'),false);t.replay();assert.equal(t.chargeUnlocked,false);});
