@@ -88,3 +88,8 @@ Bomb countdown is 3 simulation seconds after landing, with a synchronized circul
 
 ### Arena-wide Frost
 Frost activates on pickup with an arena-wide snow wave and a fading transparent crystalline screen border. Every surviving original cube stays visibly iced until the arena ends, retaining its underlying glass color. Its required hit total is reduced by one (minimum one); repeated Frost does not stack, and pickup alone never destroys an already damaged cube. Fractured parts inherit the same original ice state. Missed shots retain arena ice; Test's explicit effect reset removes both the appearance and weakening.
+
+### Roaming Tornado
+Tornado now follows a smooth randomized route through the upper arena, collecting nearby playable cube clusters as it moves. Captured cubes spin and rise briefly, then receive a bounded tangential/upward throw and cannot be recaptured by that Tornado. Environmental collision damage is suspended only during capture, with shared ownership when Black Hole overlaps; ordinary tier/Frost collision damage resumes on release. Ball physics remains outside the vortex.
+
+The effect uses a pooled gray-blue storm cone, broad luminous cyan spiral ribbons, restrained orange accents, dust and debris. Eight bounded renderables replace the old narrow funnel. The Frost border also now has an explicit layer beneath all HUD labels and controls.

@@ -373,20 +373,73 @@ export class SecondaryPowers {
  createWell(point,now,blocks,config={}) {
   this.endWell();
   const value=(key,fallback)=>Number.isFinite(config[key])?Math.max(0,config[key]):fallback;
-  const diameter=this.radius*2,range=value('radiusD',6)*diameter,duration=value('duration',4),budget=value('maxDeltaSpeedD',24)*diameter;
-  const targets=[...blocks.values()].filter(o=>this.playable(o)).map(o=>{
-   const p=o.b.worldCom();return {o,d:Math.hypot(p.x-point.x,p.y-point.y,p.z-point.z)};
-  }).filter(t=>t.d<=range).sort((a,b)=>a.d-b.d).slice(0,Math.floor(value('maxTargets',12))).map(({o})=>{
-   const p=o.b.worldCom(),orbitRadius=Math.max(diameter*.45,Math.hypot(p.x-point.x,p.z-point.z));
-   // Leave enough of the finite impulse budget for four seconds of centripetal
-   // steering. Every cube keeps its own starting radius instead of seeking center.
-   const orbitSpeed=Math.min(budget*.4,diameter*4,Math.sqrt(orbitRadius*budget/(Math.max(.1,duration)*1.5)));
-   return {id:o.id,handle:o.b.handle,body:o.b,remaining:budget,orbitRadius,orbitSpeed};
-  });
-  for(const target of targets){const o=blocks.get(target.id);target.friction=this.acquireFriction(o.cs,target);}
-  this.well={point:{x:point.x,y:point.y,z:point.z},born:now,expires:now+duration,duration,targets,blocks,acceleration:value('accelerationD',35)*diameter,range};
+  const diameter=this.radius*2,range=value('radiusD',6)*diameter,duration=value('duration',4);
+  this.well={kind:'tornado',point:{x:point.x,y:point.y,z:point.z},born:now,expires:now+duration,duration,active:true,targets:[],blocks,range,
+   acceleration:value('accelerationD',35)*diameter,budget:value('maxDeltaSpeedD',24)*diameter,maxTargets:Math.floor(value('maxTargets',12)),
+   roamSpeed:value('roamSpeedD',5)*diameter,tossSpeed:value('tossSpeedD',13)*diameter,seenOrigins:new Set(),seenBodies:new Set(),
+   random:typeof config.random==='function'?config.random:Math.random,route:null,velocity:{x:0,z:0}};
+  if(duration>0&&range>0)this.captureWellTargets(this.well,now);
   this.wellMesh.position.set(point.x,.035,point.z);this.wellMesh.scale.set(range,1,range);this.wellMaterial.opacity=.7;this.wellFunnelMaterial.opacity=.18;this.wellRibbonMaterial.opacity=.76;this.wellMesh.visible=duration>0&&range>0;
   return this.well;
+ }
+ captureWellTargets(well,now) {
+  const available=Math.max(0,well.maxTargets-well.targets.length);if(!available||well.expires-now<.35)return;
+  const candidates=[...well.blocks.values()].filter(o=>this.playable(o)&&!well.seenOrigins.has(o.origin?.id??o.origin??o.id)&&!well.seenBodies.has(o.b)).map(o=>{
+   const p=o.b.worldCom();return {o,distance:Math.hypot(p.x-well.point.x,p.y-well.point.y,p.z-well.point.z)};
+  }).filter(t=>t.distance<=well.range).sort((a,b)=>a.distance-b.distance);
+  for(const {o} of candidates){
+   if(well.targets.length>=well.maxTargets)break;
+   const origin=o.origin?.id??o.origin??o.id;if(well.seenOrigins.has(origin))continue;
+   const p=o.b.worldCom(),target={id:o.id,handle:o.b.handle,body:o.b,remaining:well.budget,capturedAt:now,
+    releaseAt:Math.min(well.expires,now+.75+well.random()*.35),orbitRadius:Math.min(well.range*.5,Math.max(this.radius*1.4,Math.hypot(p.x-well.point.x,p.z-well.point.z)*.65)),liftY:Math.max(p.y,well.point.y)+this.radius*3.5};
+   target.friction=this.acquireFriction(o.cs,target);well.targets.push(target);well.seenOrigins.add(origin);well.seenBodies.add(o.b);
+  }
+ }
+ moveWell(well,dt,bounds) {
+  const margin=this.radius*2,low=(bounds.top??-9)+margin,high=Math.max(low,(bounds.lowerZoneZ??((bounds.bottom??9)-3.2))-margin*1.5);
+  const halfAt=z=>Math.max(0,(typeof bounds.tableHalf==='function'?bounds.tableHalf(z):(bounds.halfWidth??bounds.half??6.25))-margin);
+  // Cubic smoothstep waypoints have zero endpoint velocity. A conservative
+  // corridor keeps the entire interpolated route inside even tapered arenas.
+  if(!well.route){
+   const z=Math.max(low,Math.min(high,well.point.z)),x=Math.max(-halfAt(z),Math.min(halfAt(z),well.point.x));
+   const targetZ=low+well.random()*(high-low);
+   let half=Math.min(halfAt(z),halfAt(targetZ));for(let i=1;i<8;i++)half=Math.min(half,halfAt(z+(targetZ-z)*i/8));
+   let targetX=(well.random()*2-1)*half;
+   if(Math.hypot(targetX-x,targetZ-z)<margin*2)targetX=x>0?-half:half;
+   well.route={from:{x:well.point.x,z:well.point.z},to:{x:targetX,z:targetZ},elapsed:0,duration:Math.max(.65,Math.hypot(targetX-well.point.x,targetZ-well.point.z)*1.5/Math.max(.01,well.roamSpeed))};
+  }
+  const route=well.route;route.elapsed+=dt;
+  const t=Math.min(1,route.elapsed/route.duration),ease=t*t*(3-2*t),slope=6*t*(1-t)/route.duration;
+  for(const axis of ['x','z']){well.point[axis]=route.from[axis]+(route.to[axis]-route.from[axis])*ease;well.velocity[axis]=(route.to[axis]-route.from[axis])*slope;}
+  if(t===1)well.route=null;
+  this.wellMesh.position.set(well.point.x,.035,well.point.z);
+ }
+ releaseWellTarget(well,target,toss=false) {
+  // Remove guard ownership before the next physics/contact step.
+  const index=well.targets.indexOf(target);if(index!==-1)well.targets.splice(index,1);
+  this.releaseFriction(target.friction,target);
+  const o=well.blocks.get(target.id);if(!toss||!this.playable(o)||o.b!==target.body||o.b.handle!==target.handle)return;
+  const p=o.b.worldCom(),dx=p.x-well.point.x,dz=p.z-well.point.z,d=Math.hypot(dx,dz),rx=d>1e-6?dx/d:1,rz=d>1e-6?dz/d:0;
+  const v=o.b.linvel(),speed=well.tossSpeed;
+  const delta={x:(-rz*.85+rx*.45)*speed-v.x,y:speed*.7-v.y,z:(rx*.85+rz*.45)*speed-v.z};
+  const length=Math.hypot(delta.x,delta.y,delta.z),scale=Math.min(length,speed*1.5)*o.b.mass()/Math.max(length,1e-8);
+  o.b.applyImpulse({x:delta.x*scale,y:delta.y*scale,z:delta.z*scale},true);
+ }
+ stepWell(dt,now,bounds) {
+  const well=this.well;if(!well)return;
+  if(now>=well.expires){for(const target of [...well.targets])this.releaseWellTarget(well,target,true);this.endWell();return;}
+  this.moveWell(well,dt,bounds);
+  for(const target of [...well.targets]){
+   const o=well.blocks.get(target.id);
+   if(!this.playable(o)||o.b!==target.body||o.b.handle!==target.handle){this.releaseWellTarget(well,target);continue;}
+   if(now>=target.releaseAt){this.releaseWellTarget(well,target,true);continue;}
+   const p=o.b.worldCom(),dx=p.x-well.point.x,dz=p.z-well.point.z,d=Math.hypot(dx,dz),rx=d>1e-6?dx/d:1,rz=d>1e-6?dz/d:0;
+   const speed=this.radius*14,radial=Math.max(-speed,Math.min(speed,(target.orbitRadius-d)*8)),v=o.b.linvel();
+   const ax=well.velocity.x-rz*speed+rx*radial-v.x,ay=Math.max(-speed*.5,Math.min(speed,(target.liftY-p.y)*7))-v.y,az=well.velocity.z+rx*speed+rz*radial-v.z;
+   const change=Math.hypot(ax,ay,az),dv=Math.min(target.remaining,well.acceleration*2.2*dt,change),scale=dv*o.b.mass()/Math.max(change,1e-8);
+   o.b.applyImpulse({x:ax*scale,y:ay*scale,z:az*scale},true);target.remaining-=dv;
+  }
+  this.captureWellTargets(well,now);
  }
  step(dt,now,bounds={}) {
   dt=Math.max(0,Math.min(dt,.1));this.time=now;this.catchDuration=Math.max(0,bounds.lowerCatchDuration??1);
@@ -429,20 +482,8 @@ export class SecondaryPowers {
    // These are downward anti-stall/return impulses, never pointer attraction.
   }
   this.stepBlackHole(dt,now);
+  this.stepWell(dt,now,bounds);
   const well=this.well;if(!well)return;
-  if(now>=well.expires){this.endWell();return;}
-  for(const target of well.targets){
-   const o=well.blocks.get(target.id);if(!this.playable(o)||o.b!==target.body||o.b.handle!==target.handle||target.remaining<=0)continue;
-   const p=o.b.worldCom(),dx=p.x-well.point.x,dz=p.z-well.point.z,distance=Math.hypot(dx,dz);
-   const rx=distance>1e-6?dx/distance:1,rz=distance>1e-6?dz/distance:0;
-   const radial=Math.max(-target.orbitSpeed*.35,Math.min(target.orbitSpeed*.35,(target.orbitRadius-distance)*1.5)),v=o.b.linvel();
-   // Tangential velocity plus a weak correction toward the ORIGINAL orbit radius.
-   // Vertical motion is untouched; only Black Hole owns central pull and lift.
-   const ax=-rz*target.orbitSpeed+rx*radial-v.x,ay=0,az=rx*target.orbitSpeed+rz*radial-v.z,change=Math.hypot(ax,az);
-   if(change<1e-6)continue;
-   const dv=Math.min(target.remaining,well.acceleration*dt,change),scale=dv*o.b.mass()/change;
-   o.b.applyImpulse({x:ax*scale,y:ay*scale,z:az*scale},true);target.remaining-=dv;
-  }
   const age=Math.max(0,Math.min(1,(now-well.born)/Math.max(.001,well.duration)));
   this.wellMaterial.opacity=.7*(1-age*.75);
   const fade=1-age*.75;
@@ -521,7 +562,7 @@ export class SecondaryPowers {
   if(this.stagedAnchor){const p=new this.THREE.Vector3().copy(this.stagedAnchor);fn(p);this.stagedAnchor={x:p.x,y:p.y,z:p.z};}
   if(this.transitionAnchor){const p=new this.THREE.Vector3().copy(this.transitionAnchor);fn(p);this.transitionAnchor={x:p.x,y:p.y,z:p.z};}
   if(this.blackHole){const p=new this.THREE.Vector3().copy(this.blackHole.point);fn(p);Object.assign(this.blackHole.point,p);}
-  if(this.well){const p=new this.THREE.Vector3().copy(this.well.point);fn(p);Object.assign(this.well.point,p);this.wellMesh.position.set(p.x,.035,p.z);}
+  if(this.well){const p=new this.THREE.Vector3().copy(this.well.point);fn(p);Object.assign(this.well.point,p);this.well.route=null;this.wellMesh.position.set(p.x,.035,p.z);}
  }
  render() {
   for(let index=0;index<this.echoes.length;index++){
@@ -534,7 +575,7 @@ export class SecondaryPowers {
   const group=new this.THREE.Group();group.add(new this.THREE.InstancedMesh(this.echoGeometry,this.echoMaterial,1),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.wellFunnelGeometry,this.wellFunnelMaterial),new this.THREE.Mesh(this.wellRibbonGeometry,this.wellRibbonMaterial),new this.THREE.LineSegments(this.frostEdgeGeometry,this.iceMaterial),new this.THREE.Mesh(this.frostGeometry,this.frostMaterial));return group;
  }
  endWell(){
-  if(this.well)for(const target of this.well.targets)this.releaseFriction(target.friction,target);
+  if(this.well){for(const target of [...this.well.targets])this.releaseWellTarget(this.well,target);this.well.active=false;this.well.seenOrigins.clear();this.well.seenBodies.clear();}
   this.well=null;this.wellMesh.visible=false;
  }
  clear() {

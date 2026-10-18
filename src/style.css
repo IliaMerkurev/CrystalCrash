@@ -46,3 +46,6 @@ button{backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blu
 .test-arena-row select:focus-visible{outline:2px solid #a8e3ff;outline-offset:3px}
 .test-arena-row button{flex:none;padding:9px 12px;font-size:13px;border-radius:8px}
 #test-arena-note{margin:8px 0 0;font-size:11px;line-height:1.45;color:#aac0d1}
+
+/* Explicit effect/HUD layers keep frosty screen edges below every label/control. */
+#game{position:fixed;inset:0;z-index:0}.frost-screen-mask{z-index:1!important}header,footer,#section,#toast{z-index:3}.overlay{z-index:10}

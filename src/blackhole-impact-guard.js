@@ -4,17 +4,19 @@
 export class BlackHoleImpactGuard {
  constructor(){this.protectedOrigins=new Map();}
  has(originId){return this.protectedOrigins.has(originId);}
- sync(hole,blocks,impactHistory,strikeContacts){
+ sync(fields,blocks,impactHistory,strikeContacts){
   const next=new Map();
+  for(const hole of (Array.isArray(fields)?fields:[fields])){
   if(hole?.active!==false&&hole?.blocks===blocks){
    for(const target of hole.targets||[]){
     const o=blocks.get(target.id),body=o?.b;
     if(o?.kind!=='block'||!o.origin||body!==target.body||!body?.isValid()||!body.isDynamic()||!o.cs?.length)continue;
     if(target.handle!==undefined&&body.handle!==target.handle)continue;
     const p=body.worldCom(),range=hole.radius??hole.range;
-    if(!hole.point||!Number.isFinite(range)||Math.hypot(p.x-hole.point.x,p.y-hole.point.y,p.z-hole.point.z)>range)continue;
+    if(hole.kind!=='tornado'&&(!hole.point||!Number.isFinite(range)||Math.hypot(p.x-hole.point.x,p.y-hole.point.y,p.z-hole.point.z)>range))continue;
     next.set(o.origin.id,o.origin);
    }
+  }
   }
   this.releaseMissing(next,blocks,impactHistory,strikeContacts);
   this.protectedOrigins=next;

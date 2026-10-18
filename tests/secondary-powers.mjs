@@ -265,7 +265,7 @@ test('Tornado selects damaged playable clusters, honors defaults, and excludes b
       assert.equal(c.frictionCombineRule(), RAPIER.CoefficientCombineRule.Min);
     }
     powers.step(.1, .1, BOUNDS);
-    near(blocks.get(0).b.linvel().x, 0, 'no initial inward pull');
+    assert.ok(blocks.get(0).b.linvel().y > 0, 'roaming vortex lifts captured cubes');
     assert.ok(blocks.get(0).b.linvel().z > 1, 'real tangential impulse starts the orbit');
     near(powers.wellRings[0].position.y, 0, 'funnel bottom');
     near(powers.wellRings[4].position.y * powers.wellMesh.scale.y, 2.5, 'funnel world height');
@@ -275,8 +275,8 @@ test('Tornado selects damaged playable clusters, honors defaults, and excludes b
       near(speed(o.b), 0, 'excluded body velocity');
       near(o.cs[0].friction(), .65, 'excluded collider friction');
     });
-    powers.endWell();
-    for (const target of well.targets) {
+    const captured=[...well.targets];powers.endWell();
+    for (const target of captured) {
       const c = blocks.get(target.id).cs[0];
       near(c.friction(), .65, 'restored friction');
       assert.equal(c.frictionCombineRule(), RAPIER.CoefficientCombineRule.Multiply);
@@ -295,6 +295,7 @@ test('Tornado honors stronger explicit configuration and restores safely after t
     near(well.acceleration, 60.8, 'custom acceleration');
     near(well.targets[0].remaining, 45.6, 'custom impulse budget');
     assert.equal(well.expires, 9);
+    const survivor = blocks.get(well.targets[1].id).cs[0];
     const removed = blocks.get(well.targets[0].id);
     world.removeRigidBody(removed.b);
     blocks.delete(removed.id);
@@ -305,43 +306,26 @@ test('Tornado honors stronger explicit configuration and restores safely after t
     powers.endWell();
     near(replacement.cs[0].friction(), .91, 'replacement collider must not inherit old friction');
     assert.equal(replacement.cs[0].frictionCombineRule(), RAPIER.CoefficientCombineRule.Max);
-    const survivor = blocks.get(well.targets[1].id).cs[0];
     near(survivor.friction(), .65, 'surviving target restored');
     assert.equal(survivor.frictionCombineRule(), RAPIER.CoefficientCombineRule.Multiply);
   });
 });
 
-test('Tornado orbits on a high-friction floor without central collapse and restores on expiry', () => {
+test('Tornado lifts and throws on a high-friction floor, then releases capture ownership', () => {
   withPhysics(({ powers, world }) => {
-    const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -.2, 0));
-    const floorCollider = world.createCollider(RAPIER.ColliderDesc.cuboid(20, .2, 20)
-      .setFriction(.85), floor);
-    const blocks = new Map();
-    const target = addBlock(world, blocks, 1, { x: 3, half: .3 });
-    for (let i = 0; i < 90; i++) world.step();
-    const start = target.b.translation().x;
-    const well = powers.createWell({ x: 0, y: .3, z: 0 }, 0, blocks);
-    let halfSecondZ, smallestRadius = Infinity, angleTravel = 0, lastAngle = 0;
-    for (let i = 0; i < 360; i++) {
-      powers.step(DT, i * DT, BOUNDS);
-      world.step();
-      const p = target.b.translation(), angle = Math.atan2(p.z, p.x);
-      const delta = Math.atan2(Math.sin(angle - lastAngle), Math.cos(angle - lastAngle));
-      angleTravel += delta; lastAngle = angle;
-      smallestRadius = Math.min(smallestRadius, Math.hypot(p.x, p.z));
-      if (i === 44) halfSecondZ = p.z;
-    }
-    assert.ok(halfSecondZ > 1, 'cube must visibly orbit within half a second');
-    assert.ok(smallestRadius > start * .9, 'orbit never collapses toward center');
-    near(Math.hypot(target.b.translation().x, target.b.translation().z), start, 'retains original radius', .1);
-    assert.ok(angleTravel > 3, 'cube travels more than half a turn in four seconds');
-    assert.ok(well.targets[0].remaining > 0, 'orbit retains bounded correction headroom');
-    near(floorCollider.friction(), .85, 'global floor friction remains untouched');
-    powers.step(DT, 4.01, BOUNDS);
-    assert.equal(powers.well, null);
-    assert.equal(powers.wellMesh.visible, false);
-    near(target.cs[0].friction(), .65, 'expired target friction');
-    assert.equal(target.cs[0].frictionCombineRule(), RAPIER.CoefficientCombineRule.Multiply);
+    const floor=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0,-.2,0));
+    const floorCollider=world.createCollider(RAPIER.ColliderDesc.cuboid(20,.2,20).setFriction(.85),floor);
+    const blocks=new Map(),target=addBlock(world,blocks,1,{x:2,half:.3});
+    for(let i=0;i<90;i++)world.step();
+    const start={...target.b.translation()},well=powers.createWell({x:0,y:.3,z:0},0,blocks,{random:()=>.5});
+    let maxY=0;
+    for(let i=1;i<=180;i++){powers.step(DT,i*DT,BOUNDS);world.step();maxY=Math.max(maxY,target.b.translation().y);}
+    assert.ok(maxY>start.y+.3,'captured cube lifts from the high-friction floor');
+    assert.ok(Math.hypot(target.b.translation().x-start.x,target.b.translation().z-start.z)>1,'cube is visibly thrown');
+    assert.equal(well.targets.length,0,'ejected cube is no longer protected');
+    near(floorCollider.friction(),.85,'global floor remains untouched');
+    near(target.cs[0].friction(),.65,'released target friction restored');
+    powers.step(DT,4.01,BOUNDS);assert.equal(powers.well,null);assert.equal(powers.wellMesh.visible,false);
   });
 });
 

@@ -59,3 +59,11 @@ test('real Rapier floor/cube impacts are harmless during pull; released cube can
  for(let i=0;i<270;i++){world.step(queue);drain();}
  assert.ok(landing,'gravity produces a fresh valid landing after release');assert.ok(damages>0);queue.free();
 }));
+test('overlapping Tornado and Black Hole retain immunity until final capture release',()=>fixture(({cube,powers,blocks,guard,history,contacts})=>{
+ const a=cube(1),b=cube(2,1);powers.createBlackHole({x:0,y:2,z:0},0,blocks);
+ const tornado={kind:'tornado',active:true,blocks,point:{x:0,y:0,z:0},range:.1,targets:[{id:a.id,body:a.b,handle:a.b.handle}]};
+ guard.sync([powers.blackHole,tornado],blocks,history,contacts);assert(guard.has(1)&&guard.has(2));
+ powers.endBlackHole();guard.sync([null,tornado],blocks,history,contacts);assert(guard.has(1));assert(!guard.has(2));
+ a.lastHit=99;a.origin.lastStrike=99;history.set('cube1|table1',99);contacts.set('pair',{group:'cube1|cube2'});
+ tornado.targets=[];guard.sync([null,tornado],blocks,history,contacts);assert(!guard.has(1));assert.equal(a.lastHit,-Infinity);assert.equal(a.origin.lastStrike,-Infinity);assert.equal(history.size,0);assert.equal(contacts.size,0);
+}));
