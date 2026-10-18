@@ -120,7 +120,7 @@ export class AudioFX {
       try { this.context.resume().catch(() => {}); } catch (_) {}
       return;
     }
-    const known = ['launch', 'wall', 'hit', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim'];
+    const known = ['launch', 'wall', 'hit', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'halo'];
     if (!known.includes(name)) return;
     try {
       const now = this.context.currentTime;
@@ -136,6 +136,13 @@ export class AudioFX {
       const tone = (hz, dur, amp, shape = 'sine', end = hz, delay = 0) => this._tone(v, t + delay, hz, dur, amp * level, shape, end);
       const noise = (dur, amp, hz = 2400, band = 'highpass', delay = 0) => this._noise(v, t + delay, dur, amp * level, hz, band);
       switch (name) {
+        case 'release': tone(520,.14,.06,'sine',1040); tone(1560,.18,.025,'sine',1560,.035); break;
+        case 'land': tone(410,.07,.055,'sine',280); tone(890,.11,.035); break;
+        case 'pickup': [660,880,1320].forEach((hz,i)=>tone(hz,.17,.055,'sine',hz,i*.045)); break;
+        case 'pulse': tone(160,.32,.14,'sine',42); noise(.16,.08,850,'lowpass'); tone(600,.18,.025,'sine',180); break;
+        case 'pierce': noise(.08,.065,3700); tone(1400,.12,.055,'triangle',2400); break;
+        case 'arc': [0,.035,.08].forEach((d,i)=>{noise(.045,.05,2200+i*900,'bandpass',d);tone(900+i*340,.06,.035,'sawtooth',450,d);}); break;
+        case 'halo': [392,587,784,1175].forEach((hz,i)=>tone(hz,.32,.065,'sine',hz,i*.045)); noise(.16,.025,1200,'bandpass'); break;
         case 'launch':
           tone(290, 0.14, 0.15, 'sine', 115); noise(0.07, 0.065, 1300, 'bandpass'); break;
         case 'wall':

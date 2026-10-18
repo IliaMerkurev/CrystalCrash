@@ -1,0 +1,55 @@
+import * as THREE from 'three';
+import {createBonusVisuals} from './bonus-visuals.js';
+import {BONUS_DEFS} from './bonus-controller.js';
+
+// Container cores, collectible meshes and a small reusable effect pool.
+// Pickups are visual bodies with analytic floor contact, never bumpers.
+export class BonusWorld {
+ constructor({scene,controller,radius,bounds,blocked,onSound,onNotice}) {
+  Object.assign(this,{scene,controller,radius,bounds,blocked,onSound,onNotice});
+  this.visuals=createBonusVisuals(THREE);this.cores=new Map();this.pickups=[];this.time=0;this.seen=new Set();this.lastBall=null;this.tip=null;this.tipAge=0;
+  this.label=document.createElement('div');this.label.className='power-tip';document.body.appendChild(this.label);
+  this.hud=document.createElement('div');this.hud.id='power-hud';this.hud.setAttribute('aria-live','polite');document.body.appendChild(this.hud);this.hudKey='';
+  this.accents={};for(const kind of ['pulse','pierce','arc','halo']){const m=this.visuals.createBallAccent(kind);m.visible=false;m.scale.setScalar(radius*2);scene.add(m);this.accents[kind]=m;}
+  this.rings=Array.from({length:4},()=>{const m=new THREE.Mesh(new THREE.TorusGeometry(1,.018,5,64),new THREE.MeshBasicMaterial({color:0xffb44a,transparent:true,opacity:0,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.visible=false;scene.add(m);return {mesh:m,age:0,duration:.5,max:1};});
+  this.arcs=Array.from({length:3},()=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(24),3));const m=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xb68cff,transparent:true,opacity:0,depthWrite:false,toneMapped:false}));m.visible=false;scene.add(m);return {mesh:m,age:0,duration:.22};});
+ }
+ warmupObjects(){const group=this.visuals.warmupObjects();for(const fx of [...this.rings,...this.arcs]){const m=fx.mesh.clone();m.visible=true;group.add(m);}return group;}
+ teach(key,text,point){if(this.seen.has(key))return;this.seen.add(key);this.tip={text,point};this.tipAge=3;}
+ attach(origin){if(!origin.bonus)return;const mesh=this.visuals.createCore(origin.bonus);if(origin.bonusPose){mesh.position.copy(origin.bonusPose.p);mesh.quaternion.copy(origin.bonusPose.q);}this.scene.add(mesh);this.cores.set(origin.id,{origin,mesh});}
+ capturePose(origin,body){origin.bonusPose={p:new THREE.Vector3().copy(body.translation()),q:new THREE.Quaternion().copy(body.rotation()),v:new THREE.Vector3().copy(body.linvel())};}
+ release(origin){if(!origin.bonus||origin.bonusReleased)return;origin.bonusReleased=true;const core=this.cores.get(origin.id);if(core){this.scene.remove(core.mesh);this.visuals.releaseInstance(core.mesh);this.cores.delete(origin.id);}
+  const kind=origin.bonus,mesh=this.visuals.createModel(kind),scale=this.radius*2*.65;mesh.scale.setScalar(scale);const box=new THREE.Box3().setFromObject(mesh),height=Math.max(.1,-box.min.y+.012),pose=origin.bonusPose;
+  const p=pose?.p.clone()||new THREE.Vector3(0,1,this.bounds().mid-1),v=pose?.v.clone().multiplyScalar(.18)||new THREE.Vector3();v.clampLength(0,1.4);v.y=Math.max(v.y,.25);
+  const item={kind,mesh,p,v,height,scale,landed:false,bounced:false,blockedFor:0,noticeAt:-10,returning:0};this.pickups.push(item);this.scene.add(mesh);mesh.position.copy(p);this.onSound('release');
+  if(!this.safe(p))this.returnItem(item);
+ }
+ safe(p){const b=this.bounds();return p.z>b.top+.8&&p.z<b.bottom-this.radius*3&&Math.abs(p.x)<b.half(p.z)-.45&&p.y>-.5;}
+ safePoints(){const b=this.bounds(),span=b.bottom-b.mid;return [[0,b.mid+.75],[-.9,b.mid+span*.18],[.9,b.mid+span*.18],[0,b.mid+span*.35]].map(([x,z])=>new THREE.Vector3(x,.8,Math.min(z,b.bottom-this.radius*3.2)));}
+ returnItem(item){const points=this.safePoints().filter(p=>!this.blocked(p,.42));if(!points.length)return;points.sort((a,b)=>a.distanceToSquared(item.p)-b.distanceToSquared(item.p));item.from=item.p.clone();item.to=points[0];item.returning=.32;item.landed=false;item.bounced=false;item.blockedFor=0;item.v.set(0,0,0);}
+ reset({run=false}={}){for(const {mesh}of this.cores.values()){this.scene.remove(mesh);this.visuals.releaseInstance(mesh);}this.cores.clear();for(const p of this.pickups)this.scene.remove(p.mesh);this.pickups.length=0;this.controller.reset();this.lastBall=null;this.tip=null;this.label.style.opacity=0;for(const fx of [...this.rings,...this.arcs])fx.mesh.visible=false;if(run)this.seen.clear();this.updateHUD();}
+ remap(fn){for(const p of this.pickups){fn(p.p);if(p.from)fn(p.from);if(p.to)fn(p.to);}this.lastBall=null;}
+ pulse(point,radius,color=0xffb44a){const fx=this.rings.find(f=>!f.mesh.visible)||this.rings[0];fx.mesh.position.copy(point);fx.mesh.position.y=Math.max(.035,point.y);fx.max=radius;fx.age=0;fx.duration=.48;fx.mesh.material.color.set(color);fx.mesh.visible=true;}
+ arc(points){for(let i=0;i<Math.min(3,points.length-1);i++){const fx=this.arcs[i],a=points[i],b=points[i+1],data=fx.mesh.geometry.attributes.position;for(let j=0;j<8;j++){const t=j/7,p=new THREE.Vector3().lerpVectors(a,b,t);if(j>0&&j<7){p.x+=Math.sin(j*5.1+i)*.065;p.y+=Math.cos(j*3.2+i)*.065;}data.setXYZ(j,p.x,p.y,p.z);}data.needsUpdate=true;fx.mesh.geometry.computeBoundingSphere();fx.age=0;fx.mesh.visible=true;}}
+ update(dt,ballPoint,ballVelocity,canCollect,clusters){this.time+=dt;
+  for(const {origin,mesh}of this.cores.values()){let largest=null;for(const id of origin.clusters){const o=clusters.get(id);if(o&&(!largest||o.ids.length>largest.ids.length))largest=o;}if(largest){this.capturePose(origin,largest.b);mesh.position.copy(largest.b.translation());mesh.quaternion.copy(largest.b.rotation());this.visuals.animateCore(mesh,this.time);}}
+  if(this.cores.size){const first=this.cores.values().next().value;this.teach('container','Break it to release a power',()=>first.mesh.position);}
+  for(let i=this.pickups.length-1;i>=0;i--){const item=this.pickups[i];
+   if(item.returning>0){item.returning=Math.max(0,item.returning-dt);const t=1-item.returning/.32;item.p.lerpVectors(item.from,item.to,t*t*(3-2*t));item.p.y+=Math.sin(t*Math.PI)*.25;}
+   else if(!item.landed){item.v.y-=18*dt;item.p.addScaledVector(item.v,dt);if(!this.safe(item.p)){this.returnItem(item);continue;}if(item.p.y<=item.height){item.p.y=item.height;if(!item.bounced&&item.v.y<-.5){item.v.y=Math.min(1.1,-item.v.y*.13);item.v.x*=.2;item.v.z*=.2;item.bounced=true;}else{item.v.set(0,0,0);item.landed=true;this.onSound('land');this.pulse(item.p,.36,BONUS_DEFS[item.kind].color);this.teach('pickup','Hit the pickup',()=>item.p);}}}
+   else{if(this.blocked(item.p,.35))item.blockedFor+=dt;else item.blockedFor=0;if(item.blockedFor>2){this.returnItem(item);continue;}
+    const start=this.lastBall||ballPoint,delta=new THREE.Vector3().subVectors(ballPoint,start),t=delta.lengthSq()>0?THREE.MathUtils.clamp(new THREE.Vector3().subVectors(item.p,start).dot(delta)/delta.lengthSq(),0,1):0,nearest=start.clone().addScaledVector(delta,t);
+    if(canCollect&&ballVelocity.lengthSq()>.04&&nearest.distanceTo(item.p)<this.radius*1.8){const result=this.controller.collect(item.kind);if(result.accepted){this.scene.remove(item.mesh);this.pickups.splice(i,1);this.onSound('pickup');this.onNotice(result.message);this.pulse(ballPoint,.55,BONUS_DEFS[item.kind].color);this.teach('power-'+item.kind,item.kind==='pierce'?'Line up your shot':item.kind==='halo'?'One save ready':`${BONUS_DEFS[item.kind].name} ready · Hit glass`,()=>ballPoint);this.updateHUD();continue;}if(this.time-item.noticeAt>.75){this.onNotice(result.message);item.noticeAt=this.time;}}
+   }
+   item.mesh.position.copy(item.p);item.mesh.rotation.y=Math.sin(this.time*.7)*.16;const born=Math.min(1,(this.time-(item.spawnTime??(item.spawnTime=this.time)))/.18);item.mesh.scale.setScalar(item.scale*(.3+.7*born));
+  }
+  this.lastBall=canCollect?ballPoint.clone():null;
+  for(const fx of this.rings){if(!fx.mesh.visible)continue;fx.age+=dt;const t=fx.age/fx.duration;if(t>=1){fx.mesh.visible=false;continue;}fx.mesh.scale.setScalar(.05+fx.max*t);fx.mesh.material.opacity=(1-t)*.85;}
+  for(const fx of this.arcs){if(!fx.mesh.visible)continue;fx.age+=dt;fx.mesh.material.opacity=Math.max(0,1-fx.age/fx.duration);if(fx.age>=fx.duration)fx.mesh.visible=false;}
+  this.tipAge-=dt;this.updateHUD();
+ }
+ updateHUD(){const h=this.controller.snapshotHUD(),key=[h.active?.kind,h.active?.remaining,h.active?.exiting,h.queued?.kind,h.halo].join('|');if(key===this.hudKey)return;this.hudKey=key;this.hud.replaceChildren();const add=(kind,text,cls='')=>{const el=document.createElement('span');el.className='power-slot '+cls;el.style.setProperty('--power',`#${BONUS_DEFS[kind].color.toString(16).padStart(6,'0')}`);el.textContent=text;this.hud.appendChild(el);};if(h.active)add(h.active.kind,`${BONUS_DEFS[h.active.kind].name} ${h.active.remaining??h.active.charges??''}`);if(h.queued)add(h.queued.kind||h.queued,`NEXT · ${BONUS_DEFS[h.queued.kind||h.queued].name}`,'queued');if(h.halo)add('halo','HALO · 1 SAVE');}
+ render(camera,ballPoint){const h=this.controller.snapshotHUD();for(const [kind,mesh]of Object.entries(this.accents)){mesh.visible=kind==='halo'?h.halo:h.active?.kind===kind;mesh.position.copy(ballPoint);mesh.rotation.y=this.time*.6;if(kind==='pierce')mesh.userData.charges?.forEach((charge,i)=>charge.visible=i<(h.active?.remaining||0));}
+  if(this.tip&&this.tipAge>0){const point=typeof this.tip.point==='function'?this.tip.point():this.tip.point;if(point){const p=point.clone().add(new THREE.Vector3(0,.5,0));p.z+=this.scene.position.z;p.project(camera);this.label.textContent=this.tip.text;this.label.style.left=`${THREE.MathUtils.clamp((p.x+1)*innerWidth/2,85,innerWidth-85)}px`;this.label.style.top=`${THREE.MathUtils.clamp((1-p.y)*innerHeight/2,100,innerHeight-110)}px`;this.label.style.opacity=p.z<1?1:0;}}else this.label.style.opacity=0;
+ }
+}

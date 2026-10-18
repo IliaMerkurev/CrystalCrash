@@ -197,3 +197,13 @@ Transition consistency: the cool directional light target now moves with the are
 Aim-camera comfort revision: fixed centered pose, no lateral movement, shot-direction yaw or off-center ball tracking. Camera moves 25% closer and 30% lower with the same gentle FOV reduction; aim-time shake is suppressed. Frozen gesture projection and smooth return retained.
 
 Section progress: both neon rails fill green from the lower edge to the gate based on removed original shell area, including partial chipping. Progress is monotonic and resets per arena; preview decks remain orange. The unlocked gate uses a green emissive pulse. Shared shader uniforms avoid per-frame mesh/material rebuilds. Aim pose is lower and more forward-looking, still centered without yaw tracking.
+
+## Prototype 0.3: authored progression and collectible powers
+
+Ten deterministic arenas introduce T1–T5, with 12 T1 cubes and exactly one Pulse on First Spark. The ten-arena sequence repeats without new tiers or random bonus drops. Progress remains based on original shell area.
+
+Power containers retain their tier color. A small colored core follows its container; destruction releases a procedural 3D pickup that falls, lands, and must be touched by the moving main ball. Inaccessible pickups return visibly to a safe point instead of granting themselves. Uncollected pickups never block the gate.
+
+The first implementation includes Pulse, Pierce, Arc and Safety Halo, one active attack slot, one FIFO queued slot and an independent Halo. Bonus damage is bounded and never hits the gate. Pierce suppresses only glass response until it exits remaining shell volumes. Powers reset on loss or arena transition. Frost, Split, Gravity Well and Heavy Hit remain post-MVP ideas.
+
+Validation for this iteration: production build and static source review only. No browser, gameplay or scripted simulation tests were run, at the owner's request. Playability and phone performance await owner review.
