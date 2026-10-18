@@ -54,7 +54,7 @@ const context={
  arenaDefinition,arenaBlocks,document,window:{addEventListener:(name,fn)=>windowEvents[name]=fn},$ :id=>elements.get(id),
  v3,clamp:THREE.MathUtils.clamp,C:{...TUNE},GROUP:{table:0x0001001f,ball:0x00020017,structure:0x0004001f,debris:0x00080005},
  scene,powers,camera:new THREE.PerspectiveCamera(42,390/844,.1,100),cameraBase:v3(0,15,17),
- cameraFX:new CameraFX(),ballTimeScale:new BallTimeScale(),aimTimeScale:new AimTimeScale(),holeImpactGuard:new BlackHoleImpactGuard(),
+ heavyBallMaterial:null,ballLandingAudio:{reset(){}},cameraFX:new CameraFX(),ballTimeScale:new BallTimeScale(),aimTimeScale:new AimTimeScale(),holeImpactGuard:new BlackHoleImpactGuard(),
  blastLens:null,frostScreenMask:null,tornadoVisual:null,powerFX:{clear(){effectsCleared++;}},audio:{play(){}},canvas:{hasPointerCapture:()=>false},
  blocks:new Map(),originals:new Map(),colliders:new Map(),fragments:[],dust:[],dustMeshes:[{count:5}],glints:{count:5},particleGlow:{count:5},
  previousVel:new Map(),impactHistory:new Map(),strikeContacts:new Map(),arenaBodies:[],railLights:[],railGreen:new THREE.Color(0x24ff75),railProgress:{value:0},

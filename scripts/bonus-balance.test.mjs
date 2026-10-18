@@ -354,6 +354,7 @@ test('Nine-type arena pool retains 1/2/2 counts and caps powerful later arenas a
         const bonuses = arenaDefinition(level).bonuses;
         assert.ok(bonuses.length >= 2 && bonuses.length <= 5);
         if (level <= 3) assert.equal(bonuses.length, 2);
+        if (level === 2) assert.ok(bonuses.includes('bomb'));
         const powerful = bonuses.filter(kind => kind === 'gravity' || kind === 'blackhole');
         assert.ok(powerful.length <= 1, 'Tornado and Black Hole cannot share an arena');
         if (powerful.length) assert.ok(bonuses.length <= 3);

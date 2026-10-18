@@ -67,3 +67,40 @@ test('ground skirt stays local and low, with fixed warmup and resource budget',(
  const warm=v.warmupObjects();assert.ok(warm.children.some(x=>x.geometry===g));
  for(const clone of warm.children){if(clone.isInstancedMesh)clone.dispose();clone.material.dispose();}v.dispose();
 });
+
+test('floor spiral is exactly 2.5x smaller without changing the main funnel',()=>{
+ const v=make(),w=well();v.update(w,.016,11);
+ assert.equal(LIMITS.groundScale,.4);assert.deepEqual(v.groundFlow.scale.toArray(),[.4,1,.4]);
+ v.groundFlow.geometry.computeBoundingSphere();const originalRadius=v.groundFlow.geometry.boundingSphere.radius;
+ assert.ok(Math.abs(originalRadius-2.05)<.00001);
+ assert.ok(Math.abs(originalRadius*v.groundFlow.scale.x-.82)<.00001);
+ assert.deepEqual(v.group.scale.toArray(),[1,1,1]);assert.deepEqual(v.outer.scale.toArray(),[1,1,1]);
+ assert.equal(LIMITS.height,4.7);assert.equal(v.outer.geometry.parameters.height,4.7);
+ v.dispose();
+});
+test('ground skirt and all funnel ribbons track every roaming center and stay grounded',()=>{
+ const v=make(),w=well(),p=new THREE.Vector3(),matrix=new THREE.Matrix4();
+ // Even a stale local spawn offset must not keep the floor flow behind.
+ v.groundFlow.position.set(7,3,-9);
+ for(let i=0;i<30;i++){
+  w.point.x=1+i*.11;w.point.z=3-i*.17;w.point.y=2+i*.3;
+  v.update(w,i%2?.016:0,10.2+i*.08);v.group.updateMatrixWorld(true);
+  v.groundFlow.getWorldPosition(p);
+  assert.ok(Math.abs(p.x-w.point.x)<1e-9);assert.ok(Math.abs(p.z-w.point.z)<1e-9);assert.ok(Math.abs(p.y-.065)<1e-9);
+  for(const ribbon of v.ribbons){ribbon.getWorldPosition(p);assert.equal(p.x,w.point.x);assert.equal(p.z,w.point.z);assert.equal(p.y,.04);}
+  // Ground smoke also belongs to the same moving frame, with no spawn-space instances.
+  v.smoke.getMatrixAt(0,matrix);p.setFromMatrixPosition(matrix);const localX=p.x,localZ=p.z;p.applyMatrix4(v.smoke.matrixWorld);
+  assert.ok(Math.abs(p.x-(w.point.x+localX*v.group.scale.x))<1e-9);
+  assert.ok(Math.abs(p.z-(w.point.z+localZ*v.group.scale.z))<1e-9);
+  assert.ok(p.y<.25);
+ }
+ v.clear();assert.equal(v.group.visible,false);v.dispose();
+});
+
+test('small moving skirt uses feathered local glow without extra passes',()=>{
+ const v=make(),material=v.groundFlow.material;
+ assert.equal(material.blending,THREE.AdditiveBlending);assert.equal(material.depthTest,true);assert.equal(material.depthWrite,false);
+ assert.match(material.fragmentShader,/halo=exp/);assert.match(material.fragmentShader,/smoothstep\(.95,2.05,r\)/);
+ assert.equal(material.uniforms,v.uniforms);assert.equal(v.meshes.length,9);
+ v.dispose();
+});

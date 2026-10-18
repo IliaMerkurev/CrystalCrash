@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { arenaBlocks, arenaDefinition, setArenaRunSeed } from '../src/arena-data.js';
+import { GLASS } from '../src/config.js';
 
 const DEFAULT_SEED = 0x00c57a11;
 const KINDS = ['pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
@@ -20,7 +21,7 @@ test('All fourteen arenas and four cycles keep stable, unique, compatible seeded
   const seenCounts = new Set(), seenKinds = new Set();
   const early = new Map([2, 3].map(level => [level, { withSplit: 0, withoutSplit: 0, sets: new Set() }]));
   try {
-    for (const seed of [0, 1, 0xffffffff, DEFAULT_SEED, ...Array.from({ length: 24 }, (_, i) => seedFor(i + 2))]) {
+    for (const seed of [0, 1, 0xffffffff, DEFAULT_SEED, ...Array.from({ length: 124 }, (_, i) => seedFor(i + 2))]) {
       setArenaRunSeed(seed);
       for (let level = 1; level <= 56; level++) {
         const metadata = arenaDefinition(level), bonuses = metadata.bonuses;
@@ -29,6 +30,7 @@ test('All fourteen arenas and four cycles keep stable, unique, compatible seeded
         if (level === 1) assert.deepEqual(bonuses, ['pulse']);
         else if (level <= 3) {
           assert.equal(bonuses.length, 2);
+          if (level === 2) assert.ok(bonuses.includes('bomb'), 'arena 2 guarantees exactly one Bomb');
           early.get(level)[bonuses.includes('split') ? 'withSplit' : 'withoutSplit']++;
           early.get(level).sets.add(sorted(bonuses).join(','));
         } else {
@@ -39,6 +41,7 @@ test('All fourteen arenas and four cycles keep stable, unique, compatible seeded
         const powerful = bonuses.filter(kind => POWERFUL.has(kind));
         assert.ok(powerful.length <= 1, `no Tornado/Black Hole pair at ${seed}/${level}`);
         if (powerful.length) assert.ok(bonuses.length >= 2 && bonuses.length <= 3);
+        if (bonuses.includes('frost')) assert.ok(metadata.tierCounts.some((count, type) => count > 0 && GLASS[type].hits > 1));
 
         const specs = arenaBlocks(level);
         assert.deepEqual(sorted(specs.map(spec => spec[7]).filter(Boolean)), sorted(bonuses));
@@ -64,6 +67,7 @@ test('All fourteen arenas and four cycles keep stable, unique, compatible seeded
 // Inclusion probabilities differ from the 1:3 draw weight because each arena
 // draws multiple unique kinds and powerful kinds reduce the final companions.
 function expectedInclusions() {
+  const second = Object.fromEntries(KINDS.map(kind => [kind, kind === 'bomb' ? 1 : (kind === 'split' ? 1 : 3) / 22]));
   const early = Object.fromEntries(KINDS.map(kind => [kind, 0]));
   const later = Object.fromEntries(KINDS.map(kind => [kind, 0]));
   const weight = kind => kind === 'split' ? 1 : 3;
@@ -89,14 +93,14 @@ function expectedInclusions() {
     }
   }
   visit([], KINDS, 1);
-  return { early, later };
+  return { second, early, later };
 }
 
 test('Representative seeded samples match Split 1:3 selection weights, not literal marginal frequency', () => {
   const expected = expectedInclusions();
-  const actual = { early: Object.fromEntries(KINDS.map(kind => [kind, 0])), later: Object.fromEntries(KINDS.map(kind => [kind, 0])) };
-  const levels = { early: [2, 3], later: [4, 7, 10, 14, 15, 28, 29, 42, 70] };
-  const samples = 4096;
+  const actual = Object.fromEntries(['second', 'early', 'later'].map(phase => [phase, Object.fromEntries(KINDS.map(kind => [kind, 0]))]));
+  const levels = { second: [2], early: [3], later: [4, 7, 10, 14, 15, 28, 29, 42, 70] };
+  const samples = 16384;
   try {
     for (let index = 0; index < samples; index++) {
       setArenaRunSeed(seedFor(index));
@@ -104,14 +108,15 @@ test('Representative seeded samples match Split 1:3 selection weights, not liter
         for (const level of phaseLevels) for (const kind of arenaDefinition(level).bonuses) actual[phase][kind]++;
       }
     }
-    for (const phase of ['early', 'later']) {
+    for (const phase of ['second', 'early', 'later']) {
       const count = samples * levels[phase].length;
       for (const kind of KINDS) {
         const observed = actual[phase][kind] / count;
         assert.ok(Math.abs(observed - expected[phase][kind]) < .016,
           `${phase}/${kind}: observed ${observed.toFixed(4)}, weighted expectation ${expected[phase][kind].toFixed(4)}`);
       }
-      const ordinaryMean = ORDINARY.reduce((sum, kind) => sum + actual[phase][kind], 0) / ORDINARY.length;
+      const ordinary = phase === 'second' ? ORDINARY.filter(kind => kind !== 'bomb') : ORDINARY;
+      const ordinaryMean = ordinary.reduce((sum, kind) => sum + actual[phase][kind], 0) / ordinary.length;
       const ratio = actual[phase].split / ordinaryMean;
       const expectedRatio = expected[phase].split / expected[phase].pulse;
       assert.ok(Math.abs(ratio - expectedRatio) < .04,
@@ -121,6 +126,42 @@ test('Representative seeded samples match Split 1:3 selection weights, not liter
     assert.ok(expected.later.split / expected.later.pulse > 1 / 3,
       'unique multi-draw inclusion is deliberately not asserted as exactly one third');
   } finally { setArenaRunSeed(DEFAULT_SEED); }
+});
+
+test('Frost eligibility follows actual multi-hit composition, including bridge, core and later cycles', () => {
+  const originalHits = GLASS.map(glass => glass.hits);
+  try {
+    // Exercise real generated arenas with a one-hit ruleset, then with exactly
+    // one durable tier. A guessed level gate or "tier > T1" check fails here.
+    for (const durableType of [null, 1, 3, 4]) {
+      GLASS.forEach((glass, type) => { glass.hits = type === durableType ? 2 : 1; });
+      const seenFrost = new Set(), eligible = new Set();
+      for (let index = 0; index < 96; index++) {
+        setArenaRunSeed(seedFor(index));
+        for (let level = 1; level <= 56; level++) {
+          const arena = arenaDefinition(level);
+          const useful = arena.tierCounts.some((count, type) => count > 0 && GLASS[type].hits > 1);
+          if (useful && level !== 1) eligible.add(level);
+          if (arena.bonuses.includes('frost')) {
+            assert.ok(useful, `Frost needs a multi-hit target at level ${level}, durable tier ${durableType}`);
+            seenFrost.add(level);
+          }
+          if (level === 2) {
+            assert.equal(arena.bonuses.length, 2);
+            assert.ok(arena.bonuses.includes('bomb'));
+          }
+        }
+      }
+      assert.deepEqual([...seenFrost].sort((a, b) => a - b), [...eligible].sort((a, b) => a - b),
+        `every useful formation retains a chance of Frost with durable tier ${durableType}`);
+      if (durableType === 3) assert.ok(seenFrost.has(4), 'the authored T4 bridge is a useful Frost target');
+      if (durableType === 4) assert.ok(seenFrost.has(5), 'the authored T5 core is a useful Frost target');
+      if (durableType !== null) assert.ok(seenFrost.has(15), 'returning First Spark gains useful reinforced tiers');
+    }
+  } finally {
+    GLASS.forEach((glass, type) => { glass.hits = originalHits[type]; });
+    setArenaRunSeed(DEFAULT_SEED);
+  }
 });
 
 test('Retuning preserves all pre-change cube geometry, tiers and progression through four cycles', () => {

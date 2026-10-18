@@ -114,3 +114,8 @@ Tornado's cyan ribbons now have soft feathered edges, with additional gold filam
 
 ### Soft contact and rolling audio
 Nonbreaking glass/table impacts now use a quieter distinct glass tap, with impact thresholds and contact/cooldown suppression. Captured environmental collisions stay quiet. A single shared procedural rolling loop follows actual grounded ball tangential speed and smoothly fades on stop, catch, airborne motion, pause or mute. Main and extra balls share bounded loudness; Black Hole and aiming speed reductions are reflected in pitch/gain. Music remains separate.
+
+### Rounded rolling, metal landings and Heavy gold
+The rolling loop uses low rounded rumble with sparse contact ticks, rather than a bright noise band. Free balls have a separate metal-on-stone landing sound after genuine airborne floor contact; actual slowed impact speed sets volume, and rail/rest chatter is excluded. Heavy charges smoothly tint all ball materials reflective gold with a brief warm glow, restoring chrome/pink when the final charge is spent. The smaller, softer Tornado ground flow follows its roaming center; the obsolete stationary activation spiral is removed.
+
+Arena 2 always offers Bomb plus a different eligible bonus. Frost is excluded whenever the authored arena has only one-hit glass; later layouts and repeat cycles determine eligibility from actual tier composition.

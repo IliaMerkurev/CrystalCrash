@@ -1,3 +1,5 @@
+import { GLASS } from './config.js';
+
 /** Authored CrystalCrash progression. Tiers in blueprints are one-based.
  * Stack coordinates use a collision-safe horizontal/depth pitch, with row zero
  * nearest the player. Each tier is physically supported by the tier beneath it.
@@ -166,7 +168,15 @@ export function setArenaRunSeed(seed) {
   return arenaRunSeed;
 }
 
-function bonusSchedule(level) {
+function hasFrostTargets(arena) {
+  const needsMultipleHits = type => GLASS[type]?.hits > 1;
+  if (arena.bridge && needsMultipleHits(3) || arena.core && needsMultipleHits(4)) return true;
+  if (arena.rear?.some(([, , height]) => height > 0) && needsMultipleHits(0)) return true;
+  return [...arena.stacks, ...(arena.reinforcements || [])]
+    .some(([, , tiers]) => tiers.some(token => needsMultipleHits(decode(token).type)));
+}
+
+function bonusSchedule(level, arena) {
   if (level === 1) return ['pulse'];
   // A local PRNG depends only on run seed + absolute level. Metadata, preview,
   // generation and repeated resize queries never advance shared random state.
@@ -179,7 +189,11 @@ function bonusSchedule(level) {
     return ((t ^ t >>> 14) >>> 0) / 0x100000000;
   };
   const count = level <= 3 ? 2 : 2 + Math.floor(random() * 4);
-  const kinds = [...BONUS_KINDS], chosen = [];
+  // Eligibility follows the completed formation, including repeated templates'
+  // new tiers. Frost cannot improve an arena whose cubes all need only one hit.
+  const frostUseful = hasFrostTargets(arena);
+  const chosen = level === 2 ? ['bomb'] : [];
+  const kinds = BONUS_KINDS.filter(kind => !chosen.includes(kind) && (kind !== 'frost' || frostUseful));
   // Weighted sampling without replacement: Split has one third of every other
   // kind's selection weight, not a fixed one-third marginal arena frequency.
   while (chosen.length < count) {
@@ -236,7 +250,7 @@ function progression(level, index, source) {
 }
 
 function assignBonuses(arena, level) {
-  const schedule = bonusSchedule(level);
+  const schedule = bonusSchedule(level, arena);
   const candidates = [];
   // Stamp the stable kind set onto temporary hosts for metadata. Once every
   // rear group has been placed, spreadBonusHosts selects the final world-space
@@ -270,7 +284,8 @@ function decode(token) {
  * density grows to a bounded 110 originals. Bonus counts are 1/2/2, then
  * seeded random 2–5 distinct types on every subsequent level and repeat.
  * Split has one-third selection weight; Tornado and Black Hole are mutually
- * exclusive and limit an arena to 2–3 total bonuses.
+ * exclusive and limit an arena to 2–3 total bonuses. Arena 2 guarantees Bomb;
+ * Frost is eligible only when the actual formation includes a multi-hit cube.
  */
 export function arenaDefinition(level) {
   const { level: n, index, cycle, arena } = selected(level);

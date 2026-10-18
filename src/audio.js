@@ -83,29 +83,43 @@ export class AudioFX {
     const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = buffer.getChannelData(0), grain = new Float32Array(length);
     let seed = 0x5a17c9e3;
+    const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
     for (let i = 0; i < length; i++) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      grain[i] = seed / 2147483648 - 1;
+      grain[i] = random() * 2 - 1;
     }
     const coefficient = hz => 1 - Math.exp(-2 * Math.PI * hz / ctx.sampleRate);
-    const a = coefficient(1100), b = coefficient(180), c = coefficient(55);
-    let fast = 0, slow = 0, body = 0, sum = 0, peak = 0;
-    // Warm cyclic filters across the boundary: the texture and its slope wrap
-    // naturally, without a fade-to-silence notch on every revolution.
+    const low = coefficient(145), dc = coefficient(28);
+    let first = 0, second = 0, third = 0, sub = 0, sum = 0, peak = 0;
+    // Three low-pass stages remove the broad bright noise that reads as hiss.
+    // Warming the cyclic filters keeps the rumble seamless without volume dips.
     for (let pass = 0; pass < 3; pass++) for (let i = 0; i < length; i++) {
-      fast += a * (grain[i] - fast);
-      slow += b * (grain[i] - slow);
-      body += c * (grain[i] - body);
+      first += low * (grain[i] - first);
+      second += low * (first - second);
+      third += low * (second - third);
+      sub += dc * (third - sub);
       if (pass < 2) continue;
-      const phase = 2 * Math.PI * i / length;
-      const texture = (body * 0.75 + (fast - slow) * 0.72)
-        * (0.92 + 0.05 * Math.sin(phase * 3) + 0.03 * Math.cos(phase * 7));
-      // Very quiet inharmonic metal resonance over the soft stone texture.
-      data[i] = texture + 0.003 * Math.sin(phase * 437) + 0.002 * Math.sin(phase * 701);
+      data[i] = third - sub;
       sum += data[i] * data[i];
-      peak = Math.max(peak, Math.abs(data[i]));
     }
-    const scale = Math.min(0.21 / Math.sqrt(sum / length), 0.72 / peak);
+    const bodyScale = 0.14 / Math.sqrt(sum / length);
+    for (let i = 0; i < length; i++) data[i] *= bodyScale;
+    // Sparse, irregular micro-contacts give a rolling surface rhythm. Each is
+    // a rounded damped tick with faint metal modes, never a white-noise burst.
+    for (let start = 0.013; start < buffer.duration; start += 0.033 + random() * 0.049) {
+      const offset = Math.round(start * ctx.sampleRate);
+      const strength = 0.12 + random() * 0.08, hz = 155 + random() * 95;
+      const decay = 0.006 + random() * 0.005, metal = 480 + random() * 140;
+      for (let i = 0; i < ctx.sampleRate * 0.12; i++) {
+        const t = i / ctx.sampleRate, attack = 1 - Math.exp(-t / 0.0018);
+        const tick = strength * Math.sin(2 * Math.PI * hz * t) * Math.exp(-t / decay);
+        const ring = 0.011 * Math.sin(2 * Math.PI * metal * t) * Math.exp(-t / 0.014)
+          + 0.004 * Math.sin(2 * Math.PI * metal * 1.47 * t) * Math.exp(-t / 0.009);
+        data[(offset + i) % length] += (tick + ring) * attack;
+      }
+    }
+    sum = 0;
+    for (const sample of data) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); }
+    const scale = Math.min(0.2 / Math.sqrt(sum / length), 0.72 / peak);
     for (let i = 0; i < length; i++) data[i] *= scale;
     return buffer;
   }
@@ -242,11 +256,11 @@ export class AudioFX {
       try { this.context.resume().catch(() => {}); } catch (_) {}
       return;
     }
-    const known = ['launch', 'wall', 'hit', 'glassTap', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
+    const known = ['launch', 'wall', 'hit', 'glassTap', 'ballLand', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
     if (!known.includes(name)) return;
     try {
       const now = this.context.currentTime;
-      const cooldown = { aim: 0.065, wall: 0.035, fall: 0.09, hit: 0.018, glassTap: 0.055, chip: 0.025 }[name] || 0.012;
+      const cooldown = { aim: 0.065, wall: 0.035, fall: 0.09, hit: 0.018, glassTap: 0.055, ballLand: 0.045, chip: 0.025 }[name] || 0.012;
       if (now - (this.lastPlayed.get(name) ?? -Infinity) < cooldown) return;
       this.lastPlayed.set(name, now);
       const v = this._voice(now), t = now + 0.002;
@@ -287,6 +301,14 @@ export class AudioFX {
         case 'glassTap':
           tone(pitch * 0.82, 0.085, 0.035); tone(pitch * 2.31, 0.05, 0.01);
           tone(170, 0.045, 0.018, 'sine', 105); noise(0.012, 0.014, 1200, 'bandpass'); break;
+        case 'ballLand': {
+          // A short stone-contact body with soft inharmonic metal overtones.
+          const variant = 0.94 + index * 0.03;
+          tone(190 * variant, 0.075, 0.09, 'sine', 112 * variant);
+          tone(540 * variant, 0.095, 0.025, 'sine', 510 * variant);
+          tone(835 * variant, 0.055, 0.009, 'sine', 805 * variant);
+          break;
+        }
         case 'crack':
           noise(0.07, 0.11, 1800); tone(pitch * 1.33, 0.16, 0.065); tone(pitch * 3.14, 0.07, 0.025); break;
         case 'chip':

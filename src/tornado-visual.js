@@ -1,6 +1,6 @@
 // Local procedural storm volume. All geometries/materials/pools are allocated once.
 // Coordinates use the game's Y-up ground plane; well.point is the physical center.
-export const TORNADO_VISUAL_LIMITS = Object.freeze({height:4.7, smoke:80, debris:44, drawCalls:9, maxRadius:2.9, maxHeight:5.2});
+export const TORNADO_VISUAL_LIMITS = Object.freeze({height:4.7, groundScale:.4, smoke:80, debris:44, drawCalls:9, maxRadius:2.9, maxHeight:5.2});
 const NOISE = `
 float hash(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
 float noise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);}`;
@@ -49,16 +49,24 @@ void main(){
   const groundMaterial=material(`uniform float time,strength;varying vec2 vUv;varying vec3 vLocal,vNormal;${NOISE}
 void main(){
  float r=length(vLocal.xz),a=atan(vLocal.z,vLocal.x);
- float envelope=smoothstep(.22,.52,r)*(1.-smoothstep(1.05,2.05,r));
  float n=noise(vec3(vLocal.xz*3.,time*.45));
- float flow=.5+.5*sin(a*5.+r*14.-time*4.+n*3.);
- float wisps=pow(flow,3.);float glint=pow(.5+.5*sin(a*3.+r*22.+time*3.),18.);
- vec3 tint=mix(vec3(.24,.34,.42),vec3(.43,.67,.76),wisps);
- tint+=vec3(1.,.58,.12)*glint*.16;
- gl_FragColor=vec4(tint,strength*envelope*(.035+wisps*.14)*(.55+n*.45));
-}`);
+ // Broad Gaussian light shoulder and feathered boundaries create a local glow.
+ // Noise warps the flowing wisps so there are no crisp concentric ring edges.
+ float envelope=smoothstep(.20,.62,r)*(1.-smoothstep(.95,2.05,r));
+ float halo=exp(-pow((r-.88)/.69,2.))*envelope;
+ float flow=.5+.5*sin(a*4.+r*8.-time*3.5+n*5.);
+ float wisps=pow(flow,1.8);
+ float warm=.5+.5*sin(a*2.+r*5.+time*2.+n*3.);
+ vec3 tint=mix(vec3(.18,.35,.45),vec3(.40,.72,.92),wisps);
+ tint+=vec3(1.,.58,.12)*warm*.08;
+ float softAlpha=halo*.085+envelope*wisps*.10*(.55+n*.45);
+ gl_FragColor=vec4(tint,strength*softAlpha);
+}`,{blending:THREE.AdditiveBlending});
   const groundGeo=new THREE.RingGeometry(.2,2.05,96,6);groundGeo.rotateX(-Math.PI/2);
-  this.groundFlow=add(groundGeo,groundMaterial);this.groundFlow.position.y=.025;
+  this.groundFlow=add(groundGeo,groundMaterial);
+  // Only the low ground spiral is reduced 2.5x; funnel height/width stay unchanged.
+  this.groundFlow.scale.set(TORNADO_VISUAL_LIMITS.groundScale,1,TORNADO_VISUAL_LIMITS.groundScale);
+  this.groundFlow.position.set(0,.025,0);
   const smokeMaterial=material(`uniform float time,strength;varying vec2 vUv;varying vec3 vLocal,vNormal;${NOISE}
 void main(){float n=noise(vLocal*5.+vec3(time*.2));float rim=pow(abs(normalize(vNormal).z),1.5);vec3 c=mix(vec3(.20,.25,.30),vec3(.65,.72,.77),n);gl_FragColor=vec4(c,strength*rim*(.09+n*.14));}`);
   const smokeGeo=new THREE.IcosahedronGeometry(1,2);this.geometries.add(smokeGeo);
@@ -94,6 +102,9 @@ void main(){float n=noise(vLocal*5.+vec3(time*.2));float rim=pow(abs(normalize(v
   this.well=well;this.active=true;this.group.visible=true;
   // Physical center already moves smoothly. Copy it exactly to avoid visual/force lag.
   this.group.position.set(well.point.x,.04,well.point.z);
+  // The skirt is always local to the moving physical center, never spawn-anchored.
+  // Ignore point.y because targets can lift while the floor flow stays grounded.
+  this.groundFlow.position.set(0,.025,0);
   const width=Math.min(1.1,Math.max(.7,well.range/4));this.group.scale.set(width,1,width);
   this.uniforms.strength.value=Math.min(1,elapsed/.18,remaining/.42);this.debrisMaterial.opacity=this.uniforms.strength.value*.85;
   this.animate(elapsed);

@@ -64,6 +64,33 @@ function tick(fx, speed, intensity = 1, frames = 120, dt = 1 / 60) {
   }
 }
 
+// Resample one exact loop into a radix-two FFT. No window discontinuity or
+// dependency is needed because the input itself is a complete periodic cycle.
+function spectrum(buffer) {
+  const data = buffer.getChannelData(0), size = 32768;
+  const re = new Float64Array(size), im = new Float64Array(size);
+  for (let i = 0; i < size; i++) {
+    const position = i * data.length / size, at = Math.floor(position), fraction = position - at;
+    re[i] = data[at] * (1 - fraction) + data[(at + 1) % data.length] * fraction;
+  }
+  for (let i = 1, j = 0; i < size; i++) {
+    let bit = size >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) [re[i], re[j]] = [re[j], re[i]];
+  }
+  for (let length = 2; length <= size; length *= 2) {
+    const angle = -2 * Math.PI / length;
+    for (let i = 0; i < size; i += length) for (let j = 0; j < length / 2; j++) {
+      const cos = Math.cos(angle * j), sin = Math.sin(angle * j), a = i + j, b = a + length / 2;
+      const real = re[b] * cos - im[b] * sin, imaginary = re[b] * sin + im[b] * cos;
+      re[b] = re[a] - real; im[b] = im[a] - imaginary;
+      re[a] += real; im[a] += imaginary;
+    }
+  }
+  return Array.from({ length: size / 2 - 1 }, (_, i) => ({ frequency: (i + 1) / buffer.duration, power: re[i + 1] ** 2 + im[i + 1] ** 2 }));
+}
+
 test('rolling has no autoplay and allocates one shared looping graph and buffer across thousands of updates', () => fixture(async fx => {
   fx.updateRolling(20); fx.play('glassTap'); fx.stopRolling();
   assert.equal(fx.context, null);
@@ -109,6 +136,18 @@ test('precomputed stone texture is short, finite, normalized, and wraps without 
   assert.ok(Math.abs(data[0] - data.at(-1)) < deltaRms * 3, 'boundary is no sharper than ordinary texture');
   const edgeRms = Math.sqrt([...data.slice(0, 960), ...data.slice(-960)].reduce((sum, n) => sum + n * n, 0) / 1920);
   assert.ok(edgeRms > rms * .6 && edgeRms < rms * 1.4, 'no repeating fade-out/in at the loop edge');
+}));
+
+test('rolling is low rounded rumble with faint tick resonances, not bright broadband hiss or a pure drone', () => fixture(async fx => {
+  await fx.unlock();
+  const bins = spectrum(fx.rollingBuffer), total = bins.reduce((sum, bin) => sum + bin.power, 0);
+  const fraction = (low, high) => bins.filter(bin => bin.frequency >= low && bin.frequency < high).reduce((sum, bin) => sum + bin.power, 0) / total;
+  assert.ok(fraction(0, 300) > .98, 'almost all energy is in the rounded low body');
+  assert.ok(fraction(0, 400) > .995);
+  assert.ok(fraction(1000, Infinity) < .0001, 'upper-band hiss is suppressed by more than 40 dB');
+  assert.ok(fraction(2000 / 2.08, Infinity) < .0001, 'even the fastest playback keeps hiss above 2 kHz suppressed');
+  assert.ok(fraction(450, 950) > .0005 && fraction(450, 950) < .005, 'faint metal contact modes remain, without a bright wash');
+  assert.ok(Math.max(...bins.map(bin => bin.power)) / total < .1, 'low body is textured, not a single oscillator hum');
 }));
 
 test('actual slow-motion speeds lower gain and pitch smoothly; contact intensity and extreme input are bounded', () => fixture(async fx => {
@@ -220,4 +259,39 @@ test('glassTap is a separate short, softer contact recipe; shatter recipe remain
   assert.deepEqual(noises[0], { duration: .17, amplitude: .12, hz: 1900, band: 'highpass' });
   assert.equal(tones[0].duration, .32); assert.equal(tones[0].amplitude, .066);
   assert.deepEqual(tones[5], { hz: 155, duration: .1, amplitude: .055, shape: 'sine', end: 65 });
+}));
+
+test('ballLand is a separate short rounded metal-on-stone recipe, scaled by impact strength and variant', () => fixture(async fx => {
+  await fx.unlock();
+  const tones = [], noises = [];
+  fx._tone = (_voice, _at, hz, duration, amplitude, shape, end) => tones.push({ hz, duration, amplitude, shape, end });
+  fx._noise = (...args) => noises.push(args);
+  fx.play('ballLand', 1, 0);
+  assert.equal(tones.length, 3); assert.equal(noises.length, 0, 'landing adds no broadband crack or hiss');
+  assert.ok(tones.every(tone => tone.shape === 'sine' && tone.duration <= .095 && tone.hz < 900));
+  assert.equal(tones[0].amplitude, .09); assert.equal(tones[1].amplitude, .025); assert.equal(tones[2].amplitude, .009);
+  assert.ok(tones[0].end < tones[0].hz, 'rounded low impact body drops slightly in pitch');
+  fx.context.currentTime += .044; fx.play('ballLand', 1, 0);
+  assert.equal(tones.length, 3, 'contact chatter is globally bounded by its own 45 ms cooldown');
+  fx.context.currentTime += .002; fx.play('ballLand', .25, 4);
+  assert.equal(tones.length, 6); assert.equal(tones[3].amplitude, .045);
+  assert.ok(tones[3].hz > tones[0].hz, 'variant gives subtle timbral variation');
+  fx.play('glassTap'); assert.equal(tones.length, 9, 'landing does not consume glassTap cooldown');
+}));
+
+test('landing spam stays inside the existing shared voice cap and respects mute, locked and disposed states', () => fixture(async fx => {
+  fx.play('ballLand'); assert.equal(fx.context, null);
+  await fx.unlock();
+  fx.maxVoices = 2;
+  for (let i = 0; i < 100; i++) {
+    fx.context.currentTime += .046;
+    fx.play('ballLand', 1, i);
+    assert.ok(fx.voices.length <= 2);
+    assert.ok(fx.voices.every(voice => voice.sources.length === 3));
+  }
+  assert.ok(fx.context.nodes.filter(node => node.kind === 'oscillator').some(node => node.stops > 1), 'old voices are retired when the cap is reached');
+  const count = fx.context.nodes.length;
+  fx.setMuted(true); fx.context.currentTime += .1; fx.play('ballLand');
+  assert.equal(fx.voices.length, 0); assert.equal(fx.context.nodes.length, count);
+  fx.dispose(); fx.play('ballLand'); assert.equal(fx.voices.length, 0);
 }));
