@@ -177,3 +177,5 @@ First-hit preparation: before enabling PLAY, render representative fracture mesh
 Visual refinement: planar polished chamfers replace rounded cube edges, with geometric bevel normals and stronger reflection on the bevel only. Removed painted emissive edge fill; inner cavity remains within the shell. The default start/recenter projects to 73.5% screen height in both layouts; active held touch retains priority.
 
 Floor reflection refinement: mirror-pass-only glass specular suppression removes pale bevel hotspots without changing visible cubes, ball or rail materials. Shared uniform restored in finally; no new render pass or per-frame material recompilation. Floor coat roughness .34 with adjacent-texel Gaussian filtering.
+
+Score UI: compact frosted glass backplate with local CSS backdrop blur, Safari prefix and translucent opaque fallback; pointer events remain disabled and combo sits below the plate.
