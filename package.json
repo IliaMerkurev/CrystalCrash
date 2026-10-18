@@ -1,12 +1,13 @@
 {
   "name": "crystal-crash",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build && node scripts/inline.mjs",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test:bonuses": "node --test scripts/bonus-balance.test.mjs && node tests/bonus-integration.mjs"
   },
   "dependencies": {
     "three": "0.186.1",

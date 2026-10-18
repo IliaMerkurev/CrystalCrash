@@ -22,16 +22,22 @@ Both rails fill green from bottom to top according to original shell area remove
 
 Break a cube containing a large colored particle sun, then touch its landed 3D pickup with the moving main ball. A colored cue appears around the ball. Attack powers apply automatically on the next valid glass impact; there is no activation button. One active attack and one FIFO queued attack are allowed. Halo occupies an independent save slot. Queued pickups remain visibly labelled as queued. Uncollected pickups do not block completion; inaccessible pickups visibly return to a safe point.
 
-- Pulse: one normal impact plus one damage to at most six nearby originals within 2.2 ball diameters, excluding the struck original.
-- Pierce: three distinct original hits, at most six seconds after the first, without glass bounce. Normal response resumes only after leaving all remaining shell volumes.
-- Arc: one damage to each of up to three nearest chained originals, each hop within 2.5 ball diameters. No-neighbor activation is explicitly shown.
-- Safety Halo: one automatic rescue before losing the main ball; returns to safe control without firing.
-- Frost: the next three direct hits can mark three different originals for six seconds. A later main-ball hit consumes its mark for +1 damage.
-- Split: next glass hit creates two smaller echoes at ±18° to the reflected direction. Each lasts at most ten seconds or four successful hits. Echoes cannot collect or activate powers. The queued attack waits until both echoes end.
-- Gravity Well: a two-second well attracts at most four nearby intact cube bodies within three ball diameters. Acceleration and cumulative added speed are bounded. Ball, pickups and debris are unaffected.
-- Heavy Hit: the next direct strike deals three damage. Frost adds one, making four rather than six. Main-ball mass and controls do not change.
+- Pulse: three damage to the struck original and every original within 4.4 ball diameters, with a broad shockwave.
+- Pierce: ten active seconds after its first hit. Every distinct touched original is destroyed immediately, without glass bounce. Response resumes after leaving remaining shell volumes.
+- Arc: one damage to every ground/support-layer original across the arena, with branching lightning. Upper stacked originals are excluded from the initial target snapshot.
+- Safety Halo: one automatic rescue before losing the main ball.
+- Frost: ten active seconds. Direct hits apply a mark; the next direct hit consumes that mark for +1 damage.
+- Split: two fast smaller balls persist until lost. Catch and relaunch them in the lower zone; they have no magnetic attraction or aiming-camera zoom and slow when entering that zone. They cannot collect or activate powers. The next queued power becomes available immediately.
+- Gravity Well: four seconds of strong bounded pull on up to twelve nearby playable cube clusters within six ball diameters, braking near the center. Balls, pickups and debris are unaffected.
+- Heavy Hit: the next direct strike deals three damage, with a larger impact burst.
 
-Main-ball loss resets powers and removes echoes. Arena transitions reset powers, marks, wells and uncollected pickups. Powers never damage the gate.
+Collected inventory and surviving extra balls persist between arenas. Power timers pause during clear/gate travel and repositioning. Loose uncollected pickups and local Frost marks do not carry. Extra balls gather beside the main ball for travel, then remain catchable in the next arena. Main-ball loss clears its inventory but leaves surviving extra balls alive. Powers never damage the gate.
+
+Arenas 6–14 now contain 52/56/60/64/68/74/80/86/92 originals and 3/4/4/5/6/7/8/8/9 bonuses. Later cycles increase toward a bounded 110 originals and 14 bonuses, retaining mixed glass tiers. The first five layouts are unchanged.
+
+## Focused checks
+
+Run `npm run test:bonuses` for controller timers, inventory, damage routing, support-layer selection and extra-ball input checks. Real Rapier checks also cover held extra balls, transition parking and Gravity arrival/friction restoration. These checks do not establish browser frame rate or visual acceptance. Press Q (physical key, any keyboard layout) for the hidden bonus test menu; selecting a power resets previous effects and equips it immediately. Escape closes the menu.
 
 ## Rendering and physics
 

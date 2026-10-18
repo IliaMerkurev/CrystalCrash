@@ -145,7 +145,61 @@ const ARENAS = [
 function selected(level) {
   const n = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
   const index = (n - 1) % ARENAS.length;
-  return { level: n, index, cycle: Math.floor((n - 1) / ARENAS.length) + 1, arena: ARENAS[index] };
+  const cycle = Math.floor((n - 1) / ARENAS.length) + 1;
+  return { level: n, index, cycle, arena: progression(n, index, ARENAS[index]) };
+}
+
+// Original early lessons remain byte-for-byte the same formations. Thereafter,
+// density rises with the actual level, including when the fourteen names repeat.
+// This cap bounds expensive compound shells rather than only their visible cubes.
+const DENSITY = [30, 36, 41, 45, 48, 52, 56, 60, 64, 68, 74, 80, 86, 92];
+const BONUS_DENSITY = [1, 1, 2, 2, 2, 3, 4, 4, 5, 6, 7, 8, 8, 9];
+const BONUS_ORDER = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
+
+function progression(level, index, source) {
+  if (level <= 5) return source;
+  const arena = { ...source, stacks: source.stacks.map(([x, row, tiers]) => [x, row, [...tiers]]) };
+  // Returning early templates use the whole rear region for their new density,
+  // instead of putting the legacy back row between reinforcements and the gate.
+  if (level > 14) delete arena.rear;
+  const originalCount = arena.stacks.reduce((sum, [, , tiers]) => sum + tiers.length, 0)
+    + (arena.rear || []).reduce((sum, [, , height]) => sum + height, 0)
+    + Number(!!arena.bridge) + Number(!!arena.core);
+  const targetCount = level <= 14 ? DENSITY[index] : Math.min(110, 92 + (level - 14) * 2);
+  const targetBonuses = level <= 14 ? BONUS_DENSITY[index] : Math.min(14, 9 + Math.ceil((level - 14) / 3));
+  const unlocked = level >= 14 ? 8 : level >= 13 ? 7 : level >= 12 ? 6 : level >= 11 ? 5 : 4;
+  const kinds = BONUS_ORDER.slice(0, unlocked);
+  const patterns = level < 11
+    ? [[1, 2, 1], [2, 1, 3], [1, 3, 1, 2], [2, 1], [1, 2, 1, 4]]
+    : [[1, 3, 2, 1], [2, 1, 4], [1, 2, 5, 1], [3, 1, 2], [1, 4, 3, 2, 1]];
+  const bands = level < 11 ? 3 : 4;
+  const columns = [0, -2, 2, -1, 1, -3, 3];
+  arena.reinforcements = [];
+  let remaining = Math.max(0, targetCount - originalCount), tower = 0;
+  while (remaining > 0) {
+    const pattern = patterns[(tower + index) % patterns.length];
+    const tiers = pattern.slice(0, Math.min(remaining, pattern.length));
+    // Alternate bands first: even a modest formation visibly occupies the back
+    // of the upper field, rather than extending one very tall frontal wall.
+    const band = tower % bands, column = columns[Math.floor(tower / bands) % columns.length];
+    arena.reinforcements.push([column, band, tiers]);
+    remaining -= tiers.length; tower++;
+  }
+  arena.reinforcementBands = bands;
+  let bonusCount = arena.stacks.reduce((sum, [, , tiers]) => sum
+    + tiers.filter(token => String(token).includes(':')).length, 0);
+  // Accessible low T1 containers come first, distributed between the original
+  // approach and rear groups. Never bury a pickup inside a stronger-tier cube.
+  const candidates = [...arena.stacks, ...arena.reinforcements]
+    .flatMap(([, , tiers], order) => tiers.map((token, height) => ({ tiers, height, token, order })))
+    .filter(({ token }) => token === 1)
+    .sort((a, b) => a.height - b.height || a.order - b.order);
+  for (const { tiers, height } of candidates) {
+    if (bonusCount >= targetBonuses) break;
+    tiers[height] = `1:${kinds[(bonusCount + index) % kinds.length]}`;
+    bonusCount++;
+  }
+  return arena;
 }
 
 function decode(token) {
@@ -154,12 +208,13 @@ function decode(token) {
 }
 
 /** Returns fresh metadata. tierCounts is ordered T1..T5; bonuses use the host effect IDs.
- * Levels above fourteen repeat the exact authored cycle without added durability.
+ * Repeated names retain their authored foreground; added mixed-tier groups and
+ * pickup counts grow to a bounded 110-original / 14-pickup late-game budget.
  */
 export function arenaDefinition(level) {
   const { level: n, index, cycle, arena } = selected(level);
   const tierCounts = [0, 0, 0, 0, 0], bonuses = [];
-  for (const [, , tiers] of arena.stacks) for (const token of tiers) {
+  for (const [, , tiers] of [...arena.stacks, ...(arena.reinforcements || [])]) for (const token of tiers) {
     const { type, bonus } = decode(token);
     tierCounts[type]++;
     if (bonus) bonuses.push(bonus);
@@ -206,6 +261,7 @@ export function arenaBlocks(level, { cube = .88, layoutZ = z => z, bounds = {} }
     specs.push([0, cube * 4.5 + .015, rowZ(1), 4, cube, cube, cube]);
   }
   if (arena.rear) addRearFormation(specs, arena, cube, pitch, layoutZ, bounds);
+  if (arena.reinforcements) addProgressionFormation(specs, arena, cube, pitch, layoutZ, bounds);
   return specs;
 }
 
@@ -258,5 +314,53 @@ function addRearFormation(specs, arena, cube, pitch, layoutZ, bounds) {
     const column = columns.reduce((best, next) => next.height < best.height ? next : best);
     specs.push([column.x, cube * (column.height + .5) + .015, column.z, 0, cube, cube, cube]);
     column.height++;
+  }
+}
+
+/** Fit mixed-tier rear groups into actual world bounds, independently of screen
+ * aspect. All members stay on the safe side of the gate and tapered rails. */
+function addProgressionFormation(specs, arena, cube, pitch, layoutZ, bounds) {
+  if (!arena.reinforcements.length) return;
+  const extent = cube * Math.SQRT1_2;
+  const top = Number.isFinite(bounds.top) ? bounds.top : layoutZ(-6.15);
+  const halfAt = typeof bounds.half === 'function' ? bounds.half
+    : () => Number.isFinite(bounds.half) ? bounds.half : 6.25;
+  const rearLimit = top + extent + .4;
+  const frontLimit = Math.min(...specs.map(s => s[2] -
+    (s[4] === s[5] && s[5] === s[6] ? (s[4] + s[6]) * Math.SQRT1_2 / 2 : s[6] / 2))) - extent - .14;
+  const append = (column, token) => {
+    const { type, bonus } = decode(token);
+    const spec = [column.x, cube * (column.height + .5) + .015, column.z, type, cube, cube, cube];
+    if (bonus) spec.push(bonus);
+    specs.push(spec); column.height++;
+  };
+  if (frontLimit >= rearLimit) {
+    const rowCount = Math.min(arena.reinforcementBands, 1 + Math.floor((frontLimit - rearLimit) / pitch));
+    const columns = new Map();
+    for (const [slot, band, tiers] of arena.reinforcements) {
+      const row = Math.min(rowCount - 1, band);
+      const z = rowCount > 1 ? frontLimit + (rearLimit - frontLimit) * row / (rowCount - 1) : (frontLimit + rearLimit) / 2;
+      const usable = Math.min(4.3, halfAt(z - extent) - extent - .34, halfAt(z + extent) - extent - .34);
+      const maxSlot = Math.max(0, Math.floor(usable / pitch));
+      const fittedSlot = Math.max(-maxSlot, Math.min(maxSlot, slot));
+      const key = `${row}:${fittedSlot}`;
+      let column = columns.get(key);
+      if (!column) { column = { x: fittedSlot * pitch, z, height: 0 }; columns.set(key, column); }
+      for (const token of tiers) append(column, token);
+    }
+    return;
+  }
+  // A genuinely short field cannot fit another depth lane. Keep every original
+  // and its pickup by extending safe front columns, never by overlap or clipping.
+  const nearestRow = Math.min(...arena.stacks.map(([, row]) => row));
+  const columns = arena.stacks.filter(([, row]) => row === nearestRow).map(([x, row, tiers]) => ({
+    x: x * pitch, z: layoutZ(-1.1 - row * pitch / Math.abs(layoutZ(0) - layoutZ(-1))), height: tiers.length,
+  }));
+  for (const column of columns) {
+    column.height = Math.max(column.height, ...specs.filter(s => Math.abs(s[0] - column.x) < .001 && Math.abs(s[2] - column.z) < .001)
+      .map(s => Math.round((s[1] - .015) / cube + .5)));
+  }
+  for (const [, , tiers] of arena.reinforcements) for (const token of tiers) {
+    append(columns.reduce((best, next) => next.height < best.height ? next : best), token);
   }
 }

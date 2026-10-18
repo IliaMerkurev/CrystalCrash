@@ -1,13 +1,13 @@
 /** Distances are multiples of the main ball's diameter; time is simulation seconds. */
 export const BONUS_DEFS = Object.freeze({
-  pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', charges: 1, radiusD: 2.2, maxTargets: 6, damage: 1 }),
-  pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', charges: 3, duration: 6, damage: 1 }),
-  arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, hopRadiusD: 2.5, maxHops: 3, damage: 1 }),
-  frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', charges: 3, duration: 6, maxTargets: 3, bonusDamage: 1 }),
-  split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, duration: 10, hitsPerEcho: 4, angleDegrees: 18, damage: 1 }),
-  gravity: Object.freeze({ kind: 'gravity', name: 'Gravity Well', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 3, duration: 2, maxTargets: 4, accelerationD: 2, maxDeltaSpeedD: 2 }),
-  heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3 }),
-  halo: Object.freeze({ kind: 'halo', name: 'Safety Halo', color: 0xff777d, colorCss: '#FF777D', charges: 1 }),
+  pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', charges: 1, radiusD: 4.4, maxTargets: Infinity, damage: 3, description: 'Wide burst: 3 damage to every nearby cube' }),
+  pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', duration: 10, damage: 8, description: '10 seconds of smashing straight through cubes' }),
+  arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, arenaWide: true, targetType: 'bottom-support-original', damage: 1, description: 'One hit to every bottom support across the arena' }),
+  frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', duration: 10, markDuration: 10, bonusDamage: 1, description: '10 seconds of marking cubes for a stronger next hit' }),
+  split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, persistent: true, angleDegrees: 18, damage: 1, description: 'Two extra balls that stay until they fall off' }),
+  gravity: Object.freeze({ kind: 'gravity', name: 'Gravity Well', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'A strong, wide pull on nearby cubes for 4 seconds' }),
+  heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3, description: 'The next direct hit deals 3 damage' }),
+  halo: Object.freeze({ kind: 'halo', name: 'Safety Halo', color: 0xff777d, colorCss: '#FF777D', charges: 1, description: 'One automatic rescue from a fall' }),
 });
 
 /**
@@ -35,6 +35,8 @@ export class BonusController {
     this.active = null;
     this.queued = null;
     this.halo = false;
+    this.splitActive = false;
+    this.splitActivationId = null;
     this.frostMarks = new Map();
     this._time = 0;
     this._epoch = ++this._serial;
@@ -42,7 +44,7 @@ export class BonusController {
   }
 
   _makeAttack(kind) {
-    return { kind, id: ++this._serial, remaining: BONUS_DEFS[kind].charges,
+    return { kind, id: ++this._serial, remaining: BONUS_DEFS[kind].charges ?? null,
       startedAt: null, seen: new Set(), exiting: false };
   }
 
@@ -50,6 +52,11 @@ export class BonusController {
   collect(kind) {
     const def = Object.prototype.hasOwnProperty.call(BONUS_DEFS, kind) ? BONUS_DEFS[kind] : null;
     if (!def) return { accepted: false, slot: null, message: 'Unknown power' };
+    // There can be at most one pair of extra balls. Never consume a duplicate pickup
+    // into a slot whose eventual activation could not create anything.
+    if (kind === 'split' && (this.splitActive || this.active?.kind === 'split' || this.queued?.kind === 'split')) {
+      return { accepted: false, slot: null, message: this.splitActive ? 'Extra balls already active' : 'Split already ready' };
+    }
     if (kind === 'halo') {
       if (this.halo) return { accepted: false, slot: null, message: 'One save already ready' };
       this.halo = true;
@@ -84,7 +91,7 @@ export class BonusController {
     this.queued = null;
   }
 
-  /** Update before resolving physics contacts. The timer starts at first valid Pierce hit. */
+  /** Update before contacts. Pierce/Frost timers start at their first valid hit. */
   tick(now) {
     if (!Number.isFinite(now)) throw new TypeError('Bonus time must be finite simulation seconds');
     this._time = Math.max(this._time, now);
@@ -95,6 +102,8 @@ export class BonusController {
     const a = this.active;
     if (a?.kind === 'pierce' && a.startedAt !== null &&
         this._time - a.startedAt >= BONUS_DEFS.pierce.duration) a.exiting = true;
+    if (a?.kind === 'frost' && a.startedAt !== null &&
+        this._time - a.startedAt >= BONUS_DEFS.frost.duration) this._advance();
     return { pierceExit: this.pierceExit, suppressReflection: this.suppressReflection, expiredFrostIds };
   }
 
@@ -107,8 +116,9 @@ export class BonusController {
 
   /**
    * Returns permission for direct damage and a secondary-effect descriptor.
-   * Pulse excludes originId; Arc excludes originId and every already visited target.
-   * Select nearest live original cubes using a stable ID tie-break; effects never hit
+   * Pulse excludes originId, which already receives the same burst damage directly.
+   * Arc targets all bottom/support originals in the arena; exclude its direct-hit
+   * origin so that no original receives the same activation twice. Effects never hit
    * gates and never invoke this method recursively. Snapshot origin position BEFORE
    * direct damage destroys its body, so the caller can anchor the returned effect.
    */
@@ -137,41 +147,39 @@ export class BonusController {
       if (a.exiting || a.seen.has(originalId)) return result;
       if (a.startedAt === null) a.startedAt = this._time;
       a.seen.add(originalId);
-      a.remaining -= 1;
-      result.damage = this._directDamage(originalId, 1, result);
+      result.damage = this._directDamage(originalId, BONUS_DEFS.pierce.damage, result);
       result.consumed = true;
-      if (a.remaining === 0) a.exiting = true;
       result.pierceExit = a.exiting;
       return result;
     }
     const def = BONUS_DEFS[a.kind];
-    result.damage = this._directDamage(originalId, a.kind === 'heavy' ? def.damage : 1, result);
+    result.damage = this._directDamage(originalId, ['heavy', 'pulse'].includes(a.kind) ? def.damage : 1, result);
     result.suppressReflection = false;
     // Echoes do not call consumeDirect: they cannot spend powers or brittle marks.
-    if (a.kind === 'split' && a.startedAt !== null) return result;
     result.consumed = true;
     if (a.kind === 'frost') {
-      // The next three direct hits spend charges, but each original cube is marked once.
-      if (!a.seen.has(originalId)) {
-        a.seen.add(originalId);
-        const expiresAt = this._time + def.duration;
+      if (a.startedAt === null) a.startedAt = this._time;
+      // Mark a hit cube, then consume that mark on its next hit. While the timer
+      // runs a surviving cube can be marked again, with no target or hit budget.
+      if (!result.frostConsumed) {
+        const expiresAt = this._time + def.markDuration;
         this.frostMarks.set(originalId, expiresAt);
-        result.effect = Object.freeze({ kind: 'frost', originId, duration: def.duration, expiresAt });
+        result.effect = Object.freeze({ kind: 'frost', originId, duration: def.markDuration, expiresAt });
       }
-      a.remaining -= 1;
-      if (a.remaining === 0) this._advance();
     } else if (a.kind === 'split') {
       a.startedAt = this._time;
-      a.remaining = 0;
+      this.splitActive = true;
+      this.splitActivationId = a.id;
       result.effect = Object.freeze({ kind: 'split', originId, activationId: a.id,
-        echoCount: def.echoCount, duration: def.duration, hitsPerEcho: def.hitsPerEcho,
+        echoCount: def.echoCount, persistent: true,
         angleDegrees: def.angleDegrees, damage: def.damage });
-      // Caller removes expired/lost echoes and confirms the last one with finishSplit().
+      // Extra balls remain independently of the FIFO; caller confirms their loss.
+      this._advance();
     } else {
       if (a.kind === 'pulse') result.effect = Object.freeze({ kind: 'pulse', originId,
         radiusD: def.radiusD, maxTargets: def.maxTargets, damage: def.damage });
       else if (a.kind === 'arc') result.effect = Object.freeze({ kind: 'arc', originId,
-        hopRadiusD: def.hopRadiusD, maxHops: def.maxHops, damage: def.damage });
+        arenaWide: def.arenaWide, targetType: def.targetType, damage: def.damage });
       else if (a.kind === 'gravity') result.effect = Object.freeze({ kind: 'gravity', originId,
         radiusD: def.radiusD, duration: def.duration, maxTargets: def.maxTargets,
         accelerationD: def.accelerationD, maxDeltaSpeedD: def.maxDeltaSpeedD,
@@ -190,11 +198,11 @@ export class BonusController {
     return true;
   }
 
-  /** Call once all echoes are gone. An activation ID protects against stale callbacks. */
-  finishSplit(activationId = this.active?.id) {
-    const a = this.active;
-    if (a?.kind !== 'split' || a.startedAt === null || a.id !== activationId) return false;
-    this._advance();
+  /** Call once all extra balls are lost. Does not advance or clear the attack FIFO. */
+  finishSplit(activationId = this.splitActivationId) {
+    if (!this.splitActive || this.splitActivationId !== activationId) return false;
+    this.splitActive = false;
+    this.splitActivationId = null;
     return true;
   }
 
@@ -208,14 +216,16 @@ export class BonusController {
   snapshotHUD() {
     const describe = a => a ? {
       kind: a.kind, name: BONUS_DEFS[a.kind].name, color: BONUS_DEFS[a.kind].color,
+      description: BONUS_DEFS[a.kind].description,
       charges: a.remaining, remaining: a.remaining, exiting: a.exiting,
       started: a.startedAt !== null,
-      secondsLeft: ['pierce', 'split'].includes(a.kind)
+      secondsLeft: ['pierce', 'frost'].includes(a.kind)
         ? (a.startedAt === null ? BONUS_DEFS[a.kind].duration
           : Math.max(0, BONUS_DEFS[a.kind].duration - (this._time - a.startedAt)))
         : null,
     } : null;
     return { active: describe(this.active), queued: describe(this.queued), halo: this.halo,
+      splitActive: this.splitActive, splitActivationId: this.splitActivationId,
       frostMarks: Object.freeze([...this.frostMarks].map(([originId, expiresAt]) => Object.freeze({ originId, expiresAt, secondsLeft: Math.max(0, expiresAt - this._time) }))),
       pierceExit: this.pierceExit, suppressReflection: this.suppressReflection };
   }
