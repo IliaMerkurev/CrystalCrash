@@ -207,3 +207,5 @@ Power containers retain their tier color. A small colored core follows its conta
 The first implementation includes Pulse, Pierce, Arc and Safety Halo, one active attack slot, one FIFO queued slot and an independent Halo. Bonus damage is bounded and never hits the gate. Pierce suppresses only glass response until it exits remaining shell volumes. Powers reset on loss or arena transition. Frost, Split, Gravity Well and Heavy Hit remain post-MVP ideas.
 
 Validation for this iteration: production build and static source review only. No browser, gameplay or scripted simulation tests were run, at the owner's request. Playability and phone performance await owner review.
+
+Contact integration explicitly sets both collision groups and solver groups: Pierce keeps floor/gate response while suppressing structural glass response. Contact points for non-solving manifolds are transformed from collider-local coordinates. HUD includes shape icons and live charge segments, with DOM updates only when inventory changes.
