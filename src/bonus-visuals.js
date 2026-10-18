@@ -5,7 +5,7 @@ import * as DefaultTHREE from 'three';
  * frees only per-instance instancing buffers when permanently discarding cores.
  * Call dispose() only after removing every instance. No frame loop is installed.
  */
-export function createBonusVisuals(THREE = DefaultTHREE) {
+export function createBonusVisuals(THREE = DefaultTHREE,{settings=()=>({cloudSize:1,orbitSpread:1,sparkSize:1,intensity:1})}={}) {
   const kinds = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
   const unitBounds = {};
   const colors = {pulse: 0xffb44a, pierce: 0x44d9ff, arc: 0xb68cff, halo: 0xff777d, frost: 0xb8e9f5, split: 0xf27ed2, gravity: 0x7887ff, heavy: 0xe98745};
@@ -28,9 +28,9 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   for (const kind of kinds) {
     cloudMaterials[kind] = ownMaterial(new THREE.ShaderMaterial({
       transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,toneMapped:false,
-      uniforms:{tint:{value:new THREE.Color(colors[kind])},phase:{value:0}},
+      uniforms:{tint:{value:new THREE.Color(colors[kind])},intensity:{value:1}},
       vertexShader:'varying vec2 uvCloud; void main(){uvCloud=uv;vec4 c=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);vec2 size=vec2(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz));c.xy+=position.xy*size*length(modelViewMatrix[0].xyz);gl_Position=projectionMatrix*c;}',
-      fragmentShader:'varying vec2 uvCloud;uniform vec3 tint;void main(){float r=length(uvCloud-.5)*2.;float a=exp(-r*r*3.2)*(1.-smoothstep(.7,1.,r));gl_FragColor=vec4(tint,a*.32);}'
+      fragmentShader:'varying vec2 uvCloud;uniform vec3 tint;uniform float intensity;void main(){float r=length(uvCloud-.5)*2.;float a=exp(-r*r*3.2)*(1.-smoothstep(.7,1.,r));gl_FragColor=vec4(tint,a*.32*intensity);}'
     }));
     surfaces[kind] = ownMaterial(new THREE.MeshStandardMaterial({color: colors[kind], emissive: colors[kind], emissiveIntensity: .48, metalness: .42, roughness: .23}));
     lights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color: colors[kind], toneMapped: false}));
@@ -215,7 +215,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       const innerHalo = new THREE.Sprite(coreGlows[kind]); innerHalo.scale.set(.54, .54, 1); group.add(innerHalo);
       const centerHalo = new THREE.Sprite(coreGlows[kind]); centerHalo.scale.set(.30, .30, 1); group.add(centerHalo);
     }
-    group.traverse(object => {object.renderOrder = 6;});
+    group.traverse(object => {object.renderOrder = 6;if(object.isSprite)object.userData.baseSpriteSize=object.scale.x;});
     group.userData.bonusKind = kind;
     group.userData.coreAnimation = {sun, pin, orbit, orbit2, dots, particles, pickup, cloud,
       matrix: new THREE.Matrix4(), particleScale: new THREE.Vector3()};
@@ -228,16 +228,21 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   function animateCore(group, time) {
     const data = group.userData.coreAnimation;
     if (!data) return;
-    if (data.sun) data.sun.scale.setScalar(.44 * (1 + .055 * Math.sin(time * 2.2)));
+    const tuning=settings(),volume=data.pickup?1:tuning.cloudSize;
+    coreLights[group.userData.bonusKind].opacity=.95*tuning.intensity;
+    coreGlows[group.userData.bonusKind].opacity=.42*tuning.intensity;
+    if(data.cloud)data.cloud.material.uniforms.intensity.value=tuning.intensity;
+    for(const child of group.children)if(child.isSprite)child.scale.setScalar(child.userData.baseSpriteSize*volume);
+    if (data.sun) data.sun.scale.setScalar(.44 * volume * (1 + .055 * Math.sin(time * 2.2)));
     data.orbit.rotation.z = .2 + time * .22;
     if (data.orbit2) data.orbit2.rotation.z = -.5 - time * .16;
     for (let i = 0; i < data.dots.count; i++) {
       const j = i * 5, angle = data.particles[j] + time * data.particles[j + 2];
-      const radius = data.particles[j + 1], tilt = data.particles[j + 3];
+      const radius = data.particles[j + 1]*(data.pickup?1:(i<10?volume:tuning.orbitSpread)), tilt = data.particles[j + 3];
       const pulse = 1 + .12 * Math.sin(time * 2.6 + i * 1.7);
       data.matrix.makeTranslation(Math.cos(angle) * radius, Math.sin(angle) * radius * tilt,
         Math.sin(angle + i * .9) * radius * .42);
-      data.particleScale.setScalar(data.particles[j + 4] * pulse);
+      data.particleScale.setScalar(data.particles[j + 4] * pulse * (data.pickup?1:tuning.sparkSize));
       data.matrix.scale(data.particleScale);
       data.dots.setMatrixAt(i, data.matrix);
     }
@@ -246,9 +251,9 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       for(let i=0;i<data.cloud.count;i++){
         // Full spherical volume, not foreshortened planar orbits. Outer glow reaches .40.
         const y=1-2*(i+.5)/data.cloud.count,radial=Math.sqrt(1-y*y);
-        const angle=i*2.39996323+time*(.12+(i%3)*.025),radius=.21+(i%5)*.032;
+        const angle=i*2.39996323+time*(.12+(i%3)*.025),radius=(.21+(i%5)*.032)*volume;
         data.matrix.makeTranslation(Math.cos(angle)*radial*radius,y*radius,Math.sin(angle)*radial*radius);
-        data.particleScale.setScalar(.20+.035*Math.sin(time*1.7+i));
+        data.particleScale.setScalar((.20+.035*Math.sin(time*1.7+i))*volume);
         data.matrix.scale(data.particleScale);data.cloud.setMatrixAt(i,data.matrix);
       }
       data.cloud.instanceMatrix.needsUpdate=true;

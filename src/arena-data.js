@@ -194,16 +194,16 @@ export function arenaBlocks(level, { cube = .88, layoutZ = z => z, bounds = {} }
       const { type, bonus } = decode(token);
       const spec = [column * pitch, cube * (height + .5) + .015, rowZ(row), type, cube, cube, cube];
       if (bonus) spec.push(bonus);
-      specs.push(spec);
+      spec[8]={id:`stack:${column}:${row}:${height}`};specs.push(spec);
     });
   }
   // One unrotated lintel rests across the two three-cube pillars. The center
   // stays open below it, and the T1 pickup cubes are on the exposed front row.
   if (arena.bridge) {
-    specs.push([0, cube * 3.5 + .015, rowZ(1), 3, 2 * pitch + cube, cube, cube]);
+    specs.push([0, cube * 3.5 + .015, rowZ(1), 3, 2 * pitch + cube, cube, cube, null,{id:'bridge'}]);
   }
   if (arena.core) {
-    specs.push([0, cube * 4.5 + .015, rowZ(1), 4, cube, cube, cube]);
+    specs.push([0, cube * 4.5 + .015, rowZ(1), 4, cube, cube, cube, null,{id:'crown'}]);
   }
   if (arena.rear) addRearFormation(specs, arena, cube, pitch, layoutZ, bounds);
   return specs;
@@ -241,8 +241,8 @@ function addRearFormation(specs, arena, cube, pitch, layoutZ, bounds) {
       current.height += height;
       columns.set(key, current);
     }
-    for (const { x, z, height } of columns.values()) {
-      for (let i = 0; i < height; i++) specs.push([x, cube * (i + .5) + .015, z, 0, cube, cube, cube]);
+    let rearIndex=0;for (const { x, z, height } of columns.values()) {
+      for (let i = 0; i < height; i++) specs.push([x, cube * (i + .5) + .015, z, 0, cube, cube, cube,null,{id:`rear:${rearIndex++}`}]);
     }
     return;
   }
@@ -256,7 +256,7 @@ function addRearFormation(specs, arena, cube, pitch, layoutZ, bounds) {
   const count = arena.rear.reduce((sum, [, , height]) => sum + height, 0);
   for (let i = 0; i < count; i++) {
     const column = columns.reduce((best, next) => next.height < best.height ? next : best);
-    specs.push([column.x, cube * (column.height + .5) + .015, column.z, 0, cube, cube, cube]);
+    specs.push([column.x, cube * (column.height + .5) + .015, column.z, 0, cube, cube, cube,null,{id:`rear:${i}`}]);
     column.height++;
   }
 }

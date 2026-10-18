@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "projectId": "crystal-crash",
+  "arenas": {},
+  "materials": {
+    "glass": [
+      { "color": "#079dff", "roughness": 0.005, "opacity": 0.52, "envMapIntensity": 2.4, "clearcoat": 1 },
+      { "color": "#06c66c", "roughness": 0.005, "opacity": 0.52, "envMapIntensity": 2.4, "clearcoat": 1 },
+      { "color": "#ff9808", "roughness": 0.005, "opacity": 0.52, "envMapIntensity": 2.4, "clearcoat": 1 },
+      { "color": "#8437ee", "roughness": 0.005, "opacity": 0.52, "envMapIntensity": 2.4, "clearcoat": 1 },
+      { "color": "#e60726", "roughness": 0.005, "opacity": 0.52, "envMapIntensity": 2.4, "clearcoat": 1 }
+    ],
+    "floor": { "color": "#586879", "roughness": 0.34, "opacity": 0.76, "envMapIntensity": 1.4 }
+  },
+  "lighting": { "hemisphere": 1.15, "sun": 2.5, "fill": 1.1, "rails": 2.5 },
+  "particles": { "cloudSize": 1, "orbitSpread": 1, "sparkSize": 1, "intensity": 1 }
+}

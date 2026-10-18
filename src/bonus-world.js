@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {createBonusVisuals} from './bonus-visuals.js';
+import {getParticleSettings} from './authoring-runtime.js';
 import {BONUS_DEFS} from './bonus-controller.js';
 
 // Container cores, collectible meshes and a small reusable effect pool.
@@ -7,7 +8,7 @@ import {BONUS_DEFS} from './bonus-controller.js';
 export class BonusWorld {
  constructor({scene,controller,radius,bounds,blocked,onSound,onNotice}) {
   Object.assign(this,{scene,controller,radius,bounds,blocked,onSound,onNotice});
-  this.visuals=createBonusVisuals(THREE);this.icons={pulse:"◎",pierce:"➤",arc:"ϟ",halo:"∩",frost:"❄",split:"∴",gravity:"◉",heavy:"▾"};this.cores=new Map();this.pickups=[];this.time=0;this.seen=new Set();this.lastBall=null;this.tip=null;this.tipAge=0;this.pendingTips=[];this.shadowGeometry=new THREE.CircleGeometry(.23,20);this.shadowMaterial=new THREE.MeshBasicMaterial({color:0x02050a,transparent:true,opacity:.3,depthWrite:false});
+  this.visuals=createBonusVisuals(THREE,{settings:getParticleSettings});this.icons={pulse:"◎",pierce:"➤",arc:"ϟ",halo:"∩",frost:"❄",split:"∴",gravity:"◉",heavy:"▾"};this.cores=new Map();this.pickups=[];this.time=0;this.seen=new Set();this.lastBall=null;this.tip=null;this.tipAge=0;this.pendingTips=[];this.shadowGeometry=new THREE.CircleGeometry(.23,20);this.shadowMaterial=new THREE.MeshBasicMaterial({color:0x02050a,transparent:true,opacity:.3,depthWrite:false});
   this.label=document.createElement('div');this.label.className='power-tip';document.body.appendChild(this.label);
   this.hud=document.createElement('div');this.hud.id='power-hud';this.hud.setAttribute('aria-live','polite');document.body.appendChild(this.hud);this.hudKey='';
   this.accents={};for(const kind of Object.keys(BONUS_DEFS)){const m=this.visuals.createBallAccent(kind);m.visible=false;m.scale.setScalar(radius*2);scene.add(m);this.accents[kind]=m;}
