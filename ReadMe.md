@@ -157,3 +157,7 @@ Browser comparison still showed solid-looking faces. Intact cubes now separate a
 ## Compositing and tapered-light fixes 26
 
 Actual v25 frames exposed two rendering bugs: the transparent floor coat was sorted over distant transparent cubes, and tapered rail halo/light planes had the opposite rotation sign from their rails. The coat now renders before glass, and the light planes follow the exact rail direction. This restores consistent near/far glass visibility and removes the erroneous inward-slanting orange strips without changing material balance or geometry.
+
+## Glass contrast finish 27
+
+With sorting and rail alignment visually verified, the final focused pass keeps alpha unchanged and reduces diffuse face lighting while strengthening physical specular highlights and narrow colored edge emission. A fine pale edge core adds the approved stylized reflection accent; duplicate line outlines are reduced. This is an artistic glass treatment rather than a claim of physically exact refraction.
