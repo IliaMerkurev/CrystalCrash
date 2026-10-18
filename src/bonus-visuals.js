@@ -14,7 +14,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const ownMaterial = material => (materials.add(material), material);
   const metal = ownMaterial(new THREE.MeshStandardMaterial({color: 0xa6b3c5, metalness: .96, roughness: .18}));
   const darkMetal = ownMaterial(new THREE.MeshStandardMaterial({color: 0x202938, metalness: .9, roughness: .24}));
-  const surfaces = {}, lights = {}, glows = {}, coreLights = {}, coreGlows = {};
+  const surfaces = {}, lights = {}, glows = {}, coreLights = {}, coreGlows = {}, cloudMaterials = {};
   const glowSize = 32, pixels = new Uint8Array(glowSize * glowSize * 4);
   for (let y = 0; y < glowSize; y++) for (let x = 0; x < glowSize; x++) {
     const r = Math.hypot((x + .5) / glowSize * 2 - 1, (y + .5) / glowSize * 2 - 1);
@@ -26,12 +26,19 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   glowTexture.magFilter = glowTexture.minFilter = THREE.LinearFilter;
   glowTexture.needsUpdate = true;
   for (const kind of kinds) {
+    cloudMaterials[kind] = ownMaterial(new THREE.ShaderMaterial({
+      transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,toneMapped:false,
+      uniforms:{tint:{value:new THREE.Color(colors[kind])},phase:{value:0}},
+      vertexShader:'varying vec2 uvCloud; void main(){uvCloud=uv;vec4 c=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);vec2 size=vec2(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz));c.xy+=position.xy*size*length(modelViewMatrix[0].xyz);gl_Position=projectionMatrix*c;}',
+      fragmentShader:'varying vec2 uvCloud;uniform vec3 tint;void main(){float r=length(uvCloud-.5)*2.;float a=exp(-r*r*3.2)*(1.-smoothstep(.7,1.,r));gl_FragColor=vec4(tint,a*.32);}'
+    }));
     surfaces[kind] = ownMaterial(new THREE.MeshStandardMaterial({color: colors[kind], emissive: colors[kind], emissiveIntensity: .48, metalness: .42, roughness: .23}));
     lights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color: colors[kind], toneMapped: false}));
     coreLights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color:new THREE.Color(colors[kind]).multiplyScalar(2.2),transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
     coreGlows[kind] = ownMaterial(new THREE.SpriteMaterial({map:glowTexture,color:new THREE.Color(colors[kind]).multiplyScalar(1.1),transparent:true,opacity:.42,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,toneMapped:false}));
     glows[kind] = ownMaterial(new THREE.SpriteMaterial({map: glowTexture, color: colors[kind], transparent: true, opacity: .28, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false}));
   }
+  const cloudQuad = ownGeometry(new THREE.PlaneGeometry(1,1));
   const sphere = ownGeometry(new THREE.SphereGeometry(1, 16, 10));
   const dotGeometry = ownGeometry(new THREE.SphereGeometry(.006, 6, 4));
   const box = ownGeometry(new THREE.BoxGeometry(1, 1, 1));
@@ -184,6 +191,8 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     orbit.scale.setScalar(pickup ? 1.8 : 2.05); orbit.rotation.set(.8, .25, .2);
     const orbit2 = pickup ? null : mesh(group, thinRing, coreLights[kind]);
     if (orbit2) {orbit2.scale.setScalar(1.66); orbit2.rotation.set(-.65, .6, -.5);}
+    const cloud = pickup ? null : new THREE.InstancedMesh(cloudQuad,cloudMaterials[kind],56);
+    if(cloud){cloud.frustumCulled=false;cloud.instanceMatrix.setUsage(THREE.DynamicDrawUsage);group.add(cloud);}
     const count = pickup ? 16 : 32;
     const dots = new THREE.InstancedMesh(dotGeometry, coreLights[kind], count);
     dots.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -208,7 +217,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     }
     group.traverse(object => {object.renderOrder = 6;});
     group.userData.bonusKind = kind;
-    group.userData.coreAnimation = {sun, pin, orbit, orbit2, dots, particles, pickup,
+    group.userData.coreAnimation = {sun, pin, orbit, orbit2, dots, particles, pickup, cloud,
       matrix: new THREE.Matrix4(), particleScale: new THREE.Vector3()};
     animateCore(group, 0);
     return group;
@@ -233,6 +242,17 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       data.dots.setMatrixAt(i, data.matrix);
     }
     data.dots.instanceMatrix.needsUpdate = true;
+    if(data.cloud){
+      for(let i=0;i<data.cloud.count;i++){
+        // Full spherical volume, not foreshortened planar orbits. Outer glow reaches .40.
+        const y=1-2*(i+.5)/data.cloud.count,radial=Math.sqrt(1-y*y);
+        const angle=i*2.39996323+time*(.12+(i%3)*.025),radius=.21+(i%5)*.032;
+        data.matrix.makeTranslation(Math.cos(angle)*radial*radius,y*radius,Math.sin(angle)*radial*radius);
+        data.particleScale.setScalar(.20+.035*Math.sin(time*1.7+i));
+        data.matrix.scale(data.particleScale);data.cloud.setMatrixAt(i,data.matrix);
+      }
+      data.cloud.instanceMatrix.needsUpdate=true;
+    }
   }
   /** Diameter ~1.08: multiply scale by the ball diameter, not its radius.
    * Pierce and Frost expose userData.charges (three meshes) for charge visibility.
