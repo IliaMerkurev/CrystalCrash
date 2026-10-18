@@ -161,3 +161,7 @@ Actual v25 frames exposed two rendering bugs: the transparent floor coat was sor
 ## Glass contrast finish 27
 
 With sorting and rail alignment visually verified, the final focused pass keeps alpha unchanged and reduces diffuse face lighting while strengthening physical specular highlights and narrow colored edge emission. A fine pale edge core adds the approved stylized reflection accent; duplicate line outlines are reduced. This is an artistic glass treatment rather than a claim of physically exact refraction.
+
+## Regression fixes 28
+
+Restores clean single-sample 512px floor reflections and the earlier floor coat, removing multi-image blur ghosting. Portrait boundaries now follow one straight taper with matching floor and walls. Remaining broken glass has a separate non-emissive material instead of reusing the intact face-edge mask. Detached debris no longer uses transmission or shadows; its materials are retained for reuse, mesh shader variants warm before PLAY, and fracture cell geometry is cached at section creation. These address identified hit-time costs; real-device timing still needs comparison.
