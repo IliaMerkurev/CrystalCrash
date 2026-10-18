@@ -52,3 +52,6 @@ button{backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blu
 
 /* iOS long presses belong to gameplay, not text selection or callouts. */
 body,canvas,header,footer,.overlay,.power-slot,.power-tip,.cc-tutorial,button,#toast,#section,.bonus-test-card{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+
+/* Session-only profiler A/B; keeps panel fills and readable text. */
+body.profiler-no-blur *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}body.profiler-no-blur.scene-frosted #game{filter:none!important}

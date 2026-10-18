@@ -67,8 +67,8 @@ export function formatPerformanceDiagnostics(diagnostics = {}) {
   const reflection = d.reflectionResolution === 0 || d.reflectionResolution === 'off' ? 'Off'
     : typeof d.reflectionResolution === 'number' && d.reflectionResolution > 0 && Number.isFinite(d.reflectionResolution)
       ? `${Math.round(d.reflectionResolution)}²` : '—';
-  return `${number(fps)} FPS · ${number(d.frameMs, 1)} ms/frame\n`
-    + `Physics ${number(d.physicsMs, 2)} ms · Render CPU ${number(d.renderMs, 2)} ms\nDraws ${number(d.drawCalls)} · Triangles ${number(d.triangles)}\n`
+  return `${d.mode ? d.mode+" · " : ""}${number(fps)} FPS · ${number(d.frameMs, 1)} ms/frame\n`
+    + `Simulation ${number(d.physicsMs, 2)} ms · Prepare + submit CPU ${number(d.renderMs, 2)} ms\nDraws ${number(d.drawCalls)} · Triangles ${number(d.triangles)}\n`
     + `Bodies ${number(d.bodies)} · Colliders ${number(d.colliders)}\n`
     + `Render ${size(d.width, d.height)} · Floor mirror ${reflection}`;
 }

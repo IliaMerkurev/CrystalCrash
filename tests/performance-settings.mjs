@@ -137,7 +137,7 @@ test('UI can load its settings directly from injected storage', () => {
 
 test('diagnostic formatting reports every requested field without NaN or HTML', () => {
   const text = formatPerformanceDiagnostics(sample);
-  for (const expected of ['60 FPS', '16.7 ms/frame', 'Physics 2.13 ms', 'Draws 44', 'Triangles 125000', 'Bodies 120', 'Colliders 456', '1080×1920', 'Floor mirror 512²']) assert(text.includes(expected));
+  for (const expected of ['60 FPS', '16.7 ms/frame', 'Simulation 2.13 ms', 'Draws 44', 'Triangles 125000', 'Bodies 120', 'Colliders 456', '1080×1920', 'Floor mirror 512²']) assert(text.includes(expected));
   assert.match(formatPerformanceDiagnostics({frameMs: 20, reflectionResolution: 0}), /50 FPS/);
   assert.match(formatPerformanceDiagnostics({reflectionResolution: 'off'}), /Floor mirror Off/);
   assert.doesNotMatch(formatPerformanceDiagnostics({fps: NaN, frameMs: Infinity, physicsMs: -1, drawCalls: '<img>', width: -1, height: 2}), /NaN|Infinity|<img>|-1/);

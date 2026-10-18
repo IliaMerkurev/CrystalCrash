@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import {GLASS,TUNE} from '../src/config.js';
 import {DEFAULT_PERFORMANCE_SETTINGS} from '../src/performance-settings.js';
+import {ProfilerVisuals} from '../src/profiler-visuals.js';
 import {environmentVariant} from '../src/render-options.js';
 import {RenderQuality,QUALITY_TIERS} from '../src/render-quality.js';
 import {intactShellColliderDesc} from '../src/intact-shell-collider.js';
@@ -54,7 +55,7 @@ const previousDocument=globalThis.document;globalThis.document=document;
 await RAPIER.init();
 const v3=(...n)=>new THREE.Vector3(...n),powers=new BonusController(),scene=new THREE.Scene();
 let effectsCleared=0,notices=[],windowEvents={};
-const context={tutorialEvent(){},tutorial:null,
+const context={profilerVisuals:new ProfilerVisuals(),tutorialEvent(){},tutorial:null,
  performanceSettings:{...DEFAULT_PERFORMANCE_SETTINGS},environmentMaterials:{cube:new Set(),debris:new Set()},environmentVariant,performanceUI:null,performanceDiagnostics(){return {};},createPerformanceSettingsUI(){return {refresh(){}};},QUALITY_TIERS,renderQuality:new RenderQuality(),REFLECTION_RES:1024,applyRenderQuality(){},intactShellColliderDesc,fractureTemplates:new FractureTemplateCache(),BlackHoleRelease,CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
  arenaDefinition,arenaBlocks,document,window:{addEventListener:(name,fn)=>windowEvents[name]=fn},$ :id=>elements.get(id),
  v3,clamp:THREE.MathUtils.clamp,C:{...TUNE},GROUP:{table:0x0001001f,ball:0x00020017,structure:0x0004001f,debris:0x00080005},
