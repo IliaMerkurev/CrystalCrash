@@ -202,10 +202,10 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     for (let i = 0; i < count; i++) {
       const dense = !pickup && i < 10, j = i * 5;
       particles[j] = i * 2.39996323;
-      particles[j + 1] = dense ? .075 + (i % 5) * .024 : .17 + (i % 6) * .022;
+      particles[j + 1] = dense ? .075 + (i % 5) * .024 : (pickup ? .17 + (i % 6) * .022 : .30 + (i % 6) * .027);
       particles[j + 2] = (.34 + (i % 5) * .085) * (i % 2 ? 1 : -1);
       particles[j + 3] = .58 + (i % 4) * .12;
-      particles[j + 4] = pickup ? 1 + (i % 4) * .28 : 1.8 + (i % 5) * .48;
+      particles[j + 4] = pickup ? 1 + (i % 4) * .28 : (1.8 + (i % 5) * .48) * (dense ? 1 : 1.7);
     }
     const glow = new THREE.Sprite(pickup ? glows[kind] : coreGlows[kind]);
     const glowDiameter = pickup ? .22 : .82;
