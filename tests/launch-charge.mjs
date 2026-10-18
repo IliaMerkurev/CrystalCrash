@@ -5,19 +5,55 @@ import { LaunchCharge, LaunchChargeMeter } from '../src/launch-charge.js';
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} ≈ ${expected}`);
 const fixedCharge = (unit = 0) => new LaunchCharge({ random: () => unit });
 
-test('holding still and sub-threshold motion never precharge the launch', () => {
+test('holding still and partial pulls never precharge the launch', () => {
   const charge = fixedCharge();
-  for (const length of [0, .2, .7, NaN, Infinity, -.8]) {
+  for (const length of [0, .2, .7, 1, 9, 14.55, 14.849999, NaN, Infinity, -.8]) {
     charge.setPull(length);
     charge.update(10);
     assert.equal(charge.multiplier(), 1);
     assert.equal(charge.snapshot().elapsed, 0);
     assert.equal(charge.snapshot().state, 'idle');
+    assert.equal(charge.snapshot().fullPull, false);
+    assert.equal(charge.snapshot().pulling, false);
+    assert.equal(charge.snapshot().started, false);
   }
-  charge.setPull(.700001);
+  charge.setPull(14.85);
   assert.equal(charge.snapshot().elapsed, 0);
   assert.equal(charge.snapshot().pulling, true);
+  assert.equal(charge.snapshot().fullPull, true);
+  assert.equal(charge.snapshot().started, true);
   assert.equal(charge.snapshot().state, 'charging');
+});
+
+test('full-pull hysteresis retains timing to 14.55 and requires 14.85 to re-enter', () => {
+  const charge = fixedCharge();
+  charge.setPull(14.85);
+  for (const length of [15, 14.84, 14.7, 14.55]) {
+    charge.setPull(length);
+    charge.update(.25);
+    assert.equal(charge.snapshot().fullPull, true);
+    assert.equal(charge.snapshot().started, true);
+  }
+  near(charge.snapshot().elapsed, 1);
+  assert.equal(charge.multiplier(), 2, 'reward remains available inside the retention band');
+  charge.setPull(14.549999);
+  assert.equal(charge.multiplier(), 1);
+  assert.equal(charge.snapshot().elapsed, 0);
+  assert.equal(charge.snapshot().state, 'idle');
+  assert.equal(charge.snapshot().pulling, false);
+  assert.equal(charge.snapshot().fullPull, false);
+  assert.equal(charge.snapshot().started, false);
+  for (const length of [14.55, 14.7, 14.849999]) {
+    charge.setPull(length);
+    charge.update(10);
+    assert.equal(charge.snapshot().fullPull, false);
+    assert.equal(charge.snapshot().elapsed, 0);
+  }
+  charge.setPull(14.85);
+  charge.update(.1);
+  near(charge.snapshot().elapsed, .1);
+  assert.equal(charge.snapshot().fullPull, true);
+  assert.equal(charge.multiplier(), 1);
 });
 
 test('one inclusive one-third-second window starts between 1.0 and 1.25 seconds', () => {
@@ -27,7 +63,7 @@ test('one inclusive one-third-second window starts between 1.0 and 1.25 seconds'
     near(windowStart, 1 + .25 * unit);
     near(windowEnd - windowStart, 1 / 3);
     assert.equal(windowDuration, 1 / 3);
-    charge.setPull(1);
+    charge.setPull(15);
     charge.update(windowStart - .001);
     assert.equal(charge.multiplier(), 1);
     assert.equal(charge.snapshot().state, 'charging');
@@ -52,7 +88,7 @@ test('sample once on construction and each reset, never during the same gesture'
   const charge = new LaunchCharge({ random: () => rolls[calls++] });
   assert.equal(calls, 1);
   assert.equal(charge.snapshot().windowStart, 1);
-  for (const length of [0, .2, .7, 1, 2, .1, 1]) {
+  for (const length of [0, 1, 14.84, 15, 14.6, 8, 15]) {
     charge.setPull(length);
     charge.update(.1);
     charge.update(10, { paused: true });
@@ -67,7 +103,7 @@ test('sample once on construction and each reset, never during the same gesture'
   assert.equal(second.elapsed, 0);
   assert.equal(second.state, 'idle');
   assert.equal(second.started, false);
-  charge.setPull(1);
+  charge.setPull(15);
   charge.update(1.1);
   assert.equal(charge.multiplier(), 1, 'reset uses the newly sampled start');
   charge.update(.025);
@@ -89,32 +125,60 @@ test('default RNG and invalid injected samples keep the timing bounds safe', () 
   }
 });
 
-test('retreat keeps the same running clock and requires a meaningful pull at release', () => {
-  const charge = fixedCharge();
-  charge.setPull(1);
+test('retreat resets timing while preserving the random window until a fresh gesture', () => {
+  let calls = 0;
+  const charge = new LaunchCharge({ random: () => calls++ ? 1 : 0 });
+  charge.setPull(15);
   charge.update(.8);
-  charge.setPull(.1);
+  charge.setPull(10);
   charge.update(.3);
-  near(charge.snapshot().elapsed, 1.1);
+  assert.equal(charge.snapshot().elapsed, 0);
+  assert.equal(charge.snapshot().fullPull, false);
+  assert.equal(charge.snapshot().started, false);
+  assert.equal(charge.snapshot().pulling, false);
   assert.equal(charge.multiplier(), 1);
   assert.equal(charge.snapshot().window, false);
-  charge.setPull(1);
+  assert.equal(charge.snapshot().windowStart, 1);
+  assert.equal(calls, 1);
+  charge.setPull(15);
+  assert.equal(charge.multiplier(), 1, 'returning to full pull cannot recover elapsed charge');
+  charge.update(1.1);
   assert.equal(charge.multiplier(), 2);
   charge.setPull(0);
   charge.update(.5);
-  charge.setPull(1);
+  charge.setPull(15);
   assert.equal(charge.multiplier(), 1);
-  assert.equal(charge.snapshot().state, 'spent');
+  assert.equal(charge.snapshot().state, 'charging');
+  assert.equal(charge.snapshot().elapsed, 0);
+  assert.equal(charge.snapshot().windowStart, 1);
+  assert.equal(calls, 1);
   charge.reset();
-  assert.deepEqual(charge.snapshot(), { state: 'idle', elapsed: 0, window: false, windowStart: 1, windowEnd: 1 + 1 / 3, windowDuration: 1 / 3, progress: 0, pulling: false, started: false });
-  charge.setPull(1);
-  charge.update(1.1);
+  assert.equal(calls, 2);
+  assert.deepEqual(charge.snapshot(), { state: 'idle', elapsed: 0, window: false, windowStart: 1.25, windowEnd: 1.25 + 1 / 3, windowDuration: 1 / 3, progress: 0, pulling: false, fullPull: false, started: false });
+  charge.setPull(15);
+  charge.update(1.25);
   assert.equal(charge.multiplier(), 2);
+});
+
+test('non-finite or negative pull immediately clears full charge without rerolling', () => {
+  const charge = fixedCharge(.5);
+  for (const length of [NaN, Infinity, -Infinity, undefined, -1]) {
+    charge.setPull(15);
+    charge.update(1.125);
+    assert.equal(charge.multiplier(), 2);
+    charge.setPull(length);
+    charge.update(10);
+    assert.equal(charge.multiplier(), 1);
+    assert.equal(charge.snapshot().elapsed, 0);
+    assert.equal(charge.snapshot().fullPull, false);
+    assert.equal(charge.snapshot().started, false);
+    assert.equal(charge.snapshot().windowStart, 1.125);
+  }
 });
 
 test('pause freezes elapsed and invalid deltas never poison the clock', () => {
   const charge = fixedCharge();
-  charge.setPull(1);
+  charge.setPull(15);
   charge.update(.9);
   charge.update(100, { paused: true });
   for (const value of [0, -1, NaN, Infinity, undefined]) charge.update(value);
@@ -123,13 +187,23 @@ test('pause freezes elapsed and invalid deltas never poison the clock', () => {
   assert.equal(charge.multiplier(), 2);
   charge.update(100, { paused: true });
   assert.equal(charge.multiplier(), 2);
+  charge.setPull(14.549);
+  charge.update(100, { paused: true });
+  assert.equal(charge.snapshot().elapsed, 0);
+  assert.equal(charge.snapshot().fullPull, false);
+  charge.setPull(15);
+  charge.update(100, { paused: true });
+  assert.equal(charge.snapshot().elapsed, 0);
+  assert.equal(charge.multiplier(), 1);
+  charge.update(1);
+  assert.equal(charge.multiplier(), 2);
 });
 
 test('real-time window is independent of frame rate and repeated pull events', () => {
   for (const rate of [30, 60, 90, 120, 144]) {
     const charge = fixedCharge();
-    charge.setPull(1);
-    for (let i = 0; i < rate; i++) { charge.setPull(2); charge.update(1 / rate); }
+    charge.setPull(15);
+    for (let i = 0; i < rate; i++) { charge.setPull(15); charge.update(1 / rate); }
     near(charge.snapshot().elapsed, 1);
     assert.equal(charge.multiplier(), 2, `${rate}Hz at 1 second`);
     for (let i = 0; i < rate / 3; i++) charge.update(1 / rate);
@@ -159,7 +233,7 @@ test('meter is compact, pointer-transparent, viewport-bounded, above and beside 
   const charge = fixedCharge();
   meter.render(charge.snapshot(), { x: 200, y: 700, width: 390, height: 844 });
   assert.equal(meter.element.style.display, 'none');
-  charge.setPull(1);
+  charge.setPull(15);
   meter.render(charge.snapshot(), { x: 200, y: 700, width: 390, height: 844 });
   assert.equal(meter.element.style.display, 'block');
   assert.equal(meter.element.style.pointerEvents, 'none');
@@ -188,6 +262,48 @@ test('meter is compact, pointer-transparent, viewport-bounded, above and beside 
   assert.equal(document.body.children.length, 0);
 });
 
+test('meter appears only at full pull and hides immediately below the retention threshold', () => {
+  const document = fakeDOM();
+  const meter = new LaunchChargeMeter(document.body);
+  const charge = fixedCharge();
+  const point = { x: 200, y: 700, width: 390, height: 844 };
+  for (const length of [0, 1, 9, 14.55, 14.849999]) {
+    charge.setPull(length);
+    charge.update(2);
+    meter.render(charge.snapshot(), point);
+    assert.equal(meter.element.style.display, 'none');
+  }
+  charge.setPull(14.85);
+  meter.render(charge.snapshot(), point);
+  assert.equal(meter.element.style.display, 'block');
+  assert.equal(meter.label.textContent, 'TIMED LAUNCH');
+  const sector = meter.sector.attributes.d;
+  charge.update(1);
+  charge.setPull(14.55);
+  meter.render(charge.snapshot(), point);
+  assert.equal(meter.element.style.display, 'block');
+  assert.equal(meter.label.textContent, 'RELEASE ×2');
+  meter.success(point);
+  charge.setPull(14.549999);
+  meter.render(charge.snapshot(), point);
+  assert.equal(meter.element.style.display, 'none');
+  assert.equal(meter.successElement.style.display, 'block', 'hiding the dial leaves success feedback independent');
+  charge.setPull(14.8);
+  meter.render(charge.snapshot(), point);
+  assert.equal(meter.element.style.display, 'none');
+  charge.setPull(14.85);
+  meter.render(charge.snapshot(), point);
+  assert.equal(meter.element.style.display, 'block');
+  assert.equal(meter.label.textContent, 'TIMED LAUNCH');
+  near(Number(meter.needle.attributes.x2), 37);
+  assert.equal(meter.sector.attributes.d, sector);
+  meter.render(charge.snapshot(), { ...point, visible: false });
+  assert.equal(meter.element.style.display, 'none');
+  meter.render({ ...charge.snapshot(), started: true, pulling: true, fullPull: false }, point);
+  assert.equal(meter.element.style.display, 'none', 'legacy started/pulling flags cannot bypass full-pull visibility');
+  meter.dispose();
+});
+
 test('dial sector, bonus marker and label use the chosen window from the first frame', () => {
   const document = fakeDOM();
   const meter = new LaunchChargeMeter(document.body);
@@ -213,7 +329,7 @@ test('dial sector, bonus marker and label use the chosen window from the first f
   expectSector(charge.snapshot());
   assert.equal(meter.timingLabel.textContent, '1.00–1.33 s');
   const firstSector = meter.sector.attributes.d;
-  charge.setPull(1);
+  charge.setPull(15);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.element.style.display, 'block');
   assert.equal(meter.sector.attributes.d, firstSector);
@@ -222,7 +338,9 @@ test('dial sector, bonus marker and label use the chosen window from the first f
   charge.setPull(.1);
   meter.render(charge.snapshot(), point);
   assert.equal(meter.sector.attributes.d, firstSector, 'retreat and elapsed time do not move the sector');
-  charge.setPull(1);
+  assert.equal(meter.element.style.display, 'none');
+  charge.setPull(15);
+  charge.update(1);
   charge.update(10, { paused: true });
   meter.render(charge.snapshot(), point);
   assert.equal(meter.sector.attributes.d, firstSector, 'pausing does not move the sector');
@@ -232,7 +350,7 @@ test('dial sector, bonus marker and label use the chosen window from the first f
   expectSector(charge.snapshot());
   assert.notEqual(meter.sector.attributes.d, firstSector);
   assert.equal(meter.timingLabel.textContent, '1.25–1.58 s');
-  charge.setPull(1);
+  charge.setPull(15);
   meter.render(charge.snapshot(), point);
   expectSector(charge.snapshot());
   const nextSector = meter.sector.attributes.d;

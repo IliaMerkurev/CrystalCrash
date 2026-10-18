@@ -1,3 +1,4 @@
+import {frameAimRunway} from '../src/aim-runway.js';
 // Run from the project root: node --test tests/camera-fx.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -224,7 +225,7 @@ test('Production THREE dolly zoom grows the subject 1.4×, moves throughout life
  for (const aspect of [9 / 16, 16 / 9]) for (const arenaOffset of [0, -36]) {
   const camera = new THREE.PerspectiveCamera(42, aspect, .1, 200);
   const context = {
-   THREE, camera, cameraFX: new CameraFX(), cameraBase: new THREE.Vector3(0, 15, 20),
+   THREE, frameAimRunway, camera, cameraFX: new CameraFX(), cameraBase: new THREE.Vector3(0, 15, 20),
    v3: (...xyz) => new THREE.Vector3(...xyz), clamp: THREE.MathUtils.clamp,
    drag: null, reduced: false, paused: false, bonusTestOpen: false, started: true,
    secondary: { blackHole: null, well: null }, blackHoleLookPoint: null,
@@ -327,7 +328,7 @@ test('Production aim camera treats main and extra balls equally and tracks off-c
   const camera = new THREE.PerspectiveCamera(42, aspect, .1, 200);
   const view = Object.freeze({ marker: 'frozen gesture projection', position: Object.freeze({ x: 0, y: 15, z: 20 }) });
   const context = {
-   THREE, camera, cameraFX: new CameraFX(), cameraBase: new THREE.Vector3(0, 15, 20),
+   THREE, frameAimRunway, camera, cameraFX: new CameraFX(), cameraBase: new THREE.Vector3(0, 15, 20),
    v3: (...xyz) => new THREE.Vector3(...xyz), clamp: THREE.MathUtils.clamp,
    drag: { mode: 'aim', echo, heldPosition: point.clone(), view }, heldPosition: point.clone(),
    reduced: false, paused: false, bonusTestOpen: false, started: true,

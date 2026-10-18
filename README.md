@@ -62,3 +62,11 @@ Onboarding demonstrates press→pull→release and two separate attraction lesso
 - Focused real-Rapier checks cover mass/inertia restoration, repeated boosts, catch/park/reset, finite vertical rebound, acceleration, 48/60-speed CCD, and timing boundaries. Device feel remains user validation.
 - The charge meter and actual ×2 eligibility unlock only after successful main launch and stationary HOLD attraction tutorial lessons. HOLD & MOVE is optional for this gate; saved completed progress unlocks immediately, and Replay Tutorial relocks it. Initial launch instructions do not mention ×2.
 - Tutorial hands/arrows are 18% larger with stronger outlines, brighter local contact pulses and higher-contrast short labels; input remains transparent and callout spacing accounts for the enlarged gesture.
+
+### v92 — screen-safe aiming runway
+- Aiming raises the held main/extra ball toward 52% screen height in portrait and 47% in landscape through a smooth parallel camera shift. Camera yaw/pitch are unchanged by this framing correction; Black Hole focus retains its own camera control.
+- Each gesture freezes a pull calibration against its captured camera and the available screen space above the bottom safe margin. Short pulls retain their initial sensitivity; the long end compresses smoothly so full pull/strength is reachable before the screen edge. Moving camera frames never recalculate that mapping.
+- Focused Three projection/input tests cover portrait/landscape, tablet sizes and near-bottom catches; charged-shot and slowdown regressions remain unchanged. Actual touch-device feel still requires user validation.
+- Charge now begins only at full pull (99% entry, 97% retention hysteresis). Easing below that band hides the dial and resets timing, while keeping the same random sector for the gesture. A dedicated nonblocking PULL FULL → HOLD → RELEASE IN ×2 SECTOR lesson unlocks after basic launch/HOLD and completes only on a successful timed shot.
+
+- v92 nominal maximum pull is 1.25× the original range (15 world-input units, aim guide max5), halfway between the original and v90 range. Normal maximum launch speed is still fully reachable.

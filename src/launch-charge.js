@@ -3,8 +3,11 @@ const WINDOW_START_MAX = 1.25;
 const WINDOW_DURATION = 1 / 3;
 const DIAL_DURATION = 2;
 const TIME_EPSILON = 1e-12;
+// 99% entry / 97% retention of the normalized maximum pull length (15).
+const FULL_PULL_ENTER = 14.85;
+const FULL_PULL_RETAIN = 14.55;
 
-/** A single, real-active-time timing window for each launch gesture. */
+/** A stable timing window, measured in active real time while holding full pull. */
 export class LaunchCharge {
   constructor({ random = Math.random } = {}) {
     this.random = typeof random === 'function' ? random : Math.random;
@@ -20,19 +23,23 @@ export class LaunchCharge {
     this.elapsed = 0;
     this.started = false;
     this.pulling = false;
+    this.fullPull = false;
     return this.snapshot();
   }
 
-  /** Crossing .7 starts the clock once. Retreating never resets or stops it. */
+  /** Full pull starts timing; a small hysteresis band absorbs pointer jitter. */
   setPull(length) {
-    this.pulling = Number.isFinite(length) && length > .7;
-    if (this.pulling) this.started = true;
+    this.fullPull = Number.isFinite(length) && length >= (this.fullPull ? FULL_PULL_RETAIN : FULL_PULL_ENTER);
+    this.pulling = this.fullPull;
+    this.started = this.fullPull;
+    // A partial pull restarts timing, but preserves this gesture's chosen window.
+    if (!this.fullPull) this.elapsed = 0;
     return this.snapshot();
   }
 
   /** Supply unscaled elapsed seconds, excluding app pause/background time. */
   update(realDt, { paused = false } = {}) {
-    if (!paused && this.started && Number.isFinite(realDt) && realDt > 0) {
+    if (!paused && this.started && this.fullPull && Number.isFinite(realDt) && realDt > 0) {
       this.elapsed = Math.min(Number.MAX_SAFE_INTEGER, this.elapsed + realDt);
     }
     return this.snapshot();
@@ -40,7 +47,7 @@ export class LaunchCharge {
 
   multiplier() {
     // A tiny roundoff allowance keeps exact 1/60-second frame boundaries fair.
-    return this.started && this.pulling && this.elapsed >= this.windowStart - TIME_EPSILON && this.elapsed <= this.windowEnd + TIME_EPSILON ? 2 : 1;
+    return this.started && this.fullPull && this.elapsed >= this.windowStart - TIME_EPSILON && this.elapsed <= this.windowEnd + TIME_EPSILON ? 2 : 1;
   }
 
   snapshot() {
@@ -54,6 +61,7 @@ export class LaunchCharge {
       windowDuration: WINDOW_DURATION,
       progress: Math.min(1, Math.max(0, this.elapsed / DIAL_DURATION)),
       pulling: this.pulling,
+      fullPull: this.fullPull,
       started: this.started,
     };
   }
@@ -159,7 +167,7 @@ export class LaunchChargeMeter {
       this.renderedWindowStart = windowStart;
       this.renderedWindowEnd = windowEnd;
     }
-    if (!visible || !snapshot?.started) { this.element.style.display = 'none'; return; }
+    if (!visible || !snapshot?.fullPull) { this.element.style.display = 'none'; return; }
 
     // Normal phone width: about 132px. Never cover the whole screen on resize.
     const meterWidth = Math.min(clamp(viewportWidth * .34, 128, 152), viewportWidth - 16, (viewportHeight - 16) * 160 / 108);
@@ -176,8 +184,8 @@ export class LaunchChargeMeter {
     const angle = Math.PI * (1 - progress);
     this.needle.setAttribute('x2', String(80 + Math.cos(angle) * 43));
     this.needle.setAttribute('y2', String(78 - Math.sin(angle) * 43));
-    const ready = Boolean(snapshot.window && snapshot.pulling);
-    const label = ready ? 'RELEASE ×2' : !snapshot.pulling ? 'PULL BACK' : snapshot.state === 'spent' ? 'NORMAL 1×' : 'TIMED LAUNCH';
+    const ready = Boolean(snapshot.window && snapshot.fullPull);
+    const label = ready ? 'RELEASE ×2' : snapshot.state === 'spent' ? 'NORMAL 1×' : 'TIMED LAUNCH';
     this.label.textContent = label;
     this.label.setAttribute('fill', ready ? '#a0ffcf' : '#e9f7ff');
     this.needle.setAttribute('stroke', ready ? '#a0ffcf' : '#f2faff');

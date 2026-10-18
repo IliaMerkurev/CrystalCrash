@@ -9,7 +9,7 @@ t.update(base);assert.equal(t.visible,true);assert.equal(t.step,'catch');assert.
 t.update({...base,drag:{mode:'aim'},state:'AIMING'});assert.equal(t.step,'aim');assert.equal(t.visible,true);assert.equal(t.notify('aim'),true);assert.equal(t.notify('release'),true);
 t.update({...base,state:'BALL_ACTIVE'});assert.equal(t.visible,false);assert.equal(t.notify('attract'),false);
 t.update({...base,state:'BALL_ACTIVE',mainUpper:true});assert.equal(t.visible,true);assert.equal(t.notify('attract'),true);assert.equal(t.notify('attractMove',{drag:{mode:'attract',age:.25,steerDistance:32}}),true);
-t.update({...base,state:'BALL_ACTIVE'});assert.equal(t.step,'pickup');assert.equal(t.visible,false);
+assert.equal(t.notify('charged',{chargedSuccess:true}),true);t.update({...base,state:'BALL_ACTIVE'});assert.equal(t.step,'pickup');assert.equal(t.visible,false);
 t.update({...base,eligiblePickupPoint:{x:240,y:300}});assert.equal(t.visible,true);assert.equal(t.notify('pickup'),true);
 t.update({...base,gatePoint:{x:200,y:200}});assert.equal(t.visible,false);assert.equal(t.notify('gate'),false);
 t.update({...base,gatePoint:{x:200,y:200},gateReady:true,gateOpen:true});assert.equal(t.visible,true);assert.equal(t.notify('gate'),true);assert.equal(t.completed,false);assert.equal(t.notify('extraCatch'),true);assert.equal(t.notify('extraRelease'),true);assert.equal(t.controlsCompleted,true);assert.equal(t.completed,false);assert.equal(JSON.parse(data.get(TUTORIAL_STORAGE_KEY)).done.length,TUTORIAL_STEPS.length);
@@ -50,7 +50,7 @@ for(const kind of ['pulse','pierce','arc','frost','split','gravity','heavy','bla
  for(let i=0;i<16;i++)all.update(context);
  assert.equal(all.seenBonuses.has(kind),true);
 }
-assert.equal(all.completed,true);const persistedAll=new GameTutorial({document:doc,storage});assert.equal(persistedAll.completed,true);persistedAll.replay();assert.equal(persistedAll.completed,false);assert.equal(persistedAll.seenBonuses.size,0);
+assert.equal(all.notify('charged',{chargedSuccess:true}),true);assert.equal(all.completed,true);const persistedAll=new GameTutorial({document:doc,storage});assert.equal(persistedAll.completed,true);persistedAll.replay();assert.equal(persistedAll.completed,false);assert.equal(persistedAll.seenBonuses.size,0);
 console.log('game-tutorial: all nine powers persist only after visible exposure; paused time never counts');
 const priority=new GameTutorial({document:doc,storage:null,project:p=>p});priority.done=new Set(['catch','aim','release','attract']);priority.index=4;
 const pulseCore={...base,corePoint:{x:210,y:320},bonusTargets:[{kind:'pulse',phase:'contained',point:{x:210,y:320}}],dt:.1};priority.update(pulseCore);assert.equal(priority.displayStep,'bonus-pulse');for(let i=0;i<31;i++)priority.update(pulseCore);assert.equal(priority.displayStep,'pickup');assert.equal(priority.label.textContent,'Break glowing glass');console.log('game-tutorial: first power explanation outranks generic live-core pickup cue');

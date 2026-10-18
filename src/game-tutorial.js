@@ -1,11 +1,11 @@
 // Contextual, event-driven onboarding. No timers complete gameplay steps.
 export const TUTORIAL_STORAGE_KEY='crystal-crash.tutorial.v1';
 const LEGACY_TUTORIAL_STEPS=Object.freeze(['catch','aim','release','attract','pickup','gate','extraCatch','extraRelease']);
-export const TUTORIAL_STEPS=Object.freeze(['catch','aim','release','attract','attractMove','pickup','gate','extraCatch','extraRelease']);
-const LABELS={catch:'Grab the main ball',aim:'Pull back to aim',release:'Release to launch',attract:'HOLD the lower zone to attract',attractMove:'HOLD & MOVE to steer',pickup:'Roll into a bonus',gate:'Roll through the open gate',extraCatch:'Grab an extra ball directly',extraRelease:'Pull back and release · No attraction'};
+export const TUTORIAL_STEPS=Object.freeze(['catch','aim','release','attract','attractMove','charged','pickup','gate','extraCatch','extraRelease']);
+const LABELS={charged:'PULL FULL → HOLD → RELEASE ×2',catch:'Grab the main ball',aim:'Pull back to aim',release:'Release to launch',attract:'HOLD the lower zone to attract',attractMove:'HOLD & MOVE to steer',pickup:'Roll into a bonus',gate:'Roll through the open gate',extraCatch:'Grab an extra ball directly',extraRelease:'Pull back and release · No attraction'};
 export const TUTORIAL_BONUSES=Object.freeze({pulse:'Pulse · Impacts blast nearby glass for 10s',pierce:'Pierce · Smash through glass for 10s',arc:'Arc · Chains through nearby bottom supports',frost:'Frost · Glass breaks one hit sooner this round',split:'Split · Every live ball creates two extras',gravity:'Tornado · Lifts and throws glass for 4s',heavy:'Heavy Hit · Adds a 3-damage strike',blackhole:'Black Hole · Pulls nearby glass inward for 3s',bomb:'Bomb · Explodes 3s after landing'});
 const GESTURE_DETAILS=Object.freeze({catch:'Pull back, then lift your finger',aim:'Pull back, then release',release:'Lift your finger to launch',attract:'Keep your finger down to pull the main ball',attractMove:'Slide your held finger around the lower zone',extraCatch:'Pull back, then lift your finger',extraRelease:'Lift your finger to launch'});
-const PULL_STEPS=new Set(['catch','aim','release','extraCatch','extraRelease']);
+const PULL_STEPS=new Set(['charged','catch','aim','release','extraCatch','extraRelease']);
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const transform=(v,m)=>[m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]];
 /** Projects local physics coordinates through the actual, animated camera. */
@@ -85,7 +85,8 @@ export class GameTutorial {
  active(c){return !!c?.started&&!c.paused&&!c.menu&&!c.test&&!['READY','TRANSITION'].includes(c.state)&&(c.state!=='REPOSITION'||!!c.drag?.echo);}
  /** Pass context overrides when the action changes state before the next render. */
  notify(action,context){const c={...this.context,...context};if(this.completed||!TUTORIAL_STEPS.includes(action)||this.done.has(action)||!this.active(c)||(c.drag?.echo&&['catch','aim','release','attract','attractMove'].includes(action)))return false;
-  if(c.state==='REPOSITION'&&!['extraCatch','extraRelease'].includes(action))return false;
+  if(c.state==='REPOSITION'&&!['extraCatch','extraRelease','charged'].includes(action))return false;
+  if(action==='charged'&&(!this.chargeUnlocked||!c.chargedSuccess))return false;
   if(action==='attract'&&!c.mainUpper)return false;
   if(action==='attractMove'&&(!this.done.has('attract')||!c.mainUpper||c.state!=='BALL_ACTIVE'||c.drag?.mode!=='attract'||!(c.drag.age>=.25)||!(c.drag.steerDistance>=32)))return false;
   if(action==='gate'&&(!c.gateReady||!c.gateOpen))return false;
@@ -98,6 +99,7 @@ export class GameTutorial {
   const candidates=[];const add=(step,point,label=LABELS[step])=>{if(point&&!this.done.has(step))candidates.push({step,point,label});};
   // Active control gestures and the unlocked exit always take precedence.
   if(c.state!=='REPOSITION'&&c.gateReady){if(c.gateOpen)add('gate',c.gatePoint);else if(!this.done.has('gate'))candidates.push({step:'gateBreak',point:c.gatePoint,label:'Break the glass gate'});}
+  if(this.chargeUnlocked&&c.drag?.mode==='aim'&&!this.done.has('charged')){const point=c.drag.echo?(c.extraPoints||[]).find(e=>e.id===c.drag.echo.b?.handle)?.point:c.mainPoint;const q=c.charge||{};add('charged',point,!q.fullPull?'PULL FULL':q.window?'RELEASE IN ×2 SECTOR':q.state==='spent'?'EASE BACK, THEN PULL FULL':'HOLD · RELEASE IN ×2 SECTOR');}
   if(c.drag?.echo){
    const activeId=c.activeExtraId??c.drag.echo.b?.handle;const heldCandidates=(c.extraPoints||[]).filter(e=>e.isHeld&&!e.parked&&!e.staged);const held=activeId!==undefined?heldCandidates.find(e=>e.id===activeId):(heldCandidates.length===1?heldCandidates[0]:null);add('extraRelease',held?.point);
   }else{
@@ -122,8 +124,8 @@ export class GameTutorial {
   if(!selected)return;const {step,kind,label}=selected;this.displayStep=step;this.visible=true;
   if(kind){const age=(this.bonusTime.get(kind)||0)+Math.max(0,Math.min(c.dt||0,.1));this.bonusTime.set(kind,age);if(age>=3){this.seenBonuses.add(kind);this.persist();}}
   if(!this.element)return;
-  const gesture=PULL_STEPS.has(step)?'pull-release':step==='attract'?'hold':step==='attractMove'?'hold-move':'point';
-  const detail=GESTURE_DETAILS[step]||'';
+  const gesture=step==='charged'&&c.charge?.fullPull?'hold':PULL_STEPS.has(step)?'pull-release':step==='attract'?'hold':step==='attractMove'?'hold-move':'point';
+  const detail=step==='charged'?(c.charge?.fullPull?'Release while the needle is green':'Reach full pull to reveal the timing dial'):GESTURE_DETAILS[step]||'';
   this.element.hidden=false;this.element.setAttribute('data-step',step);this.element.setAttribute('data-gesture',gesture);if(this.label.textContent!==label)this.label.textContent=label;
   if(this.detail.textContent!==detail)this.detail.textContent=detail;this.detail.hidden=!detail;
   const width=Math.min(216,viewport.width-32),labelX=clamp(screen.x-width/2,left+16,left+viewport.width-width-16);

@@ -69,7 +69,7 @@ test('inserting the movement lesson preserves every old numeric and named comple
  const storage=memory(JSON.stringify({done:legacySteps,bonuses:Object.keys(TUTORIAL_BONUSES)})),tutorial=make(storage);
  assert.equal(tutorial.step,'attractMove');assert.equal(tutorial.completed,false);assert.equal(tutorial.seenBonuses.size,9);
  tutorial.update(attracting);assert.equal(tutorial.displayStep,'attractMove');assert.equal(tutorial.notify('attractMove'),true);
- assert.equal(tutorial.completed,true);assert.equal(make(storage).completed,true);assert.equal(storage.read().done.length,9);
+ assert.equal(tutorial.completed,false);assert.equal(tutorial.notify('charged',{chargedSuccess:true}),true);assert.equal(tutorial.completed,true);assert.equal(make(storage).completed,true);assert.equal(storage.read().done.length,10);
  tutorial.replay();assert.equal(tutorial.done.size,0);assert.equal(tutorial.seenBonuses.size,0);assert.deepEqual(storage.read(),{done:[],bonuses:[]});
 });
 
@@ -103,3 +103,5 @@ test('animated overlays remain input-through, reduced-motion aware and within th
 });
 
 test('charge unlock requires launch and stationary HOLD; replay relocks without needing HOLD MOVE',()=>{const t=make();assert.equal(t.chargeUnlocked,false);t.done.add('release');assert.equal(t.chargeUnlocked,false);t.done.add('attract');assert.equal(t.chargeUnlocked,true);assert.equal(t.done.has('attractMove'),false);t.replay();assert.equal(t.chargeUnlocked,false);});
+
+test('charged lesson follows basics and progresses full pull / hold / release only on a successful timed shot',()=>{const t=make();t.done.add('release');t.done.add('attract');const context={...base,state:'AIMING',drag:{mode:'aim'},charge:{fullPull:false}};t.update(context);assert.equal(t.displayStep,'charged');assert.equal(t.label.textContent,'PULL FULL');assert.equal(t.notify('charged'),false);t.update({...context,charge:{fullPull:true,state:'charging'}});assert.match(t.label.textContent,/HOLD/);t.update({...context,charge:{fullPull:true,state:'window',window:true}});assert.equal(t.label.textContent,'RELEASE IN ×2 SECTOR');assert.equal(t.notify('charged',{chargedSuccess:true}),true);t.replay();assert.equal(t.chargeUnlocked,false);});
