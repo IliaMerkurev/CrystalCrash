@@ -7,3 +7,5 @@ assert(s.indexOf('profiler.endFrame({...pendingProfilerFrame,frameMs')<s.indexOf
 assert.match(s,/if\(profiler\?\.enabled&&profiler.active\)gpuTimer\?\.begin/);
 assert.match(s,/if\(baselineActive\)gpuSample=gpuTimer.poll\(\);else\{gpuTimer.clear/);
 assert.match(s,/pendingProfilerFrame=null;gpuTimer.clear\(\);profilerVisuals.reset/);
+
+p.reset({areaLights:false});assert.equal(p.flags.areaLights,false);p.set('areaLights',true);assert.equal(p.flags.areaLights,true);p.reset({areaLights:false});assert.equal(p.flags.areaLights,false);assert.match(s,/performanceSettings.areaLights\?\[\]:railLights/);assert.match(s,/onOpen:\(\)=>\{profilerVisuals.reset\(\{areaLights:performanceSettings.areaLights\}\)/);

@@ -4,7 +4,7 @@ export class ProfilerVisuals{
  constructor(){this.flags=Object.fromEntries(PROFILER_VISUAL_OPTIONS.map(([id])=>[id,true]));this.materials=new Map();}
  options(){return PROFILER_VISUAL_OPTIONS.map(([id,label])=>({id,label,value:this.flags[id]}));}
  set(id,value){if(Object.hasOwn(this.flags,id)){this.flags[id]=Boolean(value);if(id==='clearcoat'||id==='normalMaps')this.restoreMaterials();}}
- reset(){for(const id in this.flags)this.flags[id]=true;this.restoreMaterials();}
+ reset(baseline={}){for(const id in this.flags)this.flags[id]=baseline[id]??true;this.restoreMaterials();}
  restoreMaterials(){for(const m of this.materials.keys())m.needsUpdate=true;}
  trackMaterial(m){if(this.materials.has(m))return;this.materials.set(m,true);const compile=m.onBeforeCompile,key=m.customProgramCacheKey.bind(m),flags=this.flags;
  m.onBeforeCompile=function(shader,...args){compile.call(this,shader,...args);let defines='';if(!flags.clearcoat)defines+='#undef USE_CLEARCOAT\n';if(!flags.normalMaps)defines+='#undef USE_NORMALMAP\n#undef USE_NORMALMAP_TANGENTSPACE\n#undef USE_NORMALMAP_OBJECTSPACE\n';shader.vertexShader=defines+shader.vertexShader;shader.fragmentShader=defines+shader.fragmentShader;};

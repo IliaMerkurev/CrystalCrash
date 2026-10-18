@@ -30,7 +30,7 @@ const sample = {fps: 60, frameMs: 16.666, physicsMs: 2.125, drawCalls: 44, trian
 test('defaults preserve all visual effects and keep diagnostics opt-in', () => {
   assert.equal(Object.isFrozen(DEFAULT_PERFORMANCE_SETTINGS), true);
   assert.deepEqual(SCENE_PIXEL_BUDGETS, {low: 900000, medium: 1400000, high: 2073600});
-  assert.deepEqual(DEFAULT_PERFORMANCE_SETTINGS, {sceneQuality: 'auto', floorReflection: 'auto', cubesInFloor: true, cubeEnvironment: true, particlesInFloor: true, debrisEnvironment: true, shadows: 'high', gateTransmission: true, showDiagnostics: false});
+  assert.deepEqual(DEFAULT_PERFORMANCE_SETTINGS, {sceneQuality: 'auto', floorReflection: 'auto', cubesInFloor: true, cubeEnvironment: true, particlesInFloor: true, debrisEnvironment: true, shadows: 'high', gateTransmission: true, areaLights: true, showDiagnostics: false});
   const first = normalizePerformanceSettings(), second = normalizePerformanceSettings();
   first.shadows = 'off';
   assert.equal(second.shadows, 'high');
@@ -84,7 +84,7 @@ test('compact UI keeps shared state, clearly separates choices, and persists onl
   const ui = createPerformanceSettingsUI({parent, settings, storage, onChange: (state, key, previous) => changes.push({state, key, previous}), getDiagnostics: () => sample});
   assert.equal(ui.settings, settings);
   assert.equal(parent.children[0], ui.element);
-  assert.equal(Object.keys(ui.controls).length, 9);
+  assert.equal(Object.keys(ui.controls).length, 10);
   assert.match(ui.element.style.cssText, /overflow-y:auto/);
   assert.doesNotMatch(ui.element.style.cssText, /position:fixed|inset:0/);
   const labels = Object.values(ui.controls).map(input => input.attrs['aria-label']);
@@ -169,4 +169,19 @@ test('overlay is opt-in, pointer-transparent, externally updated, and throttled 
   overlay.dispose(); overlay.dispose();
   assert.equal(parent.children.length, 0);
   assert.equal(overlay.update(1000), false);
+});
+
+// Mobile defaults migrate old saved settings without overriding an explicit choice.
+test('mobile area-light defaults include desktop-UA iPads and preserve explicit preferences', async () => {
+ const {performanceDefaults,isMobileGraphicsDevice}=await import('../src/performance-settings.js');
+ const ipad={navigator:{userAgent:'Mozilla Macintosh',platform:'MacIntel',maxTouchPoints:5}};
+ assert(isMobileGraphicsDevice(ipad));assert.equal(performanceDefaults(ipad).areaLights,false);
+ assert.equal(performanceDefaults({navigator:{platform:'MacIntel',maxTouchPoints:0}}).areaLights,true);
+ assert.equal(performanceDefaults({navigator:{userAgent:'Android'}}).areaLights,false);
+ assert.equal(performanceDefaults({matchMedia:()=>({matches:true})}).areaLights,false);
+ const defaults=performanceDefaults(ipad);
+ assert.equal(normalizePerformanceSettings({shadows:'off'},defaults).areaLights,false);
+ assert.equal(normalizePerformanceSettings({areaLights:true},defaults).areaLights,true);
+ assert.equal(normalizePerformanceSettings({areaLights:false},performanceDefaults({})).areaLights,false);
+ assert.equal(normalizePerformanceSettings({areaLights:'true'},defaults).areaLights,false);
 });

@@ -10,6 +10,7 @@ export const DEFAULT_PERFORMANCE_SETTINGS = Object.freeze({
   debrisEnvironment: true,
   shadows: 'high',
   gateTransmission: true,
+  areaLights: true,
   showDiagnostics: false
 });
 const CHOICES = Object.freeze({
@@ -19,10 +20,17 @@ const CHOICES = Object.freeze({
 });
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
+// Desktop-UA iPads still report touch points. Explicit saved values win.
+export function isMobileGraphicsDevice(env=globalThis) {
+  const nav=env.navigator||{};
+  return !!(env.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|iPod/i.test(nav.userAgent||'') || (/Mac/i.test(nav.platform||nav.userAgent||'') && nav.maxTouchPoints>1));
+}
+export function performanceDefaults(env=globalThis) {return {...DEFAULT_PERFORMANCE_SETTINGS,areaLights:!isMobileGraphicsDevice(env)};}
+
 /** Returns a fresh, known-key-only settings object. Invalid fields use defaults. */
-export function normalizePerformanceSettings(value) {
+export function normalizePerformanceSettings(value, defaults=performanceDefaults()) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const result = {...DEFAULT_PERFORMANCE_SETTINGS};
+  const result = {...defaults};
   for (const key of Object.keys(result)) {
     if (!owns(source, key)) continue;
     const candidate = source[key];
@@ -37,7 +45,7 @@ export function loadPerformanceSettings(storage) {
     const target = storage === undefined ? globalThis.localStorage : storage;
     return normalizePerformanceSettings(JSON.parse(target?.getItem(PERFORMANCE_STORAGE_KEY) || 'null'));
   } catch {
-    return {...DEFAULT_PERFORMANCE_SETTINGS};
+    return performanceDefaults();
   }
 }
 
@@ -116,6 +124,7 @@ export function createPerformanceSettingsUI({parent, settings, onChange, getDiag
     ['particlesInFloor', 'Particles in floor mirror', null, 'Show glass particles in the floor mirror.'],
     ['debrisEnvironment', 'Environment on debris', null, 'Studio reflections on glass debris and particle surfaces.'],
     ['shadows', 'Shadows', [['off', 'Off'], ['low', 'Low · 512'], ['high', 'High · 1024']], 'Shadow-map resolution, independent of scene resolution.'],
+    ['areaLights', 'Area lights', null, 'Extra rail lighting. Off by default on phones and tablets; environment and basic lighting remain.'],
     ['gateTransmission', 'Gate transmission', null, 'Use the glass gate’s see-through transmission effect.'],
     ['showDiagnostics', 'Show FPS / ms in game', null, 'Keep a small, non-interactive performance readout visible during gameplay.']
   ];
