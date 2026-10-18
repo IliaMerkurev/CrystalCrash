@@ -111,3 +111,6 @@ Natural expiry gives captured cubes a small horizontal outward nudge. Temporary 
 Arena 1 keeps its single Pulse, and arenas 2–3 have two distinct seeded pickups without guaranteed Split. Split has one-third the selection weight of other kinds. Later ordinary arenas retain 2–5 unique pickups; an arena containing Black Hole or Tornado has only 1–2 additional pickups, and the two powerful fields never share an arena. Existing tower geometry and spaced host selection are retained.
 
 Tornado's cyan ribbons now have soft feathered edges, with additional gold filaments, warm orbiting particles and a ground-hugging airflow skirt. The fixed visual budget is nine draws and 27,520 triangles per scene pass; no full-screen blur or physics change is added by this polish.
+
+### Soft contact and rolling audio
+Nonbreaking glass/table impacts now use a quieter distinct glass tap, with impact thresholds and contact/cooldown suppression. Captured environmental collisions stay quiet. A single shared procedural rolling loop follows actual grounded ball tangential speed and smoothly fades on stop, catch, airborne motion, pause or mute. Main and extra balls share bounded loudness; Black Hole and aiming speed reductions are reflected in pitch/gain. Music remains separate.

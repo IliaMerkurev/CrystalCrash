@@ -5,15 +5,28 @@ export class AudioFX {
     this.master = null;
     this.muted = false;
     this.unlocked = false;
+    this.unlocking = null;
     this.voices = [];
     this.maxVoices = 12;
     this.lastPlayed = new Map();
     this.noise = null;
+    this.rollingBuffer = null;
+    this.rolling = null;
     this.disposed = false;
   }
 
   async unlock() {
     if (this.disposed) return false;
+    if (this.unlocked && this.context?.state === 'running') return true;
+    if (this.unlocking) return this.unlocking;
+    this.unlocked = false;
+    const attempt = this._unlockContext();
+    this.unlocking = attempt;
+    try { return await attempt; }
+    finally { if (this.unlocking === attempt) this.unlocking = null; }
+  }
+
+  async _unlockContext() {
     try {
       if (!this.context) {
         const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -34,26 +47,135 @@ export class AudioFX {
         const data = this.noise.getChannelData(0);
         for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
       }
-      if (this.context.state !== 'running') await this.context.resume();
+      const ctx = this.context;
+      if (ctx.state !== 'running') {
+        this.stopRolling();
+        await ctx.resume();
+      }
+      if (this.disposed || this.context !== ctx || ctx.state !== 'running') return false;
+      // Prepare the reusable texture on the unlocking gesture, not the first roll.
+      this.rollingBuffer ||= this._createRollingBuffer();
       // A silent source also unlocks WebAudio on mobile Safari.
-      const source = this.context.createBufferSource();
-      source.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
+      const source = ctx.createBufferSource();
+      source.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
       source.connect(this.master);
       source.onended = () => source.disconnect();
       source.start();
-      this.unlocked = this.context.state === 'running';
+      this.unlocked = true;
       return this.unlocked;
     } catch (_) { return false; }
   }
 
   setMuted(muted) {
     this.muted = Boolean(muted);
+    if (this.muted) this.stopRolling();
     if (!this.context || !this.master) return;
     try {
       const now = this.context.currentTime;
       this.master.gain.cancelScheduledValues(now);
       this.master.gain.setTargetAtTime(this.muted ? 0 : 0.56, now, 0.012);
       if (this.muted) this.voices.splice(0).forEach(v => this._stop(v));
+    } catch (_) { /* Audio is optional. */ }
+  }
+
+  _createRollingBuffer() {
+    const ctx = this.context, length = Math.round(ctx.sampleRate * 0.64);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0), grain = new Float32Array(length);
+    let seed = 0x5a17c9e3;
+    for (let i = 0; i < length; i++) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      grain[i] = seed / 2147483648 - 1;
+    }
+    const coefficient = hz => 1 - Math.exp(-2 * Math.PI * hz / ctx.sampleRate);
+    const a = coefficient(1100), b = coefficient(180), c = coefficient(55);
+    let fast = 0, slow = 0, body = 0, sum = 0, peak = 0;
+    // Warm cyclic filters across the boundary: the texture and its slope wrap
+    // naturally, without a fade-to-silence notch on every revolution.
+    for (let pass = 0; pass < 3; pass++) for (let i = 0; i < length; i++) {
+      fast += a * (grain[i] - fast);
+      slow += b * (grain[i] - slow);
+      body += c * (grain[i] - body);
+      if (pass < 2) continue;
+      const phase = 2 * Math.PI * i / length;
+      const texture = (body * 0.75 + (fast - slow) * 0.72)
+        * (0.92 + 0.05 * Math.sin(phase * 3) + 0.03 * Math.cos(phase * 7));
+      // Very quiet inharmonic metal resonance over the soft stone texture.
+      data[i] = texture + 0.003 * Math.sin(phase * 437) + 0.002 * Math.sin(phase * 701);
+      sum += data[i] * data[i];
+      peak = Math.max(peak, Math.abs(data[i]));
+    }
+    const scale = Math.min(0.21 / Math.sqrt(sum / length), 0.72 / peak);
+    for (let i = 0; i < length; i++) data[i] *= scale;
+    return buffer;
+  }
+
+  _rollingParam(param, value, now, smoothing) {
+    if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(now);
+    else param.cancelScheduledValues(now);
+    param.setTargetAtTime(value, now, smoothing);
+  }
+
+  _ensureRolling() {
+    if (this.rolling) return this.rolling;
+    const ctx = this.context;
+    this.rollingBuffer ||= this._createRollingBuffer();
+    const source = ctx.createBufferSource(), gain = ctx.createGain();
+    source.buffer = this.rollingBuffer;
+    source.loop = true;
+    source.loopStart = 0;
+    source.loopEnd = this.rollingBuffer.duration;
+    source.playbackRate.value = 0.48;
+    gain.gain.value = 0;
+    try {
+      source.connect(gain); gain.connect(this.master);
+      source.start();
+    } catch (error) {
+      this._stop({ sources: [source], nodes: [gain] });
+      throw error;
+    }
+    return this.rolling = { source, gain, speed: 0, intensity: 0, active: false };
+  }
+
+  /** One shared mix. Caller supplies grounded tangent speed in world units/s. */
+  updateRolling(speed, intensity = 1, dt = 1 / 60) {
+    if (this.disposed || this.muted || !this.unlocked || this.context?.state !== 'running') {
+      this.stopRolling();
+      return;
+    }
+    speed = Number.isFinite(speed) ? Math.max(0, Math.min(64, speed)) : 0;
+    intensity = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0;
+    dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 1 / 60;
+    if (speed < 0.035 || !intensity || !dt) { this.stopRolling(); return; }
+    try {
+      const rolling = this._ensureRolling(), now = this.context.currentTime;
+      rolling.speed += (speed - rolling.speed) * (1 - Math.exp(-dt / 0.06));
+      rolling.intensity += (intensity - rolling.intensity) * (1 - Math.exp(-dt / 0.035));
+      const amount = Math.min(1, rolling.speed / 24);
+      this._rollingParam(rolling.gain.gain, 0.13 * Math.sqrt(amount) * rolling.intensity, now, 0.018);
+      this._rollingParam(rolling.source.playbackRate, 0.48 + Math.min(1.6, rolling.speed / 20), now, 0.025);
+      rolling.active = true;
+    } catch (_) { this.stopRolling(); }
+  }
+
+  /** Fade out and forget motion, retaining the single loop for the next contact. */
+  stopRolling() {
+    const rolling = this.rolling;
+    if (!rolling) return;
+    const active = rolling.active;
+    rolling.active = false;
+    rolling.speed = rolling.intensity = 0;
+    try {
+      const now = this.context.currentTime;
+      if (this.context.state !== 'running') {
+        rolling.gain.gain.cancelScheduledValues(now);
+        rolling.gain.gain.setValueAtTime(0, now);
+        rolling.source.playbackRate.cancelScheduledValues(now);
+        rolling.source.playbackRate.setValueAtTime(0.48, now);
+      } else if (active) {
+        this._rollingParam(rolling.gain.gain, 0, now, 0.025);
+        this._rollingParam(rolling.source.playbackRate, 0.48, now, 0.04);
+      }
     } catch (_) { /* Audio is optional. */ }
   }
 
@@ -120,11 +242,11 @@ export class AudioFX {
       try { this.context.resume().catch(() => {}); } catch (_) {}
       return;
     }
-    const known = ['launch', 'wall', 'hit', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
+    const known = ['launch', 'wall', 'hit', 'glassTap', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
     if (!known.includes(name)) return;
     try {
       const now = this.context.currentTime;
-      const cooldown = { aim: 0.065, wall: 0.035, fall: 0.09, hit: 0.018, chip: 0.025 }[name] || 0.012;
+      const cooldown = { aim: 0.065, wall: 0.035, fall: 0.09, hit: 0.018, glassTap: 0.055, chip: 0.025 }[name] || 0.012;
       if (now - (this.lastPlayed.get(name) ?? -Infinity) < cooldown) return;
       this.lastPlayed.set(name, now);
       const v = this._voice(now), t = now + 0.002;
@@ -162,6 +284,9 @@ export class AudioFX {
           tone(620, 0.065, 0.065, 'sine', 380); tone(1240, 0.035, 0.018); break;
         case 'hit':
           tone(pitch, 0.13, 0.075); tone(pitch * 2.71, 0.065, 0.025); noise(0.025, 0.035, 3000); break;
+        case 'glassTap':
+          tone(pitch * 0.82, 0.085, 0.035); tone(pitch * 2.31, 0.05, 0.01);
+          tone(170, 0.045, 0.018, 'sine', 105); noise(0.012, 0.014, 1200, 'bandpass'); break;
         case 'crack':
           noise(0.07, 0.11, 1800); tone(pitch * 1.33, 0.16, 0.065); tone(pitch * 3.14, 0.07, 0.025); break;
         case 'chip':
@@ -190,6 +315,10 @@ export class AudioFX {
   dispose() {
     this.disposed = true;
     this.unlocked = false;
+    this.unlocking = null;
+    if (this.rolling) this._stop({ sources: [this.rolling.source], nodes: [this.rolling.gain] });
+    this.rolling = null;
+    this.rollingBuffer = null;
     this.voices.splice(0).forEach(v => this._stop(v));
     this.lastPlayed.clear();
     try { this.master?.disconnect(); this.limiter?.disconnect(); } catch (_) {}
