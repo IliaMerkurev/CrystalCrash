@@ -13,18 +13,18 @@ const tick = (fx, seconds, options) => {
  return pose;
 };
 
-test('CameraFX starts/reset at exact zeros, reuses its result, and never accumulates drift', () => {
+test('CameraFX starts/reset at exact neutral values, reuses its result, and never accumulates drift', () => {
  const fx = new CameraFX();
  const result = fx.update(DT);
- assert.deepEqual(result, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(result, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
  fx.pulse(); fx.bomb();
  assert.equal(fx.update(DT, { tornadoIntensity: 1, blackHoleActive: true, blackHoleIntensity: 1 }), result);
  assert.ok(magnitude(result) > 0);
  assert.equal(fx.reset(), result);
- assert.deepEqual(result, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(result, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
  tick(fx, 20);
- assert.deepEqual(result, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
- assert.deepEqual(Object.keys(result).sort(), ['x', 'y', 'z', 'focus', 'dolly'].sort(), 'only translation, focus blend and FOV output');
+ assert.deepEqual(result, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
+ assert.deepEqual(Object.keys(result).sort(), ['x', 'y', 'z', 'focus', 'dolly', 'growth'].sort(), 'only translation, focus blend, dolly and size growth output');
 });
 
 test('Zero dt freezes shake, wind, zoom, phase, and envelopes exactly', () => {
@@ -52,7 +52,7 @@ test('Pulse spam has a cooldown, a sustained rate bound, and a small independent
  assert.ok(max > .025 && max < .1, `bounded mini-shake peak: ${max}`);
  assert.ok(quietFrames > 600, 'sustained hit spam still has substantial quiet gaps');
  tick(fx, .3);
- assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
 });
 
 test('Bomb is stronger than Pulse, decays smoothly, and ends at zero', () => {
@@ -65,7 +65,7 @@ test('Bomb is stronger than Pulse, decays smoothly, and ends at zero', () => {
  }
  assert.ok(bombPeak > pulsePeak * 3, `Bomb ${bombPeak}, Pulse ${pulsePeak}`);
  assert.ok(latePeak < bombPeak * .12, 'late envelope is substantially quieter');
- assert.deepEqual(bomb.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(bomb.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
 });
 
 test('All effects and repeated Bomb triggers obey combined world-space and zoom bounds', () => {
@@ -75,33 +75,55 @@ test('All effects and repeated Bomb triggers obey combined world-space and zoom 
   const pose = fx.update(DT, { tornadoIntensity: 5, blackHoleActive: true, blackHoleIntensity: 5 });
   for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(pose[axis]) <= CAMERA_FX_LIMITS[axis] + 1e-12);
   assert.ok(magnitude(pose) <= CAMERA_FX_LIMITS.translation + 1e-12);
-  assert.ok(pose.dolly >= 0 && pose.dolly <= .5);
+  assert.ok(pose.dolly >= 0 && pose.dolly <= CAMERA_FX_LIMITS.dolly);
+  assert.ok(pose.growth >= 1 && pose.growth <= CAMERA_FX_LIMITS.growth);
  }
  tick(fx, 20);
- assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 }, 'combined effects leave no residual drift');
+ assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 }, 'combined effects leave no residual drift');
 });
 
-test('Black Hole dolly starts softly, continues all six seconds, then returns in 0.3 seconds', () => {
+test('Black Hole dolly and growth start softly, continue all 3.5 seconds, then return in 0.3 seconds', () => {
  const fx = new CameraFX(); let previous = 0;
- for (let i = 0; i < 720; i++) {
+ for (let i = 0; i < 420; i++) {
   const pose = fx.update(DT, { blackHoleActive: true });
   assert.ok(pose.dolly > previous, 'dolly must progress throughout the active duration');
-  assert.ok(pose.dolly - previous < .001);
+  assert.ok(pose.dolly - previous < .002);
+  near(pose.growth, 1 + .4 * pose.dolly / .58);
   previous = pose.dolly;
  }
- near(previous, .5);
+ near(previous, .58);
+ near(fx.offsets.growth, 1.4);
  near(fx.offsets.focus, 1);
  const before = { ...fx.offsets };
  assert.deepEqual(fx.update(0), before, 'pause preserves the active pose');
  for (let i = 0; i < 36; i++) {
   const pose = fx.update(DT);
   assert.ok(pose.dolly <= previous);
+  near(pose.growth, 1 + .4 * pose.dolly / .58);
   previous = pose.dolly;
  }
  near(previous, 0);
  near(fx.offsets.focus, 0);
+ near(fx.offsets.growth, 1);
  fx.update(DT);
  assert.equal(fx.offsets.dolly, 0);
+ assert.equal(fx.offsets.growth, 1);
+});
+
+test('Black Hole custom duration scales the continuous dolly, and invalid durations use 3.5 seconds', () => {
+ for (const blackHoleDuration of [undefined, 0, -1, Infinity, NaN]) {
+  const fx = new CameraFX();
+  fx.update(3.5, { blackHoleActive: true, blackHoleDuration });
+  near(fx.offsets.dolly, .58); near(fx.offsets.growth, 1.4);
+ }
+ const fx = new CameraFX();
+ fx.update(1, { blackHoleActive: true, blackHoleDuration: 2 });
+ assert.ok(fx.offsets.dolly > .28 && fx.offsets.dolly < .3);
+ assert.ok(fx.offsets.growth > 1.19 && fx.offsets.growth < 1.21);
+ fx.update(1, { blackHoleActive: true, blackHoleDuration: 2 });
+ near(fx.offsets.dolly, .58); near(fx.offsets.growth, 1.4);
+ fx.update(20, { blackHoleActive: true, blackHoleDuration: 2 });
+ near(fx.offsets.dolly, .58); near(fx.offsets.growth, 1.4);
 });
 
 test('Tornado is high-amplitude low-frequency sway without frame-level jitter', () => {
@@ -128,6 +150,7 @@ test('Reduced motion strongly attenuates translation and zoom', () => {
   for (const axis of ['x', 'y', 'z']) near(small[axis], normal[axis] * .08);
   near(small.dolly, normal.dolly * .12);
   near(small.focus, normal.focus * .12);
+  near(small.growth - 1, (normal.growth - 1) * .12);
  }
 });
 
@@ -142,7 +165,7 @@ test('Transition suppresses gracefully and ignores new impact shakes', () => {
  tick(fx, 2, { transition: true });
  assert.ok(magnitude(fx.offsets) < 1e-6 && fx.offsets.dolly < 1e-5);
  tick(fx, 20);
- assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
 });
 
 test('Fixed simulation phase is deterministic and independent of random state', () => {
@@ -160,11 +183,11 @@ test('Idle poses use exact positive zeros at every phase and large steps finish 
  const fx = new CameraFX();
  for (let i = 0; i < 2000; i++) {
   assert.deepEqual(fx.update(.073, { tornadoIntensity: NaN, blackHoleIntensity: -1 }),
-   { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+   { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
  }
  fx.pulse(); fx.bomb(); fx.update(.02);
  assert.ok(magnitude(fx.offsets) > 0);
- assert.deepEqual(fx.update(5), { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(fx.update(5), { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
 });
 
  test('Production camera has no legacy ordinary-hit shake path',async()=>{
@@ -176,12 +199,12 @@ test('Black Hole focus and dolly both start at t0 with a soft focus ramp', () =>
  const fx = new CameraFX();
  fx.update(DT, { blackHoleActive: true });
  assert.ok(fx.offsets.focus > 0 && fx.offsets.focus < .001);
- assert.ok(fx.offsets.dolly > 0 && fx.offsets.dolly < .00001);
- tick(fx, 1.1, { blackHoleActive: true });
+ assert.ok(fx.offsets.dolly > 0 && fx.offsets.dolly < .00002);
+ tick(fx, .7, { blackHoleActive: true });
  assert.equal(fx.offsets.focus, 1);
- assert.ok(fx.offsets.dolly > 0 && fx.offsets.dolly < .10);
+ assert.ok(fx.offsets.dolly > 0 && fx.offsets.dolly < .12);
  tick(fx, .31);
- assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
 });
 
 test('Inactive Black Hole cannot focus or zoom from stale intensity', () => {
@@ -189,10 +212,11 @@ test('Inactive Black Hole cannot focus or zoom from stale intensity', () => {
  tick(fx, 3, { blackHoleActive: false, blackHoleIntensity: 1 });
  assert.equal(fx.offsets.focus, 0);
  assert.equal(fx.offsets.dolly, 0);
+ assert.equal(fx.offsets.growth, 1);
 });
 
 
-test('Production THREE dolly zoom preserves subject size, moves throughout lifetime and returns without drift', async () => {
+test('Production THREE dolly zoom grows the subject 1.4×, moves throughout lifetime and returns without drift', async () => {
  const [{ readFile }, vm, THREE] = await Promise.all([import('node:fs/promises'), import('node:vm'), import('three')]);
  const source = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
  const start = source.indexOf('function updateAimCamera('), end = source.indexOf('\nfunction resize(', start);
@@ -221,27 +245,29 @@ test('Production THREE dolly zoom preserves subject size, moves throughout lifet
   for (let cycle = 0; cycle < 3; cycle++) {
    context.secondary.blackHole = { point: hole, intensity: 0 };
    let lastDistance = baseDistance;
-   for (let frame = 0; frame < 720; frame++) {
+   for (let frame = 0; frame < 420; frame++) {
     context.updateAimCamera(DT);
     const distance = camera.position.distanceTo(worldHole);
-    assert.ok(distance < lastDistance, 'camera keeps moving closer through all six seconds');
-    assert.ok(distance >= baseDistance * .5 - 1e-9, 'dolly remains bounded');
+    assert.ok(distance < lastDistance, 'camera keeps moving closer through all 3.5 seconds');
+    assert.ok(distance >= baseDistance * .42 - 1e-9, 'dolly remains bounded');
     lastDistance = distance;
     assert.ok(camera.position.y > worldHole.y && camera.position.y > .5, 'dolly remains above the hole and floor');
     if(frame === 11)assert.ok(1-distance/baseDistance>.002, 'visible dolly in first 0.1 seconds');
     assert.ok(camera.fov >= 42 && camera.fov < 80, 'closer camera compensates with wider FOV');
     // Compare an actual projected unit-width billboard to the same orientation
-    // at the undollied base pose. This isolates dolly compensation from pan.
+    // at the undollied base pose. Partial compensation allows exactly the
+    // requested progressive growth while isolating the result from pan.
     control.position.copy(basePosition); control.quaternion.copy(camera.quaternion);
     control.fov = 42; control.updateProjectionMatrix(); control.updateMatrixWorld();
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    near(width(camera, right), width(control, right), 5e-6);
-    if (frame >= 132) {
+    near(width(camera, right), width(control, right) * context.cameraFX.offsets.growth, 5e-6);
+    if (frame >= 84) {
      const projected = worldHole.clone().project(camera);
      near(projected.x, 0, 1e-9); near(projected.y, 0, 1e-9);
     }
    }
-   near(lastDistance, baseDistance * .5, 1e-9);
+   near(lastDistance, baseDistance * .42, 1e-9);
+   near(context.cameraFX.offsets.growth, 1.4);
    const frozenPosition = camera.position.clone(), frozenQuaternion = camera.quaternion.clone(), frozenFov = camera.fov;
    context.paused = true; context.secondary.blackHole = null; context.updateAimCamera(.5);
    near(camera.position.distanceTo(frozenPosition), 0);
@@ -252,7 +278,7 @@ test('Production THREE dolly zoom preserves subject size, moves throughout lifet
    for (let frame = 0; frame < 37; frame++) context.updateAimCamera(DT);
    near(camera.position.distanceTo(basePosition), 0);
    near(camera.quaternion.angleTo(baseQuaternion), 0, 1e-7); near(camera.fov, 42, .001);
-   assert.equal(context.cameraFX.offsets.focus, 0); assert.equal(context.cameraFX.offsets.dolly, 0);
+   assert.equal(context.cameraFX.offsets.focus, 0); assert.equal(context.cameraFX.offsets.dolly, 0); assert.equal(context.cameraFX.offsets.growth, 1);
   }
  }
 });
@@ -260,31 +286,32 @@ test('Production THREE dolly zoom preserves subject size, moves throughout lifet
 
 test('Black Hole reactivation during return preserves the partial pose without snapping', () => {
  const fx = new CameraFX();
- tick(fx, 6, { blackHoleActive: true });
+ tick(fx, 3.5, { blackHoleActive: true });
  tick(fx, .1);
  const before = { ...fx.offsets };
  assert.ok(before.focus > .5 && before.focus < 1);
- assert.ok(before.dolly > .25 && before.dolly < .5);
+ assert.ok(before.dolly > .29 && before.dolly < .58);
  const after = fx.update(DT, { blackHoleActive: true });
  assert.ok(after.focus >= before.focus && after.focus - before.focus < .001);
  assert.ok(after.dolly >= before.dolly && after.dolly - before.dolly < .00001);
+ assert.ok(after.growth >= before.growth && after.growth - before.growth < .00001);
  let prior = after.dolly;
- for (let i = 0; i < 720; i++) {
+ for (let i = 0; i < 420; i++) {
   fx.update(DT, { blackHoleActive: true });
-  assert.ok(fx.offsets.dolly >= prior && fx.offsets.dolly <= .5);
+  assert.ok(fx.offsets.dolly >= prior && fx.offsets.dolly <= .58);
   prior = fx.offsets.dolly;
  }
- near(fx.offsets.dolly, .5); near(fx.offsets.focus, 1);
+ near(fx.offsets.dolly, .58); near(fx.offsets.focus, 1); near(fx.offsets.growth, 1.4);
  tick(fx, .31);
- assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0 });
+ assert.deepEqual(fx.offsets, { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 });
 });
 
 
 test('Gaze uses C2 quintic easing while dolly becomes visibly active in the first 0.1 seconds', () => {
  const fx = new CameraFX(); fx.update(.1, { blackHoleActive: true });
- const t = .1 / 1.1, expected = t ** 3 * (t * (t * 6 - 15) + 10);
+ const t = .1 / .7, expected = t ** 3 * (t * (t * 6 - 15) + 10);
  near(fx.offsets.focus, expected);
- assert.ok(fx.offsets.dolly > .002 && fx.offsets.dolly < .01);
+ assert.ok(fx.offsets.dolly > .009 && fx.offsets.dolly < .012);
  const before = fx.offsets.dolly;
  fx.update(.1, { blackHoleActive: true });
  assert.ok(fx.offsets.dolly - before > .008, 'sustained linear motion follows short velocity ease');

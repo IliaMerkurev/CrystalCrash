@@ -77,3 +77,5 @@ Black Hole now uses a 6.6-ball-diameter radius, eases camera focus over 1.1 seco
 ### Bomb visual refinement and arena diagnostics
 - Bomb fire lobes spread 32% farther, hot streaks travel about 31% faster, and glowing embers are brighter. Smoke coverage is lighter and less opaque; damage and physical impulses are unchanged.
 - The Test menu offers an explicit arena loader for the 14 authored arenas. Loading resets that scene, score and effects while retaining the current run seed for repeatable layouts.
+
+- Black Hole now lasts 3.5 seconds with a proportionally faster pull ramp and inward particles. Its camera approaches 58% closer while deliberately increasing apparent size up to 40%; world geometry and influence radius are unchanged.

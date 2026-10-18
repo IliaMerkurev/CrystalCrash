@@ -635,15 +635,15 @@ test('Black Hole starts at zero force, ramps smoothly, and targets only playable
     Object.defineProperty(cube, 'damage', { get: () => damage, set: () => { throw new Error('direct damage is forbidden'); } });
     const hole = powers.createBlackHole({ x: 0, y: 2, z: 0 }, 10, blocks);
     assert.deepEqual(hole.targets.map(target => target.id), [1]);
-    near(hole.radius, RADIUS * 16, 'default eight-diameter radius');
+    near(hole.radius, RADIUS * 13.2, 'default reduced 6.6-diameter radius');
     near(hole.acceleration, 50, 'bounded peak acceleration');
     near(hole.maxSpeed, 14, 'default speed cap');
-    near(hole.expires, 16, 'six-second life');
+    near(hole.expires, 13.5, '3.5-second life');
     near(hole.intensity, 0, 'initial visual intensity');
     cube.b.setLinvel({ x: 2, y: -1, z: .5 }, true);
     powers.step(.1, 10, BOUNDS);
     vectorNear(cube.b.linvel(), { x: 2, y: -1, z: .5 }, 'age-zero field applies no force or damping');
-    for (const [age, intensity] of [[.5, .15625], [1, .5], [2, 1]]) {
+    for (const [age, intensity] of [[7/24, .15625], [7/12, .5], [7/6, 1]]) {
       cube.b.setLinvel({ x: 0, y: 0, z: 0 }, true);
       powers.step(.1, 10 + age, BOUNDS);
       near(hole.age, age, 'public visual age');
@@ -686,7 +686,7 @@ test('Black Hole honors canonical speedCap, configured target count, and a bound
   }, { x: 0, y: 0, z: 0 });
 });
 
-test('Black Hole visibly lifts a real cube off a high-friction floor, arrives safely, and releases at six seconds', () => {
+test('Black Hole visibly lifts a real cube off a high-friction floor, arrives safely, and releases at 3.5 seconds', () => {
   withPhysics(({ powers, world }) => {
     const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -.2, 0));
     const floorCollider = world.createCollider(RAPIER.ColliderDesc.cuboid(20, .2, 20).setFriction(.9), floor);
@@ -695,7 +695,7 @@ test('Black Hole visibly lifts a real cube off a high-friction floor, arrives sa
     const center = { x: 0, y: 3, z: 0 }, start = { ...cube.b.translation() };
     const hole = powers.createBlackHole(center, 0, blocks);
     let maxHeight = start.y, maxSpeed = 0;
-    for (let i = 0; i < 540; i++) {
+    for (let i = 0; i < 315; i++) {
       powers.step(DT, i * DT, BOUNDS);
       world.step();
       maxHeight = Math.max(maxHeight, cube.b.translation().y);
@@ -708,13 +708,13 @@ test('Black Hole visibly lifts a real cube off a high-friction floor, arrives sa
       'arrival damping holds the cube near the elevated center');
     assert.ok(maxSpeed < 14.3, 'bounded attraction does not create an explosive speed');
     near(floorCollider.friction(), .9, 'global floor remains untouched');
-    powers.step(DT, 6, BOUNDS);
+    powers.step(DT, 3.5, BOUNDS);
     assert.equal(powers.blackHole, null);
     assert.equal(hole.active, false);
     assert.equal(hole.intensity, 0);
     near(cube.cs[0].friction(), .65, 'expiry restores cube friction');
     const releaseHeight = cube.b.translation().y;
-    for (let i = 0; i < 30; i++) { powers.step(DT, 6 + (i + 1) * DT, BOUNDS); world.step(); }
+    for (let i = 0; i < 30; i++) { powers.step(DT, 3.5 + (i + 1) * DT, BOUNDS); world.step(); }
     assert.ok(cube.b.translation().y < releaseHeight - .5, 'released cube falls under real gravity');
   });
 });

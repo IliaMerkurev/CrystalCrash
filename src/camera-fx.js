@@ -1,7 +1,7 @@
 // Deterministic camera feedback. Apply ABSOLUTE translation to the normal aim
 // position and target; blend focus and dolly toward the Black Hole, compensating
-// FOV in the camera integrator to preserve subject size. Pause with dt = 0.
-export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, dolly: .50, focusSeconds: 1.1, returnSeconds: .3 });
+// FOV in the camera integrator for gradual subject growth. Pause with dt = 0.
+export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, dolly: .58, growth: 1.4, durationSeconds: 3.5, focusSeconds: .7, returnSeconds: .3 });
 
 const TAU = Math.PI * 2;
 const clamp01 = value => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
@@ -25,7 +25,7 @@ const envelope = (age, duration, attack) => {
 export class CameraFX {
  constructor() {
   // Reuse this result object; update never allocates geometry or per-frame arrays.
-  this.offsets = { x: 0, y: 0, z: 0, focus: 0, dolly: 0 };
+  this.offsets = { x: 0, y: 0, z: 0, focus: 0, dolly: 0, growth: 1 };
   this.reset();
  }
  reset() {
@@ -42,6 +42,7 @@ export class CameraFX {
   this.transition = false;
   this.visibility = 1;
   this.offsets.x = this.offsets.y = this.offsets.z = this.offsets.focus = this.offsets.dolly = 0;
+  this.offsets.growth = 1;
   return this.offsets;
  }
  pulse() {
@@ -58,7 +59,7 @@ export class CameraFX {
   this.bombAge = 0; // Replace the transient; repeated bombs never add amplitude.
   return true;
  }
- update(dt, { tornadoIntensity = 0, blackHoleActive = false, blackHoleDuration = 6, reducedMotion = false, transition = false } = {}) {
+ update(dt, { tornadoIntensity = 0, blackHoleActive = false, blackHoleDuration = CAMERA_FX_LIMITS.durationSeconds, reducedMotion = false, transition = false } = {}) {
   // A paused frame is an exact freeze, even if incoming effect flags changed.
   if (!Number.isFinite(dt) || dt <= 0) return this.offsets;
   this.time += dt;
@@ -77,7 +78,7 @@ export class CameraFX {
     this.startDolly = this.dolly;
    }
    this.holeAge += dt;
-   const duration = Number.isFinite(blackHoleDuration) && blackHoleDuration > 0 ? blackHoleDuration : 6;
+   const duration = Number.isFinite(blackHoleDuration) && blackHoleDuration > 0 ? blackHoleDuration : CAMERA_FX_LIMITS.durationSeconds;
    this.focus = this.startFocus + (1 - this.startFocus) * smootherstep(this.holeAge / CAMERA_FX_LIMITS.focusSeconds);
    this.dolly = this.startDolly + (CAMERA_FX_LIMITS.dolly - this.startDolly) * dollyProgress(this.holeAge, duration);
   } else {
@@ -116,6 +117,8 @@ export class CameraFX {
   this.offsets.z = z * scale || 0;
   this.offsets.focus = this.focus * this.visibility * (reducedMotion ? .12 : 1) || 0;
   this.offsets.dolly = this.dolly * this.visibility * (reducedMotion ? .12 : 1) || 0;
+  // Size growth follows the same continuous approach/return and attenuations.
+  this.offsets.growth = 1 + (CAMERA_FX_LIMITS.growth - 1) * this.offsets.dolly / CAMERA_FX_LIMITS.dolly;
   return this.offsets;
  }
 }

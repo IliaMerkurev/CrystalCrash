@@ -274,9 +274,9 @@ export class SecondaryPowers {
  createBlackHole(point,now,blocks,config={}) {
   this.endBlackHole();
   const value=(key,fallback)=>Number.isFinite(config[key])?Math.max(0,config[key]):fallback;
-  const diameter=this.radius*2,duration=value('duration',6),radius=value('radiusD',8)*diameter;
+  const diameter=this.radius*2,duration=value('duration',3.5),radius=value('radiusD',6.6)*diameter;
   const hole={point:{x:point.x,y:point.y,z:point.z},radius,range:radius,born:now,expires:now+duration,duration,
-   age:0,intensity:0,active:true,rampDuration:value('rampDuration',2),acceleration:value('acceleration',50),maxSpeed:value('speedCap',value('maxSpeed',14)),
+   age:0,intensity:0,active:true,rampDuration:value('rampDuration',7/6),acceleration:value('acceleration',50),maxSpeed:value('speedCap',value('maxSpeed',14)),
    settleRadius:value('settleRadiusD',.25)*diameter,maxTargets:Math.floor(value('maxTargets',64)),targets:[],blocks,nextCapture:now};
   this.blackHole=hole;this.captureBlackHoleTargets(hole);return hole;
  }
