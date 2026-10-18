@@ -1,0 +1,5 @@
+
+### Adaptive rendering (prototype/0.5)
+The loading warmup measures five GPU-completed representative scene renders after shader compilation (including glass, reflection and effect warmup meshes). It selects an aspect-preserving 0.9 / 1.4 / 2.0736 megapixel drawing-buffer budget with 256 / 512 / 1024 floor reflections. CSS/UI stays native size. The reflection uses a tight nine-texel weighted filter; its quality still needs device visual judgment, particularly at256. The transmission prepass reuses the last completed ACES floor reflection instead of rendering the scene again with mismatched tone mapping. The visible floor refreshes normally every frame.
+
+Test includes Auto/Low/Medium/High and reports actual buffer dimensions, reflection size and recent frame time. Auto can lower one tier after sustained slow visible gameplay, with hysteresis and cooldown; it does not oscillate upward. Hidden tabs/menus do not count. Loading measurements are a heuristic, not an iPad FPS guarantee. Physical timestep remains90Hz.
