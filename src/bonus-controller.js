@@ -1,8 +1,8 @@
 /** Distances are multiples of the main ball's diameter; time is simulation seconds. */
 export const BONUS_DEFS = Object.freeze({
-  pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', charges: 1, radiusD: 4.4, maxTargets: Infinity, damage: 3, description: 'Wide burst: 3 damage to every nearby cube' }),
+  pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', duration: 10, radiusD: 4.4, maxTargets: Infinity, damage: 3, description: '10 seconds: every ball impact blasts nearby cubes for 3 damage' }),
   pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', duration: 10, damage: 8, description: '10 seconds of smashing straight through cubes' }),
-  arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, arenaWide: true, targetType: 'bottom-support-original', damage: 1, description: 'One hit to every bottom support across the arena' }),
+  arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1, description: 'One hit per bottom support, chaining within 4.4 ball diameters' }),
   frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', duration: 10, markDuration: 10, bonusDamage: 1, description: '10 seconds of marking cubes for a stronger next hit' }),
   split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, sourceType: 'all-live-balls', persistent: true, angleDegrees: 18, damage: 1, description: 'Every live ball creates two more; collect again to multiply them' }),
   gravity: Object.freeze({ kind: 'gravity', name: 'Gravity Well', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'A strong, wide pull on nearby cubes for 4 seconds' }),
@@ -88,7 +88,7 @@ export class BonusController {
     this.queued = null;
   }
 
-  /** Update before contacts. Pierce/Frost timers start at their first valid hit. */
+  /** Update before contacts. Pulse/Pierce/Frost timers start at their first valid hit. */
   tick(now) {
     if (!Number.isFinite(now)) throw new TypeError('Bonus time must be finite simulation seconds');
     this._time = Math.max(this._time, now);
@@ -99,8 +99,8 @@ export class BonusController {
     const a = this.active;
     if (a?.kind === 'pierce' && a.startedAt !== null &&
         this._time - a.startedAt >= BONUS_DEFS.pierce.duration) a.exiting = true;
-    if (a?.kind === 'frost' && a.startedAt !== null &&
-        this._time - a.startedAt >= BONUS_DEFS.frost.duration) this._advance();
+    if (['pulse', 'frost'].includes(a?.kind) && a.startedAt !== null &&
+        this._time - a.startedAt >= BONUS_DEFS[a.kind].duration) this._advance();
     return { pierceExit: this.pierceExit, suppressReflection: this.suppressReflection, expiredFrostIds };
   }
 
@@ -114,8 +114,9 @@ export class BonusController {
   /**
    * Returns permission for direct damage and a secondary-effect descriptor.
    * Pulse excludes originId, which already receives the same burst damage directly.
-   * Arc targets all bottom/support originals in the arena; exclude its direct-hit
-   * origin so that no original receives the same activation twice. Effects never hit
+   * Arc chains through nearby bottom/support originals within radiusD per hop.
+   * Caller tracks visited originals, including the direct-hit origin, so each
+   * original receives at most one hit per discharge. Effects never hit
    * gates and never invoke this method recursively. Snapshot origin position BEFORE
    * direct damage destroys its body, so the caller can anchor the returned effect.
    */
@@ -154,7 +155,14 @@ export class BonusController {
     result.suppressReflection = false;
     // Main and secondary balls spend the same attack and brittle marks.
     result.consumed = true;
-    if (a.kind === 'frost') {
+    if (a.kind === 'pulse') {
+      if (a.startedAt === null) a.startedAt = this._time;
+      // Every valid direct ball impact triggers a blast for the shared duration.
+      // The caller filters resting/duplicate contacts and never recurses from AoE.
+      // No lifetime target set: a later impact may blast the same original again.
+      result.effect = Object.freeze({ kind: 'pulse', originId,
+        radiusD: def.radiusD, maxTargets: def.maxTargets, damage: def.damage });
+    } else if (a.kind === 'frost') {
       if (a.startedAt === null) a.startedAt = this._time;
       // Mark a hit cube, then consume that mark on its next hit. While the timer
       // runs a surviving cube can be marked again, with no target or hit budget.
@@ -173,10 +181,8 @@ export class BonusController {
       // Extra balls remain independently of the FIFO; caller confirms their loss.
       this._advance();
     } else {
-      if (a.kind === 'pulse') result.effect = Object.freeze({ kind: 'pulse', originId,
-        radiusD: def.radiusD, maxTargets: def.maxTargets, damage: def.damage });
-      else if (a.kind === 'arc') result.effect = Object.freeze({ kind: 'arc', originId,
-        arenaWide: def.arenaWide, targetType: def.targetType, damage: def.damage });
+      if (a.kind === 'arc') result.effect = Object.freeze({ kind: 'arc', originId,
+        radiusD: def.radiusD, targetType: def.targetType, damage: def.damage });
       else if (a.kind === 'gravity') result.effect = Object.freeze({ kind: 'gravity', originId,
         radiusD: def.radiusD, duration: def.duration, maxTargets: def.maxTargets,
         accelerationD: def.accelerationD, maxDeltaSpeedD: def.maxDeltaSpeedD,
@@ -220,7 +226,7 @@ export class BonusController {
       description: BONUS_DEFS[a.kind].description,
       charges: a.remaining, remaining: a.remaining, exiting: a.exiting,
       started: a.startedAt !== null,
-      secondsLeft: ['pierce', 'frost'].includes(a.kind)
+      secondsLeft: ['pulse', 'pierce', 'frost'].includes(a.kind)
         ? (a.startedAt === null ? BONUS_DEFS[a.kind].duration
           : Math.max(0, BONUS_DEFS[a.kind].duration - (this._time - a.startedAt)))
         : null,

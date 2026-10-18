@@ -310,19 +310,30 @@ function groundPowerTargets(excluded=new Set()){
   const previous=unique.get(o.origin.id);if(!previous||p.y<previous.p.y)unique.set(o.origin.id,{o,p});
  }return [...unique.values()].sort((a,b)=>a.o.origin.id-b.o.origin.id);
 }
+function chainedGroundTargets(point,excluded=new Set(),radius=BONUS_DEFS.arc.radiusD*C.ballRadius*2){
+ // Snapshot support-layer originals before any damage or falling cascades.
+ const candidates=groundPowerTargets(excluded),visited=new Set(excluded),queue=[point.clone()],targets=[];
+ for(let head=0;head<queue.length;head++){
+  const from=queue[head];
+  for(const target of candidates){if(visited.has(target.o.origin.id)||target.p.distanceToSquared(from)>radius*radius)continue;
+   visited.add(target.o.origin.id);targets.push({...target,from:from.clone()});queue.push(target.p.clone());
+  }
+ }
+ return targets;
+}
 function applyPower(effect,point,preparedTargets=null,striker=ball){if(!effect)return;powerFX?.trigger(effect.kind,point);bonusWorld.dismiss('power-'+effect.kind);const diameter=C.ballRadius*2,seen=new Set([effect.originId]);
  if(effect.kind==='pulse'){const radius=effect.radiusD*diameter,targets=bonusTargets(point,seen,radius);bonusWorld.pulse(point,radius);audio.play('pulse',1.2);bonusWorld.feedback(`PULSE BLAST · ${targets.length} targets`,point);for(const {o,p}of targets)if(blocks.has(o.id))chipByStrike(o,p,true,effect.damage);shake=Math.max(shake,.19);}
  else if(effect.kind==='frost'){audio.play('frost');bonusWorld.pulse(point,1.1,BONUS_DEFS.frost.color);bonusWorld.feedback('FROST · HIT AGAIN FOR EXTRA DAMAGE',point);}
  else if(effect.kind==='heavy'){audio.play('heavy',1.2);bonusWorld.pulse(point,1.7,BONUS_DEFS.heavy.color);bonusWorld.feedback(`HEAVY HIT · ${effect.damage} DAMAGE`,point);shake=Math.max(shake,.19);}
  else if(effect.kind==='gravity'){const well=secondary.createWell(point,powerTime,blocks,effect);audio.play('gravity',1.2);bonusWorld.feedback(well.targets.length?`GRAVITY VORTEX · ${well.targets.length} targets`:'GRAVITY VORTEX · No targets nearby',point);}
  else if(effect.kind==='split'){const sources=[...(state!=='MISSED'?[{position:v3().copy(ball.translation()),velocity:v3().copy(ball.linvel()),radius:C.ballRadius}]:[]),...secondary.echoes.filter(e=>secondary.isValid(e)&&!e.transitionParked).map(e=>({position:v3().copy(e.b.translation()),velocity:v3().copy(e.b.linvel()),radius:secondary.echoRadius}))];secondary.spawnSplit(effect,point,v3().copy(striker.linvel()),powerTime,sources,{tableHalf,top:TOP,bottom:C.lossZ});audio.play('split',1.2);bonusWorld.feedback('SPLIT · CATCH THE EXTRA BALLS',point);}
- else if(effect.kind==='arc'){const targets=preparedTargets||groundPowerTargets(seen),points=[point.clone(),...targets.map(t=>t.p)];for(const {o,p}of targets)if(blocks.has(o.id))chipByStrike(o,p,true,effect.damage);bonusWorld.arcTargets(point,targets.map(t=>t.p),0xb68cff);bonusWorld.pulse(point,1.1,0xb68cff);audio.play('arc',1.2);bonusWorld.feedback(`ARC STORM · ${targets.length} GROUND TARGETS`,point);shake=Math.max(shake,.12);}
+ else if(effect.kind==='arc'){const targets=preparedTargets||chainedGroundTargets(point,seen,effect.radiusD*diameter);for(const {o,p}of targets)if(blocks.has(o.id))chipByStrike(o,p,true,effect.damage);bonusWorld.arcLinks(targets.map(t=>[t.from,t.p]),0xb68cff);bonusWorld.pulse(point,1.1,0xb68cff);audio.play('arc',1.2);bonusWorld.feedback(`ARC CHAIN · ${targets.length} GROUND TARGETS`,point);shake=Math.max(shake,.12);}
 }
 function damage(o,energy,point,direct=false,snapshot=null,striker=ball){
  if(!blocks.has(o.id)||!o.ids||elapsed-o.lastHit<.09||energy<.16||(!direct&&elapsed-(o.origin.lastStrike??-10)<.22))return false;
  const worldPoint=point?v3().copy(point):v3().copy(o.origin.graph.cells[o.ids[0]].pos).applyQuaternion(new THREE.Quaternion().copy(o.b.rotation())).add(o.b.translation());
  const outcome=direct?powers.consumeDirect(snapshot,o.origin.id,powerTime):null;if(outcome&&!outcome.damage)return false;
- const preparedTargets=outcome?.effect?.kind==='arc'?groundPowerTargets(new Set([o.origin.id])):null;
+ const preparedTargets=outcome?.effect?.kind==='arc'?chainedGroundTargets(worldPoint,new Set([o.origin.id]),outcome.effect.radiusD*C.ballRadius*2):null;
  o.lastHit=elapsed;const type=o.type,hit=chipByStrike(o,worldPoint,direct,outcome?.damage||1);if(hit){audio.play('hit',.6,type);if(direct&&type>0&&[...blocks.values()].some(c=>c.origin===o.origin))bonusWorld.teach('tough','Tougher glass · Hit again',worldPoint.clone());if(outcome?.consumed&&snapshot.kind==='pierce'){bonusWorld.dismiss('power-pierce');powerFX?.trigger('pierce',worldPoint);audio.play('pierce');bonusWorld.feedback('PIERCE · THROUGH GLASS',worldPoint);}if(outcome?.frostConsumed){audio.play('frost');bonusWorld.feedback('BRITTLE · EXTRA DAMAGE',worldPoint);}applyPower(outcome?.effect,worldPoint,preparedTargets,striker);}return hit;
 }
 function ballInsideRemainingShell(body=ball,radius=C.ballRadius){const p=body.translation(),r=radius+.04;for(const o of blocks.values()){const local=v3().copy(p).sub(o.b.translation()).applyQuaternion(new THREE.Quaternion().copy(o.b.rotation()).invert());if(Math.abs(local.x)<o.sx/2+r&&Math.abs(local.y)<o.sy/2+r&&Math.abs(local.z)<o.sz/2+r)return true;}return false;}

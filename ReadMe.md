@@ -22,9 +22,9 @@ Both rails fill green from bottom to top according to original shell area remove
 
 Break a cube containing a large colored particle sun, then touch its landed 3D pickup with any moving ball. A colored cue appears around the ball. Attack powers apply automatically on the next valid glass impact; there is no activation button. One active attack and one FIFO queued attack are allowed. Halo occupies an independent save slot. Queued pickups remain visibly labelled as queued. Uncollected pickups do not block completion; inaccessible pickups visibly return to a safe point.
 
-- Pulse: three damage to the struck original and every original within 4.4 ball diameters, with a broad shockwave.
+- Pulse: a shared ten-second buff, starting on the first valid impact. Every distinct ball-to-cube impact deals three damage to the struck original and every original within 4.4 ball diameters, with a broad shockwave.
 - Pierce: ten active seconds after its first hit. Every distinct touched original is destroyed immediately, without glass bounce. Response resumes after leaving remaining shell volumes.
-- Arc: one damage to every ground/support-layer original across the arena, with branching lightning. Upper stacked originals are excluded from the initial target snapshot.
+- Arc: radius-based branching lightning through ground/support-layer originals. Every reached cube passes the discharge to neighbors within 4.4 ball diameters; each original receives one hit, gaps stop the chain, and upper stacked originals are excluded from the initial snapshot.
 - Safety Halo: one automatic rescue before losing the main ball.
 - Frost: ten active seconds. Direct hits apply a mark; the next direct hit consumes that mark for +1 damage.
 - Split: two fast smaller balls persist until lost. Catch and relaunch them in the lower zone; they have no magnetic attraction or aiming-camera zoom and slow for a one-second catch window when entering that zone, then accelerate toward the lower exit. Slow upper-zone extras are pulled downward to prevent stalling. All spheres physically collide. All balls collect and activate the shared power inventory. Repeated Split snapshots every living ball and adds two children per source: 1→3→9→27. The next queued power becomes available immediately.

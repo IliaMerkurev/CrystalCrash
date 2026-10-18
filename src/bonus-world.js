@@ -46,11 +46,12 @@ export class BonusWorld {
  remap(fn){for(const p of this.pickups){fn(p.p);if(p.from)fn(p.from);if(p.to)fn(p.to);}this.lastBall=null;this.collectorHistory.clear();}
  pulse(point,radius,color=0xffb44a){const fx=this.rings.find(f=>!f.mesh.visible)||this.rings[0];fx.mesh.position.copy(point);fx.mesh.position.y=Math.max(.035,point.y);fx.max=radius;fx.age=0;fx.duration=.48;fx.mesh.material.color.set(color);fx.mesh.visible=true;}
  arc(points,color=0xb68cff){return this.drawArcs(points.slice(0,ARC_MAX_LINKS).map((a,i)=>[a,points[i+1]]).filter(([,b])=>b),color);}
- arcTargets(origin,targets,color=0xb68cff){
+ arcTargets(origin,targets,color=0xb68cff){return this.arcLinks(targets.map(target=>[origin,target]),color);}
+ arcLinks(links,color=0xb68cff){
   // Reserve distinct pool entries before drawing, so a saturated pool never
   // overwrites the first chunk with the second chunk of the same activation.
   const pool=[...this.arcs].sort((a,b)=>Number(a.mesh.visible)-Number(b.mesh.visible)||b.age-a.age);let drawn=0;
-  for(let i=0;i<pool.length&&drawn<targets.length;i++){const links=targets.slice(drawn,drawn+ARC_MAX_LINKS).map(target=>[origin,target]);drawn+=this.drawArcs(links,color,pool[i]);}
+  for(let i=0;i<pool.length&&drawn<links.length;i++){drawn+=this.drawArcs(links.slice(drawn,drawn+ARC_MAX_LINKS),color,pool[i]);}
   return drawn;
  }
  drawArcs(links,color,slot=null){if(!links.length)return 0;const fx=slot||this.arcs.find(f=>!f.mesh.visible)||this.arcs.reduce((oldest,f)=>f.age>oldest.age?f:oldest),data=fx.mesh.geometry.attributes.position;let vertex=0,instance=0;const dummy=this.arcDummy,dir=this.arcDirection;const segment=(a,b)=>{data.setXYZ(vertex++,a.x,a.y,a.z);data.setXYZ(vertex++,b.x,b.y,b.z);dir.subVectors(b,a);const length=dir.length();dummy.position.copy(a).add(b).multiplyScalar(.5);dummy.quaternion.setFromUnitVectors(this.arcUp,dir.normalize());dummy.scale.set(.025,length,.025);dummy.updateMatrix();fx.core.setMatrixAt(instance,dummy.matrix);dummy.scale.set(.105,length,.105);dummy.updateMatrix();fx.halo.setMatrixAt(instance++,dummy.matrix);};

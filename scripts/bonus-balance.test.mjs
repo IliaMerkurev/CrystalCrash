@@ -6,18 +6,63 @@ import {BonusWorld} from '../src/bonus-world.js';
 
 const hit = (powers, id, time) => powers.consumeDirect(powers.capture(), id, time);
 
-test('Pulse applies three direct damage and an uncapped doubled-radius burst', () => {
+test('Pulse waits for first impact and repeatedly blasts for one shared 10-second timer', () => {
   const powers = new BonusController();
   powers.collect('pulse');
   powers.collect('heavy');
+  powers.tick(100);
+  assert.equal(powers.snapshotHUD().active.secondsLeft, 10);
+  assert.equal(powers.snapshotHUD().active.remaining, null);
+  assert.equal(powers.active.startedAt, null);
   const batch = powers.capture();
-  const result = powers.consumeDirect(batch, 1, 5);
+  const result = powers.consumeDirect(batch, 1, 100);
   assert.equal(result.damage, 3);
   assert.deepEqual(result.effect, {kind: 'pulse', originId: 1, radiusD: 4.4, maxTargets: Infinity, damage: 3});
-  assert.equal(powers.active.kind, 'heavy');
-  assert.equal(powers.consumeDirect(batch, 2, 5).damage, 1);
-  assert.equal(powers.active.kind, 'heavy', 'a batch cannot spend its queued power');
-  assert.equal(hit(powers, 3, 6).damage, 3);
+  assert.equal(powers.active.kind, 'pulse');
+  assert.equal(powers.queued.kind, 'heavy');
+  const anotherBall = powers.consumeDirect(batch, 2, 100);
+  assert.equal(anotherBall.damage, 3);
+  assert.equal(anotherBall.effect.kind, 'pulse', 'every valid direct impact from any ball blasts');
+  const repeatedOriginal = hit(powers, 1, 104);
+  assert.equal(repeatedOriginal.damage, 3);
+  assert.equal(repeatedOriginal.effect.kind, 'pulse', 'a separate impact on the same original blasts again');
+  assert.equal(powers.active.startedAt, 100, 'later impacts cannot restart the shared timer');
+  assert.equal(powers.snapshotHUD().active.secondsLeft, 6);
+  powers.tick(104);
+  powers.tick(104);
+  assert.equal(powers.snapshotHUD().active.secondsLeft, 6, 'paused simulation time does not consume the buff');
+  assert.equal(hit(powers, 1, 109.99).effect.kind, 'pulse');
+  assert.equal(powers.active.kind, 'pulse');
+  powers.tick(110);
+  assert.equal(powers.active.kind, 'heavy', 'FIFO advances at the duration boundary without another impact');
+  assert.equal(powers.queued, null);
+  assert.equal(powers.consumeDirect(batch, 3, 110).damage, 1);
+  assert.equal(powers.active.kind, 'heavy', 'a stale Pulse batch cannot spend the newly armed queue');
+  assert.equal(hit(powers, 3, 110).damage, 3);
+  assert.equal(powers.active, null);
+});
+
+test('Queued Pulse keeps its own full duration and the HUD shows seconds while ready/active', () => {
+  const {world, controller} = makeWorld();
+  controller.collect('heavy');
+  controller.collect('pulse');
+  controller.tick(50);
+  world.updateHUD();
+  assert.match(textOf(world.hud), /NEXT · Pulse · 10s/);
+  const batch = controller.capture();
+  controller.consumeDirect(batch, 1, 50);
+  controller.consumeDirect(batch, 2, 50);
+  assert.equal(controller.active.kind, 'pulse');
+  assert.equal(controller.active.startedAt, null);
+  world.updateHUD();
+  assert.match(textOf(world.hud), /PULSE · HIT GLASS · 10s/);
+  assert.equal(hit(controller, 3, 70).effect.kind, 'pulse');
+  controller.tick(73);
+  world.updateHUD();
+  assert.match(textOf(world.hud), /PULSE · ACTIVE · 7s/);
+  assert.match(controller.snapshotHUD().active.description, /10 seconds/);
+  controller.tick(80);
+  assert.equal(controller.active, null);
 });
 
 test('Pierce waits for first impact, hits unlimited distinct originals, then exits safely', () => {
@@ -143,7 +188,10 @@ test('Different balls use one contact snapshot, shared Pierce deduplication and 
 test('Arc and Gravity describe the strengthened effects', () => {
   const powers = new BonusController();
   powers.collect('arc');
-  assert.deepEqual(hit(powers, 10, 1).effect, {kind: 'arc', originId: 10, arenaWide: true, targetType: 'bottom-support-original', damage: 1});
+  assert.deepEqual(hit(powers, 10, 1).effect, {kind: 'arc', originId: 10, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1});
+  assert.equal(powers.active, null, 'Arc remains one discharge');
+  assert.equal(BONUS_DEFS.arc.arenaWide, undefined);
+  assert.match(BONUS_DEFS.arc.description, /chaining within 4\.4 ball diameters/);
   powers.collect('gravity');
   assert.deepEqual(hit(powers, 11, 2).effect, {kind: 'gravity', originId: 11, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, targetType: 'intact-cube'});
   assert.equal(BONUS_DEFS.split.duration, undefined);
