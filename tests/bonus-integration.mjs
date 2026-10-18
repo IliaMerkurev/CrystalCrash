@@ -20,6 +20,7 @@ Object.assign(context,{started:true,paused:false,drag:null,state:'BALL_ACTIVE',b
 for(const n of ['cancelDrag','aim','pointerDown','pointerMove','pointerUp'])vm.runInContext(code(n),context);
 context.pointerDown({pointerId:1,clientX:200,clientY:400,button:0});assert.equal(context.drag.echo,echo);assert.equal(held,1);assert.equal(context.state,'BALL_ACTIVE');
 context.pointerMove({pointerId:1,clientX:200,clientY:550});context.pointerUp({pointerId:1,clientX:200,clientY:550});assert(released.z< -10);assert.equal(mainMoves,0);assert.equal(context.drag,null);assert.equal(context.state,'BALL_ACTIVE');
+context.state='MISSED';context.pointerDown({pointerId:2,clientX:200,clientY:400,button:0});assert.equal(context.drag.echo,echo);context.pointerMove({pointerId:2,clientX:200,clientY:550});context.pointerUp({pointerId:2,clientX:200,clientY:550});assert.equal(context.state,'MISSED');assert.equal(context.drag,null);
 assert(source.includes("drag?.mode==='aim'&&!drag.echo"));assert(source.includes('secondary?.remap(p=>{p.z+=STRIDE;})'));assert(source.includes('bonusWorld?.reset({preservePowers:reposition})'));
 console.log('PASS production Pulse area/3-hit damage; Arc all ground targets and upper exclusion; Pierce instant-tier damage; extra-ball catch/relaunch keeps main state and attraction untouched; persistence/clock wiring inspected');
 // A main-ball miss must not delete a healthy secondary ball.
@@ -29,3 +30,11 @@ vm.runInContext(code('checkLoss'),context);assert.equal(context.checkLoss(),true
 assert(source.includes("(state==='TRANSITION'||gateReady))secondary?.followTransition"));
 assert(source.includes("elapsed<1&&oa?.kind!=='ball'&&ob?.kind!=='ball'&&oa?.kind!=='echo'&&ob?.kind!=='echo'"));
 console.log('PASS healthy extra-ball survival on main miss; gate-ready follow and early echo-contact guards');
+// Shared Split uses a frozen population snapshot, including held living balls.
+let splitCall;context.state='HELD';context.ball={translation:()=>({x:0,y:.38,z:3}),linvel:()=>({x:0,y:0,z:0})};const living=[0,1].map(i=>({transitionParked:false,b:{translation:()=>({x:i?1:-1,y:.25,z:3}),linvel:()=>({x:1,y:0,z:-8})}}));context.secondary={echoes:living,isValid:()=>true,spawnSplit(...args){splitCall=args;this.echoes.push({});}};context.powerFX={trigger(){}};context.bonusWorld={dismiss(){},feedback(){}};context.applyPower({kind:'split'},new THREE.Vector3(),null,living[0].b);assert.equal(splitCall[4].length,3);assert.equal(context.secondary.echoes.length,3);assert.equal(splitCall[2].z,-8);
+// Shared Pierce suppression covers moving extras and waits for any overlapping ball.
+const masks=[];context.powers=new BonusController();context.powers.collect('pierce');context.state='HELD';context.ball={collider:()=>({setSolverGroups:m=>masks.push(['main',m])})};const moving={isHeld:false,transitionParked:false,b:{},c:{setSolverGroups:m=>masks.push(['extra',m])}};context.secondary={echoes:[moving],isValid:()=>true,echoRadius:.247,echoGroups:0x00100005};context.ballInsideRemainingShell=()=>true;vm.runInContext(code('updatePierce'),context);context.updatePierce();assert(masks.some(([id,m])=>id==='extra'&&m===0x00100001));assert(masks.some(([id,m])=>id==='main'&&m===0xffffffff));
+console.log('PASS shared Split frozen source snapshot and extra-ball Pierce solver filtering');
+
+vm.runInContext(code('powerClockRunning'),context);context.gateReady=false;context.state='MISSED';moving.valid=true;assert.equal(context.powerClockRunning(),true);context.state='REPOSITION';assert.equal(context.powerClockRunning(),true);moving.transitionParked=true;assert.equal(context.powerClockRunning(),false);context.state='TRANSITION';assert.equal(context.powerClockRunning(),false);
+console.log('PASS shared power clock advances during main respawn while extras play');

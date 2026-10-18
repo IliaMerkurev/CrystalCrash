@@ -2,6 +2,7 @@
 // Real Three.js objects and Rapier rigid bodies; no browser, renderer, or mocks.
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { performance } from 'node:perf_hooks';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { SecondaryPowers } from '../src/secondary-powers.js';
@@ -43,9 +44,9 @@ function withPhysics(run, gravity = { x: 0, y: -18, z: 0 }) {
   }
 }
 
-function split(powers, velocity = { x: 0, y: 0, z: -2 }) {
-  assert.equal(powers.spawnSplit({ x: 0, y: .5, z: 0 }, velocity, 0,
-    { activationId: 77, duration: .01, hitsPerEcho: 1 }), true);
+function split(powers, velocity = { x: 0, y: 0, z: -2 }, activationId = 77) {
+  assert.equal(powers.spawnSplit({ activationId, duration: .01, hitsPerEcho: 1 },
+    { x: 0, y: .5, z: 0 }, velocity, 0), true);
   assert.equal(powers.echoes.length, 2);
   return [...powers.echoes];
 }
@@ -198,10 +199,10 @@ test('Only lost echoes are removed and split completion waits for the last survi
     second.b.setTranslation({ x: 0, y: .5, z: BOUNDS.bottom + 1 }, true);
     powers.step(DT, 1001, BOUNDS);
     assert.equal(powers.echoes.length, 0);
-    assert.deepEqual(finished, [77]);
-    split(powers);
+    assert.deepEqual(finished, [undefined]);
+    split(powers, { x: 0, y: 0, z: -2 }, 78);
     powers.clear();
-    assert.deepEqual(finished, [77], 'explicit reset does not send duplicate completion');
+    assert.deepEqual(finished, [undefined], 'explicit reset does not send duplicate completion');
   });
 });
 
@@ -301,3 +302,135 @@ test('Gravity pulls across a high-friction floor, brakes at its center, and rest
     assert.equal(target.cs[0].frictionCombineRule(), RAPIER.CoefficientCombineRule.Multiply);
   });
 });
+
+function liveSnapshot(powers, main) {
+  return Object.freeze([
+    { position: { ...main.position }, velocity: { ...main.velocity } },
+    ...powers.echoes.map(echo => ({ position: { ...echo.b.translation() }, velocity: { ...echo.b.linvel() } })),
+  ].map(source => Object.freeze({ position: Object.freeze(source.position), velocity: Object.freeze(source.velocity) })));
+}
+
+function multiplySplit(powers, main, activationId) {
+  const sources = liveSnapshot(powers, main);
+  const before = powers.echoes.map(echo => ({ echo, position: { ...echo.b.translation() }, velocity: { ...echo.b.linvel() } }));
+  assert.equal(powers.spawnSplit({ activationId, angleDegrees: 18 }, main.position, main.velocity, activationId, sources), true);
+  assert.equal(powers.echoes.length, before.length + sources.length * 2, 'only the activation snapshot creates children');
+  for (const old of before) {
+    assert.equal(powers.isValid(old.echo), true, 'original echo remains live');
+    vectorNear(old.echo.b.translation(), old.position, 'original position unchanged');
+    vectorNear(old.echo.b.linvel(), old.velocity, 'original velocity unchanged');
+  }
+  return sources;
+}
+
+test('Repeated Split multiplies the frozen live population 1 → 3 → 9 → 27 exactly once per activation', () => {
+  withPhysics(({ powers, finished, colliders, scene }) => {
+    const main = { position: { x: 0, y: .41, z: 4.3 }, velocity: { x: 0, y: 0, z: -20 } };
+    for (const [activationId, total] of [[101, 3], [102, 9], [103, 27]]) {
+      const sources = multiplySplit(powers, main, activationId);
+      assert.equal(powers.echoes.length + 1, total);
+      assert.equal(sources.length, total / 3, 'snapshot never includes this activation’s children');
+      assert.equal(powers.spawnSplit({ activationId }, main.position, main.velocity, 0, sources), false,
+        'duplicate delivery of one activation cannot multiply recursively');
+      assert.equal(powers.echoes.length + 1, total);
+    }
+    assert.equal(new Set(powers.echoes.map(echo => echo.id)).size, 26, 'stable unique echo identities');
+    assert.equal(new Set(powers.echoes.map(echo => echo.b.handle)).size, 26, 'unique Rapier bodies');
+    assert.equal(powers.liveEchoes.size, 26);
+    assert.equal(powers.echoInstances.count, 26);
+    assert.ok(powers.echoCapacity >= 26);
+    assert.equal(scene.children.filter(child => child.isInstancedMesh).length, 1, 'one physical-ball render batch');
+    assert.equal(scene.children.filter(child => child.isMesh && !child.isInstancedMesh).length, 0,
+      'no separate mesh draw call per echo');
+    const oldest = powers.echoes.find(echo => echo.activationId === 101);
+    for (const echo of [...powers.echoes]) if (echo !== oldest) powers.removeEcho(echo);
+    assert.deepEqual(finished, [], 'newer generations disappearing does not finish surviving older ones');
+    assert.equal(powers.isValid(oldest), true);
+    assert.equal(oldest.index, 0, 'swap removal keeps the live index valid');
+    powers.removeEcho(oldest);
+    assert.deepEqual(finished, [undefined], 'population completion carries no stale generation ID');
+    assert.equal(powers.echoes.length, 0);
+    assert.equal(powers.liveEchoes.size, 0);
+    assert.equal(powers.echoInstances.count, 0);
+    assert.equal(colliders.size, 0);
+  });
+});
+
+test('A 27-ball transition formation fits the lower zone without overlaps and every echo remains catchable', () => {
+  withPhysics(({ powers, world }) => {
+    const main = { position: { x: 0, y: .41, z: 4.3 }, velocity: { x: 0, y: 0, z: -20 } };
+    for (const activationId of [201, 202, 203]) multiplySplit(powers, main, activationId);
+    const bounds = { lowerZoneZ: 0, bottom: 6, tableHalf: z => 3.5 - z * .05 };
+    powers.parkForTransition(main.position, bounds);
+    for (const point of [{ x: 0, y: .41, z: 4.3 }, { x: 2.45, y: .41, z: 5.5 }, { x: -2.45, y: .41, z: .6 }]) {
+      powers.followTransition(point, Infinity, bounds);
+      const positions = powers.echoes.map(echo => echo.b.translation());
+      positions.forEach((p, index) => {
+        assert.ok(p.z >= bounds.lowerZoneZ + powers.echoRadius, 'lower-zone center stays catchable');
+        assert.ok(p.z <= bounds.bottom - powers.echoRadius, 'formation stays clear of the loss edge');
+        assert.ok(Math.abs(p.x) + powers.echoRadius < bounds.tableHalf(p.z), 'formation stays inside table width');
+        assert.ok(Math.hypot(p.x - point.x, p.y - point.y, p.z - point.z) >= RADIUS + powers.echoRadius,
+          'echo does not overlap the main ball');
+        for (let j = 0; j < index; j++) {
+          const other = positions[j];
+          assert.ok(Math.hypot(p.x - other.x, p.y - other.y, p.z - other.z) >= powers.echoRadius * 2,
+            'echo formation has no overlapping pair');
+        }
+      });
+    }
+    powers.followTransition({ x: 0, y: .41, z: -50 }, Infinity, null);
+    assert.ok(powers.echoes.every(echo => echo.b.translation().z < -45), 'unbounded travel follows the convoy');
+    powers.followTransition(main.position, Infinity, bounds);
+    powers.resumeAfterTransition(210);
+    for (const echo of powers.echoes) {
+      assert.equal(powers.isValid(echo), true);
+      assert.equal(powers.holdEcho(echo), true, 'every survivor can be caught');
+    }
+    for (let i = 0; i < 90; i++) { powers.step(DT, 211 + i * DT, bounds); world.step(); }
+    assert.equal(powers.echoes.length, 26);
+  });
+});
+
+test('Instanced echo rendering grows through 27/81/243 balls without a gameplay cap', t => {
+  withPhysics(({ powers, world, scene }) => {
+    const main = { position: { x: 0, y: .41, z: 4.3 }, velocity: { x: 0, y: 0, z: -20 } };
+    const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -.2, 0));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(50, .2, 50).setFriction(.35), floor);
+    const warmup = powers.warmupObjects();
+    const warmEcho = warmup.children.find(child => child.isInstancedMesh);
+    assert.ok(warmEcho, 'warmup must compile the instanced echo shader');
+    assert.equal(warmEcho.count, 1);
+    const matrix = new THREE.Matrix4();
+    warmEcho.getMatrixAt(0, matrix);
+    assert.deepEqual(matrix.elements, new THREE.Matrix4().elements, 'warmup has a valid identity instance matrix');
+    warmEcho.dispose();
+    let activationId = 300;
+    for (const total of [3, 9, 27, 81, 243]) {
+      multiplySplit(powers, main, ++activationId);
+      assert.equal(powers.echoes.length + 1, total);
+      assert.ok(powers.echoCapacity >= total - 1);
+      assert.equal(powers.echoInstances.count, total - 1);
+      assert.equal(scene.children.filter(child => child.isInstancedMesh).length, 1);
+      if (total < 27) continue;
+      powers.parkForTransition(main.position, { lowerZoneZ: 0, bottom: 6, halfWidth: 6.25 });
+      powers.resumeAfterTransition(0);
+      for (const echo of powers.echoes) echo.b.setLinvel({ x: Math.sin(echo.id) * 15, y: 0, z: Math.cos(echo.id) * 15 }, true);
+      const start = performance.now();
+      for (let step = 0; step < 120; step++) {
+        powers.step(DT, step * DT, BOUNDS);
+        world.step();
+        powers.render();
+      }
+      const average = (performance.now() - start) / 120;
+      assert.equal(powers.echoes.length + 1, total, 'all benchmark balls remain physically live');
+      t.diagnostic(`${total} total balls: ${average.toFixed(3)} ms per active headless CPU physics/update step on a floor; this is not rendered device FPS.`);
+    }
+    const echoes = [...powers.echoes];
+    powers.clear();
+    assert.equal(powers.liveEchoes.size, 0);
+    assert.equal(powers.echoInstances.count, 0);
+    assert.ok(echoes.every(echo => !echo.valid && !echo.b.isValid()), 'all physical bodies clean up');
+  });
+});
+
+test('Non-transfer main reposition leaves live and held extra balls unchanged',()=>withPhysics(({powers})=>{const [held,moving]=split(powers);powers.holdEcho(held);const before={...moving.b.linvel()};powers.resumeAfterTransition(5);assert.equal(held.isHeld,true);vectorNear(moving.b.linvel(),before,'Moving extra retains velocity');}));

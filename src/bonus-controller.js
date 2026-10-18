@@ -4,7 +4,7 @@ export const BONUS_DEFS = Object.freeze({
   pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', duration: 10, damage: 8, description: '10 seconds of smashing straight through cubes' }),
   arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, arenaWide: true, targetType: 'bottom-support-original', damage: 1, description: 'One hit to every bottom support across the arena' }),
   frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', duration: 10, markDuration: 10, bonusDamage: 1, description: '10 seconds of marking cubes for a stronger next hit' }),
-  split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, persistent: true, angleDegrees: 18, damage: 1, description: 'Two extra balls that stay until they fall off' }),
+  split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, sourceType: 'all-live-balls', persistent: true, angleDegrees: 18, damage: 1, description: 'Every live ball creates two more; collect again to multiply them' }),
   gravity: Object.freeze({ kind: 'gravity', name: 'Gravity Well', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'A strong, wide pull on nearby cubes for 4 seconds' }),
   heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3, description: 'The next direct hit deals 3 damage' }),
   halo: Object.freeze({ kind: 'halo', name: 'Safety Halo', color: 0xff777d, colorCss: '#FF777D', charges: 1, description: 'One automatic rescue from a fall' }),
@@ -14,15 +14,17 @@ export const BONUS_DEFS = Object.freeze({
  * Physics-free bonus inventory. Caller owns damage, target selection and collision filters.
  *
  * Per simulation step: tick(elapsed), then process valid direct glass contacts, then
- * pickups. Capture once before the entire physics contact batch, call consumeDirect
- * for each VALID hit, apply its direct damage and then its effect. Never call for resting contacts,
+ * pickups from any live ball. All balls share this inventory and one snapshot:
+ * capture once before the entire physics contact batch, call consumeDirect for
+ * each VALID direct ball hit, apply its direct damage and then its effect. Never call for resting contacts,
  * fragments, gates, pickups, or indirect bonus damage. Use persistent original cube
  * IDs (not collider/fragment IDs). The batch snapshot prevents spending queued powers
  * in that same step. Caller owns ordinary hit energy/cooldown validity.
  *
  * Pierce suppresses glass reflection from arming through its exit phase. tick can
  * enter exit even without a collision. During exit, no new glass damage is allowed.
- * Call finishPierceExit ONLY when the ball overlaps no glass. This arms the queue.
+ * Its original-target deduplication is shared by all balls. Call finishPierceExit
+ * ONLY when every live ball overlaps no glass. This arms the queue.
  * Use simulation elapsed seconds that stop advancing while paused, not wall time.
  */
 export class BonusController {
@@ -52,11 +54,6 @@ export class BonusController {
   collect(kind) {
     const def = Object.prototype.hasOwnProperty.call(BONUS_DEFS, kind) ? BONUS_DEFS[kind] : null;
     if (!def) return { accepted: false, slot: null, message: 'Unknown power' };
-    // There can be at most one pair of extra balls. Never consume a duplicate pickup
-    // into a slot whose eventual activation could not create anything.
-    if (kind === 'split' && (this.splitActive || this.active?.kind === 'split' || this.queued?.kind === 'split')) {
-      return { accepted: false, slot: null, message: this.splitActive ? 'Extra balls already active' : 'Split already ready' };
-    }
     if (kind === 'halo') {
       if (this.halo) return { accepted: false, slot: null, message: 'One save already ready' };
       this.halo = true;
@@ -155,7 +152,7 @@ export class BonusController {
     const def = BONUS_DEFS[a.kind];
     result.damage = this._directDamage(originalId, ['heavy', 'pulse'].includes(a.kind) ? def.damage : 1, result);
     result.suppressReflection = false;
-    // Echoes do not call consumeDirect: they cannot spend powers or brittle marks.
+    // Main and secondary balls spend the same attack and brittle marks.
     result.consumed = true;
     if (a.kind === 'frost') {
       if (a.startedAt === null) a.startedAt = this._time;
@@ -171,7 +168,7 @@ export class BonusController {
       this.splitActive = true;
       this.splitActivationId = a.id;
       result.effect = Object.freeze({ kind: 'split', originId, activationId: a.id,
-        echoCount: def.echoCount, persistent: true,
+        echoCount: def.echoCount, sourceType: def.sourceType, persistent: true,
         angleDegrees: def.angleDegrees, damage: def.damage });
       // Extra balls remain independently of the FIFO; caller confirms their loss.
       this._advance();
@@ -191,16 +188,20 @@ export class BonusController {
     return result;
   }
 
-  /** Caller asserts no glass overlaps remain; do not call while embedded in any cube. */
+  /** Caller asserts no live ball overlaps glass; do not finish while any is embedded. */
   finishPierceExit() {
     if (!this.pierceExit) return false;
     this._advance();
     return true;
   }
 
-  /** Call once all extra balls are lost. Does not advance or clear the attack FIFO. */
-  finishSplit(activationId = this.splitActivationId) {
-    if (!this.splitActive || this.splitActivationId !== activationId) return false;
+  /**
+   * Caller asserts no physical extra balls remain, across every Split generation.
+   * Activation IDs are diagnostic only: the last surviving ball may come from an
+   * older activation. This notification never advances or clears the attack FIFO.
+   */
+  finishSplit() {
+    if (!this.splitActive) return false;
     this.splitActive = false;
     this.splitActivationId = null;
     return true;

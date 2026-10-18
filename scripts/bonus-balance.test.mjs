@@ -74,29 +74,70 @@ test('Frost marks without a hit cap for 10s, with per-impact brittle expiry', ()
   assert.equal(powers.frostMarks.size, 0);
 });
 
-test('Split runs independently of FIFO until loss, and rejects duplicate live/queued pickups', () => {
+test('Repeated Split shares normal FIFO slots and multiplies every live ball 1→3→9→27', () => {
   const powers = new BonusController();
-  powers.collect('split');
-  assert.equal(powers.collect('split').accepted, false);
-  powers.collect('frost');
+  assert.equal(powers.collect('split').slot, 'active');
+  assert.equal(powers.collect('split').slot, 'queued');
+  assert.equal(powers.collect('split').accepted, false, 'only a full inventory rejects the pickup');
   const batch = powers.capture();
   const result = powers.consumeDirect(batch, 1, 5);
+  let liveBalls = 1;
+  const multiply = effect => {
+    assert.equal(effect.sourceType, 'all-live-balls');
+    liveBalls += liveBalls * effect.echoCount;
+  };
+  multiply(result.effect);
+  assert.equal(liveBalls, 3);
   assert.equal(result.effect.persistent, true);
   assert.equal('duration' in result.effect, false);
   assert.equal('hitsPerEcho' in result.effect, false);
-  assert.equal(powers.active.kind, 'frost');
+  assert.equal(powers.active.kind, 'split');
   assert.equal(powers.splitActive, true);
   assert.equal(powers.consumeDirect(batch, 2, 5).effect, null);
   assert.equal(powers.active.startedAt, null);
-  assert.equal(powers.collect('split').accepted, false);
+  assert.equal(powers.collect('split').slot, 'queued', 'live extra balls do not block collecting another Split');
+  multiply(hit(powers, 3, 6).effect);
+  assert.equal(liveBalls, 9);
+  assert.equal(powers.active.kind, 'split');
+  assert.equal(powers.collect('heavy').slot, 'queued');
+  const third = hit(powers, 4, 7);
+  multiply(third.effect);
+  assert.equal(liveBalls, 27);
+  assert.equal(powers.active.kind, 'heavy');
+  assert.equal(powers.splitActivationId, third.effect.activationId);
   assert.equal(powers.collect('halo').accepted, true);
   powers.tick(1_000);
   assert.equal(powers.splitActive, true, 'live extra balls have no timer');
-  assert.equal(powers.finishSplit(result.effect.activationId + 1), false);
-  assert.equal(powers.finishSplit(result.effect.activationId), true);
-  assert.equal(powers.active.kind, 'frost', 'ending extra balls does not advance FIFO');
-  assert.equal(powers.collect('split').accepted, true);
+  assert.equal(powers.finishSplit(result.effect.activationId), true, 'the last surviving extra ball may belong to an older activation');
+  assert.equal(powers.splitActive, false);
+  assert.equal(powers.splitActivationId, null);
+  assert.equal(powers.finishSplit(), false);
+  assert.equal(powers.active.kind, 'heavy', 'ending extra balls does not advance FIFO');
+  assert.equal(powers.collect('split').slot, 'queued');
   assert.equal(powers.collect('split').accepted, false);
+});
+
+test('Different balls use one contact snapshot, shared Pierce deduplication and shared Frost marks', () => {
+  const powers = new BonusController();
+  powers.collect('pierce');
+  powers.collect('frost');
+  const sharedPierceBatch = powers.capture();
+  const mainHit = powers.consumeDirect(sharedPierceBatch, 40, 0);
+  const extraSameOriginal = powers.consumeDirect(sharedPierceBatch, 40, 0);
+  const extraOtherOriginal = powers.consumeDirect(sharedPierceBatch, 41, 0);
+  assert.equal(mainHit.damage, 8);
+  assert.equal(extraSameOriginal.damage, 0);
+  assert.equal(extraOtherOriginal.damage, 8);
+  for (const result of [mainHit, extraSameOriginal, extraOtherOriginal]) assert.equal(result.suppressReflection, true);
+  powers.tick(10);
+  assert.equal(powers.consumeDirect(powers.capture(), 42, 10).damage, 0);
+  powers.finishPierceExit();
+  const sharedFrostBatch = powers.capture();
+  assert.equal(powers.consumeDirect(sharedFrostBatch, 43, 10).effect.kind, 'frost');
+  const anotherBallHit = powers.consumeDirect(sharedFrostBatch, 43, 10);
+  assert.equal(anotherBallHit.damage, 2);
+  assert.equal(anotherBallHit.frostConsumed, true);
+  assert.equal(powers.frostMarks.has(43), false);
 });
 
 test('Arc and Gravity describe the strengthened effects', () => {
@@ -248,3 +289,6 @@ test('Arc covers all 110 targets in distinct pooled chunks even when the pool is
  test('Released pickups double model scale, rest above floor and collect at wider tolerance',()=>{
  for(const kind of Object.keys(BONUS_DEFS)){const {world,controller}=makeWorld();world.release({id:1,bonus:kind});const item=world.pickups[0];assert.equal(item.scale,.38*2*1.3);assert(item.height>=.1);item.landed=true;item.p.set(0,item.height,1);world.update(.4,new THREE.Vector3(1,item.height,1),new THREE.Vector3(1,0,0),true,new Map());assert.equal(world.pickups.length,0,kind+' collects one world unit away');assert(controller.active||controller.halo);}
  });
+
+test('Simultaneous main and extra pickup contact awards the item exactly once',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'pulse'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const p=item.p.clone(),v=new THREE.Vector3(1,0,0);let count=0;const collect=controller.collect.bind(controller);controller.collect=kind=>{count++;return collect(kind);};world.update(.01,p,v,true,new Map(),[{id:12,p:p.clone(),v},{id:13,p:p.clone(),v}]);assert.equal(count,1);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'pulse');assert.equal(controller.queued,null);});
+test('Extra pickup sweeps keep independent histories and cannot bridge between balls',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'heavy'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const v=new THREE.Vector3(1,0,0),main=new THREE.Vector3(0,.38,8);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-3,item.height,1),v},{id:13,p:new THREE.Vector3(3,item.height,1),v}]);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-2.8,item.height,1),v},{id:13,p:new THREE.Vector3(2.8,item.height,1),v}]);assert.equal(world.pickups.length,1);world.update(.01,main,v,false,new Map(),[{id:12,p:item.p.clone(),v}]);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'heavy');});
