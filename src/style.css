@@ -27,3 +27,9 @@ button{backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blu
 #paused{background:linear-gradient(145deg,#647385db,#263443eb);backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%)}
 @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){#paused{background:linear-gradient(145deg,#d5e5f040,#2c3d5366)}}
 @media(max-width:600px){.controls{max-width:110px}}
+
+/* Explicit scene blur also works when a browser cannot sample WebGL via backdrop-filter. Only modal screens pay this compositor cost. */
+.scene-frosted #game{filter:blur(10px) saturate(115%)}
+#start{background:linear-gradient(145deg,#647385cf,#263443df);backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%)}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){#start{background:linear-gradient(145deg,#d5e5f040,#2c3d5377)}}
+.controls{max-width:none;flex-wrap:nowrap;gap:6px}.controls #fullscreen{order:0;display:grid;place-items:center;width:38px;height:42px;padding:8px}.controls #bonus-test{order:3}.controls #fullscreen svg{display:block}@media(max-width:600px){.controls{max-width:none;gap:4px}.controls button{padding:7px 8px}.controls #fullscreen{width:32px;height:34px}.controls #bonus-test{font-size:10px;padding:6px}}

@@ -67,22 +67,53 @@ export class PowerFX {
     this.spiral.visible = false;
     this.root.add(this.spiral);
     this.gravityAge = 2;
-    // Persistent blast pool: eight low-poly fire lobes and one compact flash.
-    // All geometry, colors and shader variants exist before the first bomb.
+    // Pooled volumetric lobes: irregular silhouettes plus procedural fire/smoke.
+    // No textures, hit-time resources, or fullscreen passes.
     const fireGeometry = new THREE.SphereGeometry(1,12,8);
-    this.fire = new THREE.InstancedMesh(fireGeometry,new THREE.MeshBasicMaterial({
-      color:0xffffff,transparent:true,opacity:0,depthWrite:false,
-      blending:THREE.AdditiveBlending,toneMapped:false,
-    }),8);
-    for(let i=0;i<8;i++) this.fire.setColorAt(i,this.color.setHex(i%2 ? 0xff5420 : 0xffa52c));
-    this.fire.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.fire.frustumCulled=false; this.fire.visible=false; this.root.add(this.fire);
+    const lobeGeometry=new THREE.SphereGeometry(1,20,14);
+    const positions=lobeGeometry.attributes.position;
+    for(let i=0;i<positions.count;i++){
+      const x=positions.getX(i),y=positions.getY(i),z=positions.getZ(i);
+      const bump=1+.12*Math.sin(x*9+y*5)*Math.cos(z*8-y*4)+.065*Math.sin(z*17+x*11);
+      positions.setXYZ(i,x*bump,y*bump,z*bump);
+    }
+    lobeGeometry.computeVertexNormals();
+    this.bombShaderTime={value:0};this.bombDirection=new THREE.Vector3();
+    const lobeMaterial=smoke=>{
+      const m=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false,blending:THREE.NormalBlending,toneMapped:false});
+      m.onBeforeCompile=shader=>{
+        shader.uniforms.bombPhase=this.bombShaderTime;
+        shader.vertexShader='varying vec3 bombLocal;\n'+shader.vertexShader;
+        shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nbombLocal=position;');
+        shader.fragmentShader=`varying vec3 bombLocal; uniform float bombPhase;
+          float bhash(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
+          float bnoise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+            return mix(mix(mix(bhash(i),bhash(i+vec3(1,0,0)),f.x),mix(bhash(i+vec3(0,1,0)),bhash(i+vec3(1,1,0)),f.x),f.y),mix(mix(bhash(i+vec3(0,0,1)),bhash(i+vec3(1,0,1)),f.x),mix(bhash(i+vec3(0,1,1)),bhash(i+vec3(1,1,1)),f.x),f.y),f.z);}
+        `+shader.fragmentShader;
+        shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+          vec3 flow=bombLocal*3.8+vec3(0.,-bombPhase*2.8,0.);
+          float turbulence=bnoise(flow)*.66+bnoise(flow*2.25+4.7)*.34;
+          float veins=1.-abs(turbulence*2.-1.);
+          ${smoke ? `diffuseColor.rgb=mix(vec3(.018,.021,.026),vec3(.11,.105,.10),turbulence);
+          diffuseColor.a*=smoothstep(.13,.65,turbulence)*.72;` : `
+          float heat=clamp(veins*veins-.29-bombPhase*.16,0.,1.);
+          diffuseColor.rgb=mix(vec3(.28,.012,.001),vec3(1.,.18,.008),smoothstep(.05,.45,heat));
+          diffuseColor.rgb=mix(diffuseColor.rgb,vec3(1.,.78,.19),smoothstep(.36,.70,heat));
+          diffuseColor.a*=smoothstep(.14,.48,turbulence);`}
+        `);
+      };
+      m.customProgramCacheKey=()=>smoke?'bomb-smoke-volume-v1':'bomb-flame-volume-v1';return m;
+    };
+    this.fire=new THREE.InstancedMesh(lobeGeometry,lobeMaterial(false),16);
+    this.smoke=new THREE.InstancedMesh(lobeGeometry,lobeMaterial(true),12);
+    for(const object of [this.fire,this.smoke]){object.instanceMatrix.setUsage(THREE.DynamicDrawUsage);object.frustumCulled=false;object.visible=false;this.root.add(object);}
+    this.smoke.renderOrder=4;this.fire.renderOrder=5;
     this.flash = new THREE.Mesh(fireGeometry,new THREE.MeshBasicMaterial({
-      color:0xffc05b,transparent:true,opacity:0,depthWrite:false,
+      color:0xfffac7,transparent:true,opacity:0,depthWrite:false,
       blending:THREE.AdditiveBlending,toneMapped:false,
     }));
-    this.flash.visible=false; this.root.add(this.flash);
-    this.bombPoint = new THREE.Vector3(); this.bombAge=1.3;
+    this.flash.renderOrder=6;this.flash.visible=false;this.root.add(this.flash);
+    this.bombPoint = new THREE.Vector3(); this.bombAge=1.45;
     this.blackHoleRoot=new THREE.Group(); this.blackHoleRoot.visible=false; this.root.add(this.blackHoleRoot);
     this.blackHoleCore=new THREE.Mesh(fireGeometry,new THREE.MeshStandardMaterial({color:0x04050d,metalness:.72,roughness:.14}));
     this.blackHoleRoot.add(this.blackHoleCore);
@@ -147,14 +178,11 @@ export class PowerFX {
     if (!BONUS_DEFS[kind] || !point) return;
     const d = this.radius * 2;
     if (kind === 'bomb') {
-      const blastRadius=d*(BONUS_DEFS.bomb.radiusD || 6.5);
-      this._ring(kind,point,d*.8,blastRadius*1.12,1.04,.06,0,.96);
-      this._ring(kind,point,d*.5,blastRadius*.94,1.1,.18,.09,.74);
-      this._ring(kind,point,d*.7,blastRadius*.73,.86,d*.95,.035,.56);
-      this._ring(kind,point,d*.35,blastRadius*.51,.72,d*1.7,.12,.42);
+      // Fire, smoke and streaks carry the blast silhouette, not geometric rings.
       this.bombPoint.copy(point); this.bombPoint.y=Math.max(.08,point.y);
-      this.bombAge=0; this.fire.visible=true; this.flash.visible=true;
-      this.fire.material.opacity=0; this.flash.material.opacity=0;
+      this.bombAge=0;this.bombShaderTime.value=0;
+      this.fire.visible=true;this.smoke.visible=true;this.flash.visible=true;
+      this.fire.material.opacity=0;this.smoke.material.opacity=0;this.flash.material.opacity=0;
     } else if (kind === 'pulse') {
       const radius = d * Math.max(4.4, BONUS_DEFS.pulse.radiusD);
       this._ring(kind, point, d * .35, radius, .78, .035, 0, .88);
@@ -190,13 +218,13 @@ export class PowerFX {
       if (kind === 'split') a = heading + (i < count / 2 ? -.7 : .7) + ((i % 16) / 15 - .5) * .36;
       if (kind === 'pierce') a = heading + (i / count - .5) * .4;
       const speed = d * ({ heavy: 6.2, pierce: 10, pulse: 6.8, split: 7, frost: 3.8, arc: 6, bomb:16 }[kind]) * (.65 + Math.random() * .45);
-      const life = kind === 'bomb' ? .75+Math.random()*.4 : kind === 'heavy' ? .48 : kind === 'arc' ? .3 + Math.random() * .2 : kind === 'frost' ? .85 : .64;
-      const size = d * (kind === 'bomb' ? .15 : kind === 'heavy' ? .14 : kind === 'pulse' ? .095 : kind === 'frost' ? .07 : .075);
-      const stretch = kind === 'frost' ? 5 : kind === 'arc' || kind === 'pierce' ? 10 : kind === 'heavy' ? 2.6 : 4;
+      const life = kind === 'bomb' ? (i%3===0?1.15+Math.random()*.2:.45+Math.random()*.35) : kind === 'heavy' ? .48 : kind === 'arc' ? .3 + Math.random() * .2 : kind === 'frost' ? .85 : .64;
+      const size = d * (kind === 'bomb' ? (i%3===0?.04:.055) : kind === 'heavy' ? .14 : kind === 'pulse' ? .095 : kind === 'frost' ? .07 : .075);
+      const stretch = kind === 'bomb' ? (i%3===0?2.5:18+Math.random()*12) : kind === 'frost' ? 5 : kind === 'arc' || kind === 'pierce' ? 10 : kind === 'heavy' ? 2.6 : 4;
       const p = this._particle(kind, point, a, speed, life, size, stretch);
       if (kind === 'bomb') {
-        p.v.y=d*(2+Math.random()*6); p.glow=.92;
-        this.mesh.setColorAt((this.cursor-1)%this.particles.length,this.color.setHex(i%3===0?0xffbd58:BONUS_DEFS.bomb.color));
+        p.v.y=d*(1.5+Math.random()*9);p.glow=1.15;if(i%3===0)p.v.multiplyScalar(.55);
+        this.mesh.setColorAt((this.cursor-1)%this.particles.length,this.color.setHex(i%3===0?0xff6b12:i%2?0xfff1a8:0xffac32));
       }
       if (kind === 'heavy') p.v.y = d * (1.4 + Math.random() * 3.2);
       if (kind === 'frost') p.v.y = d * (.5 + Math.random() * 1.8);
@@ -297,29 +325,45 @@ export class PowerFX {
         }
         this.dummy.position.copy(p.p);
         const shrink = 1 - t * .45;
-        this.dummy.scale.set(p.size * p.stretch * shrink, p.size * shrink, p.size * shrink);
+        if(p.kind==='bomb'){
+          this.dummy.quaternion.setFromUnitVectors(this.up,this.bombDirection.copy(p.v).normalize());
+          this.dummy.scale.set(p.size*shrink,p.size*p.stretch*shrink,p.size*shrink);
+        }else this.dummy.scale.set(p.size * p.stretch * shrink, p.size * shrink, p.size * shrink);
         this.alpha.array[i] = Math.pow(1 - t, 1.15) * p.glow * (p.kind === 'arc' ? .6 + .4 * Math.sin(t * 65) ** 2 : 1);
       }
       this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix);
     }
     this.alpha.needsUpdate = true; this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.bombAge < 1.3) {
-      this.bombAge=Math.min(1.3,this.bombAge+dt);
-      const t=this.bombAge,d=this.radius*2;
+    if (this.bombAge < 1.45) {
+      this.bombAge=Math.min(1.45,this.bombAge+dt);
+      const t=this.bombAge,d=this.radius*2;this.bombShaderTime.value=t;
       this.flash.position.copy(this.bombPoint);
-      this.flash.scale.set(d*(.6+Math.min(t/.08,1)*1.25),d*(.4+Math.min(t/.08,1)*1.2),d*(.6+Math.min(t/.08,1)*1.25));
-      this.flash.material.opacity=Math.max(0,1-t/.19)*.48;
-      this.flash.visible=t<.19;
-      for(let i=0;i<8;i++) {
-        const a=i*Math.PI/4,age=Math.max(0,t-i%3*.025),travel=d*(.55+age*(i%2?4.8:3.8));
-        this.dummy.position.set(this.bombPoint.x+Math.cos(a)*travel,this.bombPoint.y+d*(.5+age*(2.8+i%3*.85)),this.bombPoint.z+Math.sin(a)*travel);
-        const size=d*(.6+Math.sin(Math.min(1,age/1.1)*Math.PI)*1.05);
-        this.dummy.rotation.set(age,i,0); this.dummy.scale.set(size,size*(1.1+age*.7),size);
-        this.dummy.updateMatrix(); this.fire.setMatrixAt(i,this.dummy.matrix);
+      const flashSize=d*(.55+Math.min(t/.055,1)*1.15);
+      this.flash.scale.set(flashSize,flashSize*.82,flashSize);
+      this.flash.material.opacity=Math.pow(Math.max(0,1-t/.16),1.3)*.92;
+      this.flash.visible=t<.16;
+      for(let i=0;i<16;i++) {
+        const age=Math.max(0,t-(i%4)*.018),a=i*2.399963;
+        const rise=.45+(i%5)*.19,travel=d*(.18+(1-Math.exp(-age*4))*(1.25+(i%4)*.38));
+        this.dummy.position.set(this.bombPoint.x+Math.cos(a)*travel,this.bombPoint.y+d*(.2+age*rise*2.3),this.bombPoint.z+Math.sin(a)*travel);
+        const size=d*(.12+(1-Math.exp(-age*8))*(.7+(i%3)*.19));
+        this.dummy.rotation.set(i*.7+age*.4,i*.9,-age*.6);
+        this.dummy.scale.set(size*(.82+(i%3)*.15),size*(1.1+age*.35),size);
+        this.dummy.updateMatrix();this.fire.setMatrixAt(i,this.dummy.matrix);
       }
-      this.fire.instanceMatrix.needsUpdate=true;
-      this.fire.material.opacity=Math.pow(Math.max(0,1-t/1.22),.75)*.30;
-      this.fire.visible=t<1.22;
+      for(let i=0;i<12;i++) {
+        const age=Math.max(0,t-.08),a=i*2.399963+.5;
+        const travel=d*(.5+(1-Math.exp(-age*2.8))*(1.7+(i%3)*.35));
+        this.dummy.position.set(this.bombPoint.x+Math.cos(a)*travel,this.bombPoint.y+d*(.5+age*(1.35+(i%4)*.23)),this.bombPoint.z+Math.sin(a)*travel);
+        const size=d*(.4+age*(.65+(i%3)*.14));
+        this.dummy.rotation.set(i+age*.6,i*.7,age*.3);
+        this.dummy.scale.set(size,size*(.85+(i%3)*.16),size*1.1);
+        this.dummy.updateMatrix();this.smoke.setMatrixAt(i,this.dummy.matrix);
+      }
+      this.fire.instanceMatrix.needsUpdate=true;this.smoke.instanceMatrix.needsUpdate=true;
+      this.fire.material.opacity=Math.min(1,t/.045)*Math.pow(Math.max(0,1-t/1.03),.65)*.92;
+      this.smoke.material.opacity=Math.min(1,Math.max(0,t-.07)/.22)*Math.pow(Math.max(0,1-t/1.45),.8)*.44;
+      this.fire.visible=t<1.03;this.smoke.visible=t<1.45;
     }
     for (const r of this.rings) {
       if (!r.mesh.visible) continue;
@@ -350,7 +394,7 @@ export class PowerFX {
 
   warmupObjects() {
     const group = new this.T.Group();
-    for (const object of [this.mesh, ...this.rings.map(r => r.mesh), this.spiral, this.fire, this.flash, this.blackHoleCore, ...this.blackHoleRings, this.blackHoleHalo, this.blackHoleParticles]) {
+    for (const object of [this.mesh, ...this.rings.map(r => r.mesh), this.spiral, this.fire, this.smoke, this.flash, this.blackHoleCore, ...this.blackHoleRings, this.blackHoleHalo, this.blackHoleParticles]) {
       const clone = object.clone(); clone.visible = true; clone.frustumCulled=false;
       clone.material=object.material.clone(); clone.material.opacity=.5;
       clone.material.onBeforeCompile=object.material.onBeforeCompile;
@@ -379,7 +423,8 @@ export class PowerFX {
     for (const r of this.rings) r.mesh.visible = false;
     this.spiral.visible = false; this.gravityAge = 2;
     this.hasLastBall = false; this.trailClock = 0; this.cursor = 0;
-    this.bombAge=1.3; this.fire.visible=false; this.flash.visible=false;
+    this.bombAge=1.45;this.bombShaderTime.value=0;this.fire.visible=false;this.smoke.visible=false;this.flash.visible=false;
+    this.fire.material.opacity=0;this.smoke.material.opacity=0;this.flash.material.opacity=0;
     this.blackHoleRoot.visible=false;this.blackHoleLastAge=null;
     this.blackHoleStreamAlpha.array.fill(0);this.blackHoleStreamAlpha.needsUpdate=true;
   }

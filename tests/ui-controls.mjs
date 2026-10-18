@@ -7,10 +7,14 @@ assert(html.includes('id="bonus-test" class="tool-button">Test</button>'));asser
 const start=source.indexOf('function setupFullscreen()'),end=source.indexOf('\nfunction ',start+10);let requests=0,exits=0,cancels=0;const notices=[],events={},button={setAttribute(k,v){this[k]=v;}},controls={addEventListener(k,fn){events[k]=fn;}};
 const document={documentElement:{async requestFullscreen(){requests++;document.fullscreenElement=this;}},fullscreenElement:null,async exitFullscreen(){exits++;this.fullscreenElement=null;},querySelector:()=>controls,addEventListener(k,fn){events[k]=fn;}};
 const context={document,$:()=>button,cancelDrag(){cancels++;},tell:m=>notices.push(m)};vm.createContext(context);vm.runInContext(source.slice(start,end),context);context.setupFullscreen();
-await button.onclick();assert.equal(requests,1);assert.equal(button.textContent,'EXIT FULLSCREEN');assert.equal(button['aria-pressed'],'true');await button.onclick();assert.equal(exits,1);assert.equal(button.textContent,'FULLSCREEN');
+await button.onclick();assert.equal(requests,1);assert.equal(button['aria-label'],'Exit fullscreen');assert(button.innerHTML.includes('<svg'));assert.equal(button['aria-pressed'],'true');await button.onclick();assert.equal(exits,1);assert.equal(button['aria-label'],'Enter fullscreen');
 delete document.documentElement.requestFullscreen;await button.onclick();assert(notices.at(-1).includes('not available'));assert.equal(button['aria-pressed'],'false');let stopped=false;events.pointerdown({stopPropagation(){stopped=true;}});assert(stopped);assert.equal(cancels,3);
 console.log('PASS visible test/fullscreen controls, trusted-click API toggle, unsupported fallback and pointer isolation');
 
 const css=fs.readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
 const glassRule=css.match(/\.glass-panel,\.power-slot,\.power-tip[^}]+}/)?.[0];assert(glassRule);for(const plain of ['#hint','.rail-hint','#toast','#section','.brand','.legend'])assert(!glassRule.includes(plain));assert(css.includes('#paused{background:'));assert(css.includes('blur(24px) saturate(125%)'));
 console.log('PASS frosted panels only, plain logo/hints/legend and fullscreen pause blur');
+
+assert(css.includes('.scene-frosted #game{filter:blur(10px)'));assert(html.includes('class="scene-frosted"'));console.log('PASS explicit modal WebGL scene blur and accessible fullscreen icon');
+const modalStart=source.indexOf('function syncModalBlur()'),modalEnd=source.indexOf('\nfunction ',modalStart+10);const modalStates=[];const modal={started:false,paused:false,bonusTestOpen:false,document:{body:{classList:{toggle:(name,on)=>modalStates.push({name,on})}}}};vm.createContext(modal);vm.runInContext(source.slice(modalStart,modalEnd),modal);modal.syncModalBlur();modal.started=true;modal.syncModalBlur();modal.bonusTestOpen=true;modal.syncModalBlur();modal.bonusTestOpen=false;modal.paused=true;modal.syncModalBlur();modal.paused=false;modal.syncModalBlur();assert.deepEqual(modalStates.map(x=>x.on),[true,false,true,true,false]);
+console.log('PASS scene blur follows start, Test, pause and gameplay restoration');

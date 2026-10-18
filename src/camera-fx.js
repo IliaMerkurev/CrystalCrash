@@ -1,11 +1,20 @@
 // Deterministic camera feedback. Apply ABSOLUTE translation to the normal aim
 // position and target; blend focus and dolly toward the Black Hole, compensating
 // FOV in the camera integrator to preserve subject size. Pause with dt = 0.
-export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, dolly: .30, focusSeconds: .9, returnSeconds: .3 });
+export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, dolly: .50, focusSeconds: 1.1, returnSeconds: .3 });
 
 const TAU = Math.PI * 2;
 const clamp01 = value => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
 const smoothstep = value => { const t = clamp01(value); return t * t * (3 - 2 * t); };
+const smootherstep = value => { const t = clamp01(value); return t * t * t * (t * (t * 6 - 15) + 10); };
+// Integrate a short smoothstep velocity ramp, then keep a steady approach.
+// Normalization reaches the bounded endpoint exactly at the effect duration.
+const dollyProgress = (age, duration) => {
+ const ramp = Math.min(.08, duration * .5), t = Math.max(0, age);
+ const u = Math.min(1, t / ramp);
+ const distance = t < ramp ? ramp * (u * u * u - .5 * u * u * u * u) : t - ramp * .5;
+ return clamp01(distance / (duration - ramp * .5));
+};
 const approach = (current, target, dt, seconds) => target + (current - target) * Math.exp(-dt / seconds);
 const envelope = (age, duration, attack) => {
  if (age >= duration) return 0;
@@ -69,8 +78,8 @@ export class CameraFX {
    }
    this.holeAge += dt;
    const duration = Number.isFinite(blackHoleDuration) && blackHoleDuration > 0 ? blackHoleDuration : 6;
-   this.focus = this.startFocus + (1 - this.startFocus) * smoothstep(this.holeAge / CAMERA_FX_LIMITS.focusSeconds);
-   this.dolly = this.startDolly + (CAMERA_FX_LIMITS.dolly - this.startDolly) * smoothstep(this.holeAge / duration);
+   this.focus = this.startFocus + (1 - this.startFocus) * smootherstep(this.holeAge / CAMERA_FX_LIMITS.focusSeconds);
+   this.dolly = this.startDolly + (CAMERA_FX_LIMITS.dolly - this.startDolly) * dollyProgress(this.holeAge, duration);
   } else {
    if (this.holeActive) {
     this.returnAge = 0;

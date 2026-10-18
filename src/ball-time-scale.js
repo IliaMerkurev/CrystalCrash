@@ -6,8 +6,8 @@ const vector = value => ({ x: value.x, y: value.y, z: value.z });
 const scaled = (value, factor) => ({ x: value.x * factor, y: value.y * factor, z: value.z * factor });
 
 export class BallTimeScale {
-  constructor({ minimumScale = .45, attack = .25, release = .4 } = {}) {
-    this.minimumScale = Math.min(1, Math.max(.05, finite(minimumScale, .45)));
+  constructor({ minimumScale = .35, attack = .25, release = .4 } = {}) {
+    this.minimumScale = Math.min(1, Math.max(.05, finite(minimumScale, .35)));
     this.attack = Math.max(.001, finite(attack, .25));
     this.release = Math.max(.001, finite(release, .4));
     this.scale = 1;
