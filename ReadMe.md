@@ -169,3 +169,5 @@ Restores clean single-sample 512px floor reflections and the earlier floor coat,
 ## Follow-up visual candidate 29
 
 Startup waits for the reflection environment before shader warmup. A narrow edge-mask-supported grazing highlight is view-dependent; face opacity is unchanged. Damaged structures share the intact diffuse/specular balance without UV border emission. Upper spawns clamp whole rotated cube bounds away from straight tapered rails, preserving stack counts. Current PCF shadow mode replaces the deprecated alias.
+
+Floor follow-up: coating roughness is 0.28, with a tight five-sample one-texel reflection kernel. Samples remain adjacent instead of broad displaced UV copies, providing slight softening without separated duplicate silhouettes.
