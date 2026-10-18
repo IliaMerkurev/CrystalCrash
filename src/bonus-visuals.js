@@ -48,6 +48,33 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const thinRing = torus(.115, .002);
   const accentRing = torus(.53, .012, Math.PI * 1.45);
   const chargeArc = torus(.53, .018, .36);
+  // Pulse's active cue sits beyond the metal ball (local radius .5). Keep the
+  // light amber and the center empty, rather than washing out the ball itself.
+  const pulseBand = torus(.66, .026), pulseBandHalo = torus(.66, .065);
+  const pulseBandLight = ownMaterial(new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0xffb13c).multiplyScalar(1.55), transparent: true,
+    opacity: .9, blending: THREE.AdditiveBlending, depthTest: true, depthWrite: false, toneMapped: false,
+  }));
+  const pulseBandGlow = ownMaterial(new THREE.MeshBasicMaterial({
+    color: 0xff9e23, transparent: true, opacity: .2, blending: THREE.AdditiveBlending,
+    depthTest: true, depthWrite: false, toneMapped: false,
+  }));
+  const pulseGlowSize = 64, pulsePixels = new Uint8Array(pulseGlowSize * pulseGlowSize * 4);
+  for (let y = 0; y < pulseGlowSize; y++) for (let x = 0; x < pulseGlowSize; x++) {
+    const r = Math.hypot((x + .5) / pulseGlowSize * 2 - 1, (y + .5) / pulseGlowSize * 2 - 1);
+    const i = (y * pulseGlowSize + x) * 4;
+    const inner = Math.max(0, Math.min(1, (r - .4) / .16));
+    const outer = Math.max(0, Math.min(1, (1 - r) / .18));
+    pulsePixels[i] = pulsePixels[i + 1] = pulsePixels[i + 2] = 255;
+    pulsePixels[i + 3] = Math.round(255 * Math.exp(-2 * ((r - .66) / .22) ** 2) * inner * outer);
+  }
+  const pulseGlowTexture = new THREE.DataTexture(pulsePixels, pulseGlowSize, pulseGlowSize);
+  pulseGlowTexture.magFilter = pulseGlowTexture.minFilter = THREE.LinearFilter;
+  pulseGlowTexture.needsUpdate = true;
+  const pulseAura = ownMaterial(new THREE.SpriteMaterial({
+    map: pulseGlowTexture, color: 0xff9e23, transparent: true, opacity: .48,
+    blending: THREE.AdditiveBlending, depthTest: true, depthWrite: false, toneMapped: false,
+  }));
   function polygon(points) {
     const shape = new THREE.Shape();
     shape.moveTo(points[0][0], points[0][1]);
@@ -282,14 +309,26 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       data.cloud.instanceMatrix.needsUpdate=true;
     }
   }
-  /** Diameter ~1.08: multiply scale by the ball diameter, not its radius.
+  /** Multiply scale by the ball diameter, not its radius. Most accents have
+   * diameter ~1.08; Pulse's luminous bands reach ~1.4 with a soft outer aura.
    * Pierce and Frost expose userData.charges (three meshes) for charge visibility.
    */
   function createBallAccent(kind) {
     kind = key(kind);
     const group = new THREE.Group(); group.name = `ball-accent-${kind}`;
     group.userData.bonusKind = kind;
-    if (kind === 'pierce' || kind === 'frost') {
+    if (kind === 'pulse') {
+      const bands = [];
+      for (let i = 0; i < 2; i++) {
+        const band = new THREE.Group(); group.add(band);
+        mesh(band, pulseBandHalo, pulseBandGlow);
+        mesh(band, pulseBand, pulseBandLight);
+        bands.push(band);
+      }
+      const aura = new THREE.Sprite(pulseAura); group.add(aura);
+      group.userData.pulseAnimation = {bands, aura};
+      animateBallAccent(group, 0);
+    } else if (kind === 'pierce' || kind === 'frost') {
       group.userData.charges = [];
       for (let i = 0; i < 3; i++) {
         const charge = mesh(group, chargeArc, lights[kind]);
@@ -310,6 +349,18 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       }
     }
     return group;
+  }
+  /** Shared materials stay immutable: the slow breathing uses transforms only. */
+  function animateBallAccent(group, time) {
+    const data = group.userData.pulseAnimation;
+    if (!data) return;
+    const breath = Math.sin(time * 2.2);
+    data.bands[0].scale.setScalar(1 + .035 * breath);
+    data.bands[0].rotation.set(-.95, .25, .4 + time * .18);
+    data.bands[1].scale.setScalar(.97 + .035 * Math.sin(time * 2.2 + 1.1));
+    data.bands[1].rotation.set(.75, -.35, -.55 - time * .14);
+    const diameter = 1.84 * (1 + .045 * breath);
+    data.aura.scale.set(diameter, diameter, 1);
   }
   /** Add this group to a lit scene for compileAsync + a real offscreen draw.
    * Remove afterward without disposing geometries/materials. All draw variants
@@ -343,6 +394,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     geometries.forEach(geometry => geometry.dispose());
     materials.forEach(material => material.dispose());
     glowTexture.dispose();
+    pulseGlowTexture.dispose();
   }
-  return {createModel, createPickup: createModel, createCore, createPickupAura, animateCore, createBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
+  return {createModel, createPickup: createModel, createCore, createPickupAura, animateCore, createBallAccent, animateBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
 }

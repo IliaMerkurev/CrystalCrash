@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import {PowerFX} from '../src/power-fx.js';
+import {BONUS_DEFS} from '../src/bonus-controller.js';
+const fx=new PowerFX({THREE,scene:new THREE.Scene(),radius:.38}),point=new THREE.Vector3(1,.44,-2);
+const ring=fx.pulseRingGeometry,flash=fx.pulseFlashGeometry;
+fx.trigger('pulse',point);
+assert.equal(fx.particles.filter(p=>p.kind==='pulse').length,48);
+assert(fx.particles.filter(p=>p.kind==='pulse').every(p=>p.glow===1.65&&p.size===.76*.13));
+assert.equal(fx.rings.filter(r=>r.mesh.geometry===flash&&r.mesh.visible).length,1);
+assert.equal(fx.rings.filter(r=>r.mesh.geometry===ring&&r.mesh.visible).length,2);
+assert.equal(ring.parameters.innerRadius,.8);
+assert(fx.rings.some(r=>r.end===.76*BONUS_DEFS.pulse.radiusD));
+fx.update(.08);assert(fx.rings.filter(r=>r.mesh.visible).some(r=>r.mesh.material.opacity>.9));
+fx.update(1.1);assert(fx.rings.every(r=>!r.mesh.visible));
+for(let i=0;i<100;i++){fx.trigger('pulse',point);fx.update(.01);}
+assert.equal(fx.rings.length,4);assert.equal(fx.particles.length,80);assert.equal(fx.pulseRingGeometry,ring);
+fx.clear();assert(fx.rings.every(r=>!r.mesh.visible));assert(fx.alpha.array.every(a=>a===0));
+fx.trigger('heavy',point);assert(fx.rings.filter(r=>r.mesh.visible).every(r=>r.mesh.geometry===fx.ringGeometry));
+const warm=fx.warmupObjects();assert(warm.children.some(m=>m.geometry?.parameters?.innerRadius===.8));assert(warm.children.some(m=>m.geometry?.parameters?.innerRadius===.08));
+console.log('PASS Pulse: thick full-radius waves, local flash, 48 bright sparks, fixed pools, fade/reset, warmup and unchanged other-power rings');

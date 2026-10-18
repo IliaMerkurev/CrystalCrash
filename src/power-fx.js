@@ -46,6 +46,7 @@ export class PowerFX {
     this.mesh.frustumCulled = false;
     this.root.add(this.mesh);
     const ringGeometry = new THREE.RingGeometry(.935, 1, 64);
+    this.ringGeometry=ringGeometry;this.pulseRingGeometry=new THREE.RingGeometry(.80,1,64);this.pulseFlashGeometry=new THREE.RingGeometry(.08,1,48);
     this.rings = Array.from({ length: 4 }, () => {
       const mesh = new THREE.Mesh(ringGeometry, new THREE.MeshBasicMaterial({
         transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
@@ -166,8 +167,9 @@ export class PowerFX {
     return p;
   }
 
-  _ring(kind, point, start, end, life, rise = 0, delay = 0, opacity = .8) {
+  _ring(kind, point, start, end, life, rise = 0, delay = 0, opacity = .8, flash = false) {
     const r = this.rings.find(r => !r.mesh.visible) || this.rings.reduce((a, b) => a.age / a.life > b.age / b.life ? a : b);
+    r.mesh.geometry=kind==='pulse'?(flash?this.pulseFlashGeometry:this.pulseRingGeometry):this.ringGeometry;
     r.mesh.position.copy(point); r.y = Math.max(.065, point.y);
     r.mesh.position.y = r.y; r.mesh.material.color.setHex(BONUS_DEFS[kind].color);
     r.age = -delay; r.life = life; r.start = start; r.end = end; r.rise = rise; r.opacity = opacity;
@@ -185,9 +187,9 @@ export class PowerFX {
       this.fire.material.opacity=0;this.smoke.material.opacity=0;this.flash.material.opacity=0;
     } else if (kind === 'pulse') {
       const radius = d * Math.max(4.4, BONUS_DEFS.pulse.radiusD);
-      this._ring(kind, point, d * .35, radius, .78, .035, 0, .88);
-      this._ring(kind, point, d * .2, radius * .87, .75, .1, .11, .66);
-      this._ring(kind, point, d * .12, radius * .68, .68, .17, .22, .5);
+      this._ring(kind, point, d * .12, d * 1.2, .20, .02, 0, .95, true);
+      this._ring(kind, point, d * .35, radius, .95, .06, 0, 1.25);
+      this._ring(kind, point, d * .2, radius * .88, .88, .16, .14, .9);
     } else if (kind === 'heavy') {
       this._ring(kind, point, d * .15, d * 2.3, .43, .035, 0, .95);
       this._ring(kind, point, d * .3, d * 1.55, .36, d * .3, .065, .65);
@@ -211,21 +213,22 @@ export class PowerFX {
         p.lift = i % 3 * d * .19;
       }
     }
-    const count = { pulse: 32, pierce: 22, arc: 28, frost: 30, gravity: 0, split: 32, heavy: 38, bomb:64 }[kind];
+    const count = { pulse: 48, pierce: 22, arc: 28, frost: 30, gravity: 0, split: 32, heavy: 38, bomb:64 }[kind];
     const heading = Math.atan2(this.direction.z, this.direction.x);
     for (let i = 0; i < count; i++) {
       let a = i / count * Math.PI * 2;
       if (kind === 'split') a = heading + (i < count / 2 ? -.7 : .7) + ((i % 16) / 15 - .5) * .36;
       if (kind === 'pierce') a = heading + (i / count - .5) * .4;
-      const speed = d * ({ heavy: 6.2, pierce: 10, pulse: 6.8, split: 7, frost: 3.8, arc: 6, bomb:21 }[kind]) * (.65 + Math.random() * .45);
+      const speed = d * ({ heavy: 6.2, pierce: 10, pulse: 9, split: 7, frost: 3.8, arc: 6, bomb:21 }[kind]) * (.65 + Math.random() * .45);
       const life = kind === 'bomb' ? (i%3===0?1.15+Math.random()*.2:.45+Math.random()*.35) : kind === 'heavy' ? .48 : kind === 'arc' ? .3 + Math.random() * .2 : kind === 'frost' ? .85 : .64;
-      const size = d * (kind === 'bomb' ? (i%3===0?.04:.055) : kind === 'heavy' ? .14 : kind === 'pulse' ? .095 : kind === 'frost' ? .07 : .075);
+      const size = d * (kind === 'bomb' ? (i%3===0?.04:.055) : kind === 'heavy' ? .14 : kind === 'pulse' ? .13 : kind === 'frost' ? .07 : .075);
       const stretch = kind === 'bomb' ? (i%3===0?2.5:18+Math.random()*12) : kind === 'frost' ? 5 : kind === 'arc' || kind === 'pierce' ? 10 : kind === 'heavy' ? 2.6 : 4;
       const p = this._particle(kind, point, a, speed, life, size, stretch);
       if (kind === 'bomb') {
         p.v.y=d*(1.5+Math.random()*9);p.glow=1.65;if(i%3===0)p.v.multiplyScalar(.55);
         this.mesh.setColorAt((this.cursor-1)%this.particles.length,this.color.setHex(i%3===0?0xff6b12:i%2?0xfff1a8:0xffac32));
       }
+      if (kind === 'pulse') {p.glow=1.65;p.stretch=6;p.v.y=d*(.5+Math.random()*2);}
       if (kind === 'heavy') p.v.y = d * (1.4 + Math.random() * 3.2);
       if (kind === 'frost') p.v.y = d * (.5 + Math.random() * 1.8);
       if (kind === 'split') {
@@ -411,6 +414,7 @@ export class PowerFX {
       } else clone.scale.setScalar(.12);
       clone.position.set(0,0,0);group.add(clone);
     }
+    for(const geometry of [this.pulseRingGeometry,this.pulseFlashGeometry]){const mesh=new this.T.Mesh(geometry.clone(),this.rings[0].mesh.material.clone());mesh.material.opacity=.5;mesh.scale.setScalar(.12);mesh.userData.powerFXWarmupMaterial=true;mesh.userData.powerFXWarmupGeometry=true;group.add(mesh);}
     return group;
   }
 

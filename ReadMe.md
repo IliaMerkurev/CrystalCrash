@@ -79,3 +79,6 @@ Black Hole now uses a 6.6-ball-diameter radius, eases camera focus over 1.1 seco
 - The Test menu offers an explicit arena loader for the 14 authored arenas. Loading resets that scene, score and effects while retaining the current run seed for repeatable layouts.
 
 - Black Hole now lasts 3.5 seconds with a proportionally faster pull ramp and inward particles. Its camera approaches 58% closer while deliberately increasing apparent size up to 40%; world geometry and influence radius are unchanged.
+
+### Pulse readability
+Pulse impacts now show a short local amber flash, two broader luminous expanding waves and 48 brighter radial sparks. Wave geometry and warmup are pooled; damage, radius and mini-shake are unchanged. The active-ball amber cue is also enlarged and animated while preserving the reflective ball surface.

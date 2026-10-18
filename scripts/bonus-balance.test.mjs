@@ -166,7 +166,7 @@ test('Arc, Tornado and Black Hole return immediate descriptors on every pickup',
   assert.match(tornado.message, /Tornado activated/);
   assert.deepEqual(tornado.effect, {kind: 'gravity', originId: null, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, targetType: 'intact-cube'});
   const hole = powers.collect('blackhole');
-  assert.deepEqual(hole.effect, {kind: 'blackhole', originId: null, duration: 6, radiusD: 6.6, rampDuration: 2, acceleration: 50, speedCap: 14, maxTargets: 64});
+  assert.deepEqual(hole.effect, {kind: 'blackhole', originId: null, duration: 3.5, radiusD: 6.6, rampDuration: 7/6, acceleration: 50, speedCap: 14, maxTargets: 64});
   assert.equal('damage' in hole.effect, false);
   assert.equal(powers.collect('gravity').effect.kind, 'gravity');
   assert.equal(powers.collect('blackhole').effect.kind, 'blackhole');
