@@ -3,3 +3,5 @@ qa/
 *.log
 
 dist/
+
+editor-dist/

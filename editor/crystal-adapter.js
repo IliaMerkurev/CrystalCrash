@@ -6,7 +6,7 @@ import {BONUS_DEFS} from '../src/bonus-controller.js';
 /** Development-only adapter. This module is outside the production import graph. */
 export async function connectCrystalEditor(host){
  const {THREE,scene,camera,renderer}=host,canvas=renderer.domElement;
- const listeners=new Set(),transformListeners=new Set();let selected=null,mode='edit',dragging=false;
+ const listeners=new Set(),transformListeners=new Set();let selected=null,mode='edit',dragging=false,authorArena=host.section;
  const orbit=new OrbitControls(camera,canvas);orbit.target.set(0,1,(host.bounds.top+host.bounds.mid)/2);orbit.enableDamping=true;orbit.update();
  const gizmo=new TransformControls(camera,canvas);scene.add(gizmo.getHelper());
  const notify=event=>listeners.forEach(fn=>fn(event));
@@ -23,7 +23,7 @@ export async function connectCrystalEditor(host){
   return doc;
  }
  function select(id){selected=id;gizmo.detach();const o=find(id);if(o&&mode==='edit')gizmo.attach(o.mesh);notify({type:'selection',id});}
- function rebuild(){gizmo.detach();host.rebuild();for(const o of host.blocks.values()){o.mesh.position.copy(o.b.translation());o.mesh.quaternion.copy(o.b.rotation());}if(selected)select(selected);notify({type:'scene'});}
+ function rebuild(){gizmo.detach();host.section=authorArena;host.rebuild();for(const o of host.blocks.values()){o.mesh.position.copy(o.b.translation());o.mesh.quaternion.copy(o.b.rotation());}if(selected)select(selected);notify({type:'scene'});}
  gizmo.addEventListener('dragging-changed',e=>{dragging=e.value;orbit.enabled=!e.value&&mode==='edit';});
  gizmo.addEventListener('mouseUp',()=>{
   if(!selected||mode!=='edit')return;const o=find(selected),b=base(selected);if(!o||!b)return;
@@ -34,13 +34,14 @@ export async function connectCrystalEditor(host){
   catch(error){rebuild();notify({type:'error',message:error.message});}
  });
  const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();let press;
- canvas.addEventListener('pointerdown',e=>{press={x:e.clientX,y:e.clientY};});
- canvas.addEventListener('pointerup',e=>{
+ const onPointerDown=e=>{press={x:e.clientX,y:e.clientY};};
+ const onPointerUp=e=>{
   if(mode!=='edit'||dragging||gizmo.axis||!press||Math.hypot(e.clientX-press.x,e.clientY-press.y)>4)return;
   const rect=canvas.getBoundingClientRect();pointer.set((e.clientX-rect.left)/rect.width*2-1,1-(e.clientY-rect.top)/rect.height*2);ray.setFromCamera(pointer,camera);
   const hit=ray.intersectObjects([...host.blocks.values()].map(o=>o.mesh),false)[0];
   if(hit){const o=[...host.blocks.values()].find(o=>o.mesh===hit.object);select(o.origin.authoredId);}
- });
+ };
+ canvas.addEventListener('pointerdown',onPointerDown);canvas.addEventListener('pointerup',onPointerUp);
  const field=(path,label,value,min,max,step=.01,type='number')=>({path,label,value,min,max,step,type});
  function fields(id){
   const p=host.readVisualPreset();
@@ -55,17 +56,18 @@ export async function connectCrystalEditor(host){
  const api={
   projectLabel:'CrystalCrash',arenaCount:14,
   listEntities:()=>[...[...host.blocks.values()].filter(o=>o.origin.authoredId).map(o=>({id:o.origin.authoredId,label:o.origin.authoredId+' · T'+(o.type+1),type:'Cube',transform:true})),...Array.from({length:5},(_,i)=>({id:'material:glass:'+i,label:'Glass T'+(i+1),type:'Material',transform:false})),{id:'material:floor',label:'Floor coat',type:'Material',transform:false},{id:'lighting',label:'Scene lighting',type:'Lighting',transform:false},{id:'particles',label:'Bonus particle sun',type:'Particles',transform:false}],
-  getObject:id=>find(id)?.mesh,documentFor:id=>find(id)?objectDocument(id):host.readVisualPreset(),readDocument:()=>host.readVisualPreset(),validateDocument:validatePreset,
-  applyDocument(doc){host.setVisualPreset(doc);rebuild();return host.readVisualPreset();},
+  getObject:id=>find(id)?.mesh,documentFor:id=>find(id)?objectDocument(id):host.readVisualPreset(),readDocument:()=>host.readVisualPreset(),validateDocument:doc=>validatePreset(JSON.parse(JSON.stringify(doc))),
+  applyDocument(doc){host.setVisualPreset(JSON.parse(JSON.stringify(doc)));rebuild();return host.readVisualPreset();},
   setMode(next){mode=next==='play'?'play':'edit';gizmo.detach();host.setOwnership(mode==='edit');rebuild();orbit.enabled=mode==='edit';if(mode==='edit'&&selected)select(selected);notify({type:'mode',mode});},
-  setArena(n){if(!Number.isInteger(n)||n<1||n>14)throw Error('Arena must be 1–14');host.section=n;rebuild();},
+  setArena(n){if(!Number.isInteger(n)||n<1||n>14)throw Error('Arena must be 1–14');authorArena=n;host.section=n;rebuild();},
   fields,select,setTransformMode(value){if(['translate','rotate','scale'].includes(value))gizmo.setMode(value);},
   focus(id){const o=find(id);if(o){orbit.target.copy(o.mesh.position);orbit.update();}},
   effects:()=>Object.values(BONUS_DEFS).map(d=>({id:d.kind,label:d.name})),previewEffect:kind=>host.previewEffect(kind),
   subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},
   onTransform(fn){transformListeners.add(fn);return()=>transformListeners.delete(fn);},
-  dispose(){gizmo.detach();scene.remove(gizmo.getHelper());gizmo.dispose();orbit.dispose();host.setTick(null);listeners.clear();transformListeners.clear();}
+  dispose(){canvas.removeEventListener('pointerdown',onPointerDown);canvas.removeEventListener('pointerup',onPointerUp);gizmo.detach();scene.remove(gizmo.getHelper());gizmo.dispose();orbit.dispose();host.setTick(null);host.setResize(null);listeners.clear();transformListeners.clear();}
  };
+ host.setResize(()=>{rebuild();orbit.update();});
  host.setOwnership(true);
  host.setTick(dt=>{if(mode==='edit'){orbit.update();host.animateEffects(dt);}});
  // Set initial meshes from their authored bodies before the first frame.

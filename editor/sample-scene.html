@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reusable editor sample</title>
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #141a28; }
+      canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      #scene-error { padding: 24px; color: #f2f5fb; font: 14px/1.5 system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import { createSampleEditor } from './sample-adapter.js';
+      try { createSampleEditor(); }
+      catch (error) {
+        const message = document.createElement('p');
+        message.id = 'scene-error';
+        message.setAttribute('role', 'alert');
+        message.textContent = `The sample renderer could not start: ${error.message}`;
+        document.body.append(message);
+        console.error(error);
+      }
+    </script>
+  </body>
+</html>
