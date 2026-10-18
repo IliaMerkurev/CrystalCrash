@@ -1,0 +1,10 @@
+import fs from 'node:fs';import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8'),css=fs.readFileSync(new URL('../src/style.css',import.meta.url),'utf8'),world=fs.readFileSync(new URL('../src/bonus-world.js',import.meta.url),'utf8');
+const footer=html.match(/<footer>([\s\S]*?)<\/footer>/)[1];
+assert.equal((html.match(/id="power-hud"/g)||[]).length,1);assert(footer.indexOf('id="power-hud"')<footer.indexOf('id="hint"'));
+assert.match(world,/document.getElementById\?\.\('power-hud'\)/);
+assert.match(css,/footer\{display:flex;flex-direction:column;align-items:center;gap:8px/);
+assert.match(css,/footer #power-hud\{position:static;left:auto;bottom:auto;transform:none;flex-wrap:wrap/);
+assert.match(css,/footer #power-hud:empty\{display:none\}/);assert.match(css,/bottom:max\(12px,env\(safe-area-inset-bottom\)\)/);
+assert.match(css,/footer #hint\{margin:0;max-width:min\(100%,720px\);line-height:1.4/);
+console.log('PASS one shared footer flow, wrapped badges above hint, safe area, empty-state collapse and short-height overrides; no browser pixel validation');

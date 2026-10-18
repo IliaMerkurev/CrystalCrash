@@ -55,3 +55,13 @@ body,canvas,header,footer,.overlay,.power-slot,.power-tip,.cc-tutorial,button,#t
 
 /* Session-only profiler A/B; keeps panel fills and readable text. */
 body.profiler-no-blur *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}body.profiler-no-blur.scene-frosted #game{filter:none!important}
+
+/* Bonus badges and context copy share one safe-area-aware flow, including iPad. */
+footer{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 16px;bottom:max(12px,env(safe-area-inset-bottom));max-width:100%;}
+footer #power-hud{position:static;left:auto;bottom:auto;transform:none;flex-wrap:wrap;justify-content:center;gap:5px;white-space:normal;width:100%;max-width:720px;}
+footer #power-hud:empty{display:none}
+footer #hint{margin:0;max-width:min(100%,720px);line-height:1.4;overflow-wrap:anywhere}
+footer .power-slot{max-width:100%;text-align:center;overflow-wrap:anywhere}
+footer .legend{margin:0;flex-wrap:wrap;gap:8px 20px}
+footer .rail-hint{max-width:100%;line-height:1.4}
+@media(max-height:600px){footer{gap:4px;bottom:max(6px,env(safe-area-inset-bottom))}footer .power-slot{padding:4px 7px;font-size:9px}footer .legend{margin:0;gap:6px 16px}}

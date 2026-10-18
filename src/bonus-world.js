@@ -12,7 +12,7 @@ export class BonusWorld {
   Object.assign(this,{scene,controller,radius,bounds,blocked,onSound,onNotice,onBomb,onActivate});
   this.visuals=createBonusVisuals(THREE);this.icons={pulse:"◎",pierce:"➤",arc:"ϟ",frost:"❄",split:"∴",gravity:"◉",heavy:"▾",bomb:"●",blackhole:"◉"};this.cores=new Map();this.pickups=[];this.time=0;this.seen=new Set();this.lastBall=null;this.collectorHistory=new Map();this.tip=null;this.tipAge=0;this.pendingTips=[];this.shadowGeometry=new THREE.CircleGeometry(.23,20);this.shadowMaterial=new THREE.MeshBasicMaterial({color:0x02050a,transparent:true,opacity:.3,depthWrite:false});
   this.label=document.createElement('div');this.label.className='power-tip';document.body.appendChild(this.label);
-  this.hud=document.createElement('div');this.hud.id='power-hud';this.hud.setAttribute('aria-live','polite');document.body.appendChild(this.hud);this.hudKey='';
+  this.hud=document.getElementById?.('power-hud')||document.createElement('div');this.hud.id='power-hud';this.hud.setAttribute('aria-live','polite');if(!this.hud.parentNode)document.body.appendChild(this.hud);this.hudKey='';
   this.accents={};for(const kind of Object.keys(BONUS_DEFS)){const m=this.visuals.createBallAccent(kind);m.visible=false;m.scale.setScalar(radius*2);scene.add(m);this.accents[kind]=m;}
   this.extraPulse=this.visuals.createPulseAccentBatch();scene.add(this.extraPulse);
   this.pulseRootMatrix=new THREE.Matrix4();this.pulseBandMatrices=[new THREE.Matrix4(),new THREE.Matrix4()];this.pulseInstanceMatrix=new THREE.Matrix4();
