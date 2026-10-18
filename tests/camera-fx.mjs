@@ -163,3 +163,7 @@ test('Idle poses use exact positive zeros at every phase and large steps finish 
  assert.ok(magnitude(fx.offsets) > 0);
  assert.deepEqual(fx.update(5), { x: 0, y: 0, z: 0, zoom: 0 });
 });
+
+ test('Production camera has no legacy ordinary-hit shake path',async()=>{
+ const {readFile}=await import('node:fs/promises');const source=await readFile(new URL('../src/main.js',import.meta.url),'utf8');assert(!/\bshake\b/.test(source));assert.equal((source.match(/cameraFX\.pulse\(\)/g)||[]).length,1);assert.equal((source.match(/cameraFX\.bomb\(\)/g)||[]).length,1);assert(source.includes('const cameraOffset=v3(fx.x,fx.y,fx.z)'));
+ });
