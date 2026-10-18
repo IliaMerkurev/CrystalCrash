@@ -193,3 +193,5 @@ Reflection target defaults to 1024 square; ?reflectionRes=512 enables same-build
 Preview lighting budget correction: four continuous unshadowed area lights cover the visible joined decks. Shared neon geometry preserves exact rail shapes; no per-preview light multiplication.
 
 Transition consistency: the cool directional light target now moves with the arena, keeping its lighting direction constant after travel; reset stale gate instructions on next section. ?qa=transition&transitionSpeed=0.1 slows only gate-wave/camera-travel diagnostics to one tenth speed; normal play unchanged.
+
+Aim-camera comfort revision: fixed centered pose, no lateral movement, shot-direction yaw or off-center ball tracking. Camera moves 25% closer and 30% lower with the same gentle FOV reduction; aim-time shake is suppressed. Frozen gesture projection and smooth return retained.

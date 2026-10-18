@@ -280,12 +280,11 @@ function render(dt){targetRing.visible=!!(drag?.mode==='attract'&&drag.target);i
 function updateAimCamera(dt){
  const aiming=drag?.mode==='aim'&&!reduced,wanted=aiming?1:0,blend=paused?0:1-Math.exp(-8*dt);
  aimBlend+=(wanted-aimBlend)*blend;aimShift+=((aiming?1.8:0)-aimShift)*blend;
- const t=state==='TRANSITION'?1-clamp(transition/TRAVEL,0,1):0,travel=STRIDE*t*t*(3-2*t),offset=arenaOffset-travel,k=!reduced?shake:0;
- const length=Math.hypot(drag?.dx||0,drag?.dz||0),side=length>.1?(drag.dx/length):0;
- const base=v3(0,cameraBase.y,cameraBase.z+offset+aimShift),focus=v3(heldPosition.x,heldPosition.y,heldPosition.z+offset);
- const close=base.clone().lerp(focus,.16);close.y=base.y*.8;close.x-=side*1.1;
+ const t=state==='TRANSITION'?1-clamp(transition/TRAVEL,0,1):0,travel=STRIDE*t*t*(3-2*t),offset=arenaOffset-travel,k=!reduced&&aimBlend<.01?shake:0;
+ const base=v3(0,cameraBase.y,cameraBase.z+offset+aimShift),focus=v3(0,C.ballRadius+.03,C.startZ+offset);
+ const close=base.clone().lerp(focus,.25);close.y=base.y*.7;close.x=0;
  camera.position.copy(base).lerp(close,aimBlend);camera.position.x+=(Math.random()-.5)*k*.45;camera.position.y+=(Math.random()-.5)*k*.3;
- const target=v3(0,.6,-.1+offset+aimShift),aimTarget=v3(heldPosition.x*.45+side*1.4,.45,heldPosition.z*.28-4+offset+aimShift);
+ const target=v3(0,.6,-.1+offset+aimShift),aimTarget=v3(0,.45,C.startZ*.28-4+offset+aimShift);
  camera.lookAt(target.lerp(aimTarget,aimBlend));const fov=42-1.5*aimBlend;if(Math.abs(camera.fov-fov)>.001){camera.fov=fov;camera.updateProjectionMatrix();}camera.updateMatrixWorld();
 }
 function resize(){if(!camera)return;cancelDrag();const w=innerWidth,h=innerHeight,aspect=w/h;aimBlend=aimShift=0;camera.fov=42;renderer.setSize(w,h);camera.aspect=aspect;camera.updateProjectionMatrix();const target=v3(0,.6,-.1),direction=v3(0,.66,.75).normalize(),right=v3(1,0,0),up=v3().crossVectors(direction,right).normalize(),t=Math.tan(THREE.MathUtils.degToRad(camera.fov/2));let distance=0;for(const x of (aspect<1?[-6.15,6.15]:[-6.8,6.8]))for(const z of [-6.8,6.8])for(const y of [0, z<0?5.5:0]){const q=v3(x,y,z).sub(target),depth=q.dot(direction);distance=Math.max(distance,depth+Math.abs(q.dot(right))/(t*aspect)*(aspect<1?1.01:1.08),depth+Math.abs(q.dot(up))/t*1.2);}cameraBase.copy(direction).multiplyScalar(distance).add(target);camera.position.copy(cameraBase);camera.lookAt(target);camera.updateMatrixWorld();if(stageGroup&&world)adaptArena();}
