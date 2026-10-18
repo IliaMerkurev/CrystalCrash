@@ -183,3 +183,5 @@ Score UI: compact frosted glass backplate with local CSS backdrop blur, Safari p
 Gate barrier height increased from 0.75 to 1.5 for both visible geometry and collider; upper-edge framing follows its height. Existing open-gate-only transition guard prevents airborne bypass from advancing the section. Glass material unchanged.
 
 Aim camera: while holding the ball, ease modestly closer and lower, with a small FOV reduction and lateral shot-direction bias. Keep pullback room, restore after release/cancel, freeze easing while paused, and disable aim motion for reduced-motion preference. Gesture projection remains frozen to its capture camera; aim camera never resizes the arena.
+
+Reflection follow-up: suppress the separate clearcoat specular lobe in the mirror pass too, because Three adds it after the base specular sum. Direct-view clearcoat and the ball remain unchanged.
