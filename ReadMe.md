@@ -14,7 +14,7 @@ The HTML embeds the runtime, generated reflection environment, procedural models
 
 Press PLAY to unlock audio. Grab the ball anywhere in the lower half, keep holding, pull back and release. Holding elsewhere below the middle line attracts the ball; when it reaches the pointer the same gesture becomes aiming. Crossing the bottom loss line cannot be rescued by attraction. Pause or tab switching suspends gameplay.
 
-Fourteen authored arenas introduce five glass tiers with 1/2/4/6/8 direct-hit durability. Arena 01 contains 30 T1 cubes and exactly one Pulse. The first five arenas contain 30/36/41/45/48 blocks after added T1 rear formations; existing stronger-tier structures remain intact. Arenas 01–10 introduce Pulse, Pierce, Arc and Halo; arenas 11–14 introduce Frost, Split, Gravity Well and Heavy Hit. The fourteen-arena sequence then repeats. Clear all targets, manually break the unlocked green-pulsing gate, and launch through it to travel to the next arena.
+Fourteen authored arenas introduce five glass tiers with 1/2/4/6/8 direct-hit durability. Arena 01 contains 30 T1 cubes and exactly one Pulse. The first five arenas contain 30/36/41/45/48 blocks after added T1 rear formations; existing stronger-tier structures remain intact. Arena 01 has one Pulse. Arena 02 has Pulse + Split, and arena 03 has Split + Pierce. From arena 04 onward, each arena has a seeded random 2–5 distinct power types drawn from all eight. Counts and selections remain stable through previews and resize; restarting can produce different later selections. The fourteen-arena sequence then repeats. Clear all targets, manually break the unlocked green-pulsing gate, and launch through it to travel to the next arena.
 
 Both rails fill green from bottom to top according to original shell area removed. Partial chipping counts; detached debris never counts twice.
 
@@ -33,7 +33,7 @@ Break a cube containing a large colored particle sun, then touch its landed 3D p
 
 Collected inventory and surviving extra balls persist between arenas. Power timers pause during clear/gate travel and repositioning. Loose uncollected pickups and local Frost marks do not carry. Extra balls gather beside the main ball for travel, then remain catchable in the next arena. Main-ball loss preserves shared powers while extra balls survive; with no survivors the inventory resets. Powers never damage the gate.
 
-Arenas 6–14 now contain 52/56/60/64/68/74/80/86/92 originals and 3/4/4/5/6/7/8/8/9 bonuses. Later cycles increase toward a bounded 110 originals and 14 bonuses, retaining mixed glass tiers. The first five layouts are unchanged.
+Arenas 6–14 now contain 52/56/60/64/68/74/80/86/92 originals with 2–5 distinct bonuses per arena. Later cycles increase toward a bounded 110 originals, retaining mixed glass tiers and the same random 2–5 bonus range. The first five layouts are unchanged.
 
 ## Focused checks
 

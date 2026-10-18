@@ -38,3 +38,14 @@ console.log('PASS shared Split frozen source snapshot and extra-ball Pierce solv
 
 vm.runInContext(code('powerClockRunning'),context);context.gateReady=false;context.state='MISSED';moving.valid=true;assert.equal(context.powerClockRunning(),true);context.state='REPOSITION';assert.equal(context.powerClockRunning(),true);moving.transitionParked=true;assert.equal(context.powerClockRunning(),false);context.state='TRANSITION';assert.equal(context.powerClockRunning(),false);
 console.log('PASS shared power clock advances during main respawn while extras play');
+// Diagnostic scenes and their previews must provide finite full cube dimensions.
+const {shellGeometry,wallThickness}=await import('../src/glass-shell.js');
+context.C.cube=.88;context.layoutZ=z=>z;context.qaPower='split';vm.runInContext(source.split('\n').find(line=>line.startsWith('function sectionBlocks(')),context);
+for(const kind of Object.keys(BONUS_DEFS)){context.qaPower=kind;const specs=context.sectionBlocks(1);assert.equal(specs.length,6);for(const spec of specs){assert(spec.slice(4,7).every(Number.isFinite));const g=shellGeometry(...spec.slice(4,7),wallThickness(spec[3]));assert([...g.attributes.position.array].every(Number.isFinite));g.dispose();}}
+assert.throws(()=>shellGeometry(undefined,.88,.88,.025),RangeError);
+console.log('PASS all eight diagnostic scenes build valid actual glass preview geometry');
+const {setArenaRunSeed,arenaDefinition,arenaBlocks}=await import('../src/arena-data.js');
+for(const seed of [1,123,987654]){setArenaRunSeed(seed);for(const level of [1,2,3,4,5,14,15,40]){const a=arenaDefinition(level),again=arenaDefinition(level);assert.deepEqual(a,again);const count=a.bonuses.length;assert.equal(new Set(a.bonuses).size,count);if(level===1)assert.equal(count,1);else if(level<=3)assert.equal(count,2);else assert(count>=2&&count<=5);const specs=arenaBlocks(level);assert.equal(specs.filter(s=>s[7]).length,count);}}
+console.log('PASS stable per-run arena bonus counts, unique types and matching container metadata');
+let diagnosticDrops=[];context.started=true;context.qaPower='split';context.qaDropSerial=0;context.C.startZ=3;context.bonusWorld={release:origin=>diagnosticDrops.push(origin)};const population=context.secondary.echoes;vm.runInContext(code('dropDiagnosticPower'),context);context.dropDiagnosticPower();context.dropDiagnosticPower();assert.equal(diagnosticDrops.length,2);assert.notEqual(diagnosticDrops[0].id,diagnosticDrops[1].id);assert.equal(diagnosticDrops[0].bonus,'split');assert.equal(context.secondary.echoes,population);context.started=false;context.dropDiagnosticPower();assert.equal(diagnosticDrops.length,2);
+console.log('PASS QA pickup factory preserves live population and uses unique identities');

@@ -10,6 +10,7 @@ export function shellPanels(sx,sy,sz,t){return [
 // A true flat polished bevel: face normals stay planar, bevel normals reflect
 // different softbox directions instead of relying on a painted luminous border.
 export function shellGeometry(sx,sy,sz,t){
+ if(![sx,sy,sz,t].every(n=>Number.isFinite(n)&&n>0)||t*2>=Math.min(sx,sy,sz))throw new RangeError('Glass shell dimensions and wall thickness must be finite, positive and leave an interior.');
  const half=[sx/2,sy/2,sz/2],bevel=Math.min(Math.min(sx,sy,sz)*.09,Math.max(.045,t*.9),t*1.45),points=[];
  for(let axis=0;axis<3;axis++)for(const x of [-1,1])for(const y of [-1,1])for(const z of [-1,1])points.push(new THREE.Vector3(...[x,y,z].map((sign,i)=>sign*(half[i]-(i===axis?0:bevel)))));
  const outer=new ConvexGeometry(points),normals=outer.attributes.normal,pos=outer.attributes.position,uv=[],polish=[];

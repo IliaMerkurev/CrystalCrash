@@ -149,16 +149,48 @@ function selected(level) {
   return { level: n, index, cycle, arena: progression(n, index, ARENAS[index]) };
 }
 
-// Original early lessons remain byte-for-byte the same formations. Thereafter,
+// Early cube formations and tiers stay unchanged. Thereafter,
 // density rises with the actual level, including when the fourteen names repeat.
 // This cap bounds expensive compound shells rather than only their visible cubes.
 const DENSITY = [30, 36, 41, 45, 48, 52, 56, 60, 64, 68, 74, 80, 86, 92];
-const BONUS_DENSITY = [1, 1, 2, 2, 2, 3, 4, 4, 5, 6, 7, 8, 8, 9];
-const BONUS_ORDER = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
+const BONUS_KINDS = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
+let arenaRunSeed = 0x00c57a11;
+
+/** Set once when starting/restarting a run, never while previewing or resizing.
+ * Defaults to a fixed seed for reproducible builds and standalone module tests. */
+export function setArenaRunSeed(seed) {
+  if (!Number.isFinite(seed)) throw new RangeError('Arena run seed must be finite');
+  arenaRunSeed = Math.floor(seed) >>> 0;
+  return arenaRunSeed;
+}
+
+function bonusSchedule(level) {
+  if (level === 1) return ['pulse'];
+  if (level === 2) return ['pulse', 'split'];
+  if (level === 3) return ['split', 'pierce'];
+  // A local PRNG depends only on run seed + absolute level. Metadata, preview,
+  // generation and repeated resize queries never advance shared random state.
+  let state = (arenaRunSeed ^ Math.imul(level >>> 0, 0x9e3779b1)
+    ^ Math.imul(Math.floor(level / 0x100000000), 0x85ebca6b)) >>> 0;
+  const random = () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ state >>> 15, state | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 0x100000000;
+  };
+  const count = 2 + Math.floor(random() * 4), kinds = [...BONUS_KINDS];
+  // Fisher–Yates produces a random subset without repeated types in one arena.
+  for (let i = kinds.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [kinds[i], kinds[j]] = [kinds[j], kinds[i]];
+  }
+  return kinds.slice(0, count);
+}
 
 function progression(level, index, source) {
-  if (level <= 5) return source;
+  if (level === 1) return source;
   const arena = { ...source, stacks: source.stacks.map(([x, row, tiers]) => [x, row, [...tiers]]) };
+  if (level <= 5) return assignBonuses(arena, level);
   // Returning early templates use the whole rear region for their new density,
   // instead of putting the legacy back row between reinforcements and the gate.
   if (level > 14) delete arena.rear;
@@ -166,9 +198,6 @@ function progression(level, index, source) {
     + (arena.rear || []).reduce((sum, [, , height]) => sum + height, 0)
     + Number(!!arena.bridge) + Number(!!arena.core);
   const targetCount = level <= 14 ? DENSITY[index] : Math.min(110, 92 + (level - 14) * 2);
-  const targetBonuses = level <= 14 ? BONUS_DENSITY[index] : Math.min(14, 9 + Math.ceil((level - 14) / 3));
-  const unlocked = level >= 14 ? 8 : level >= 13 ? 7 : level >= 12 ? 6 : level >= 11 ? 5 : 4;
-  const kinds = BONUS_ORDER.slice(0, unlocked);
   const patterns = level < 11
     ? [[1, 2, 1], [2, 1, 3], [1, 3, 1, 2], [2, 1], [1, 2, 1, 4]]
     : [[1, 3, 2, 1], [2, 1, 4], [1, 2, 5, 1], [3, 1, 2], [1, 4, 3, 2, 1]];
@@ -186,19 +215,31 @@ function progression(level, index, source) {
     remaining -= tiers.length; tower++;
   }
   arena.reinforcementBands = bands;
-  let bonusCount = arena.stacks.reduce((sum, [, , tiers]) => sum
-    + tiers.filter(token => String(token).includes(':')).length, 0);
-  // Accessible low T1 containers come first, distributed between the original
-  // approach and rear groups. Never bury a pickup inside a stronger-tier cube.
-  const candidates = [...arena.stacks, ...arena.reinforcements]
-    .flatMap(([, , tiers], order) => tiers.map((token, height) => ({ tiers, height, token, order })))
-    .filter(({ token }) => token === 1)
-    .sort((a, b) => a.height - b.height || a.order - b.order);
-  for (const { tiers, height } of candidates) {
-    if (bonusCount >= targetBonuses) break;
-    tiers[height] = `1:${kinds[(bonusCount + index) % kinds.length]}`;
-    bonusCount++;
+  return assignBonuses(arena, level);
+}
+
+function assignBonuses(arena, level) {
+  const schedule = bonusSchedule(level);
+  const candidates = [];
+  // Retain deliberate foreground container positions before filling other low,
+  // accessible T1 hosts. Each selected kind decorates a distinct original cube;
+  // no random choice changes the geometry, tier, or number of targets.
+  for (const [foreground, groups] of [[true, arena.stacks], [false, arena.reinforcements || []]]) {
+    groups.forEach(([, row, tiers], order) => tiers.forEach((token, height) => {
+      const { type, bonus } = decode(token);
+      if (type !== 0) return;
+      tiers[height] = 1;
+      candidates.push({ tiers, height, row, order, foreground, authored: !!bonus });
+    }));
   }
+  candidates.sort((a, b) => Number(b.authored) - Number(a.authored)
+    || Number(b.foreground) - Number(a.foreground) || a.row - b.row
+    || a.height - b.height || a.order - b.order);
+  if (candidates.length < schedule.length) throw new RangeError('Arena lacks distinct T1 bonus hosts');
+  schedule.forEach((kind, i) => {
+    const { tiers, height } = candidates[i];
+    tiers[height] = `1:${kind}`;
+  });
   return arena;
 }
 
@@ -209,7 +250,8 @@ function decode(token) {
 
 /** Returns fresh metadata. tierCounts is ordered T1..T5; bonuses use the host effect IDs.
  * Repeated names retain their authored foreground; added mixed-tier groups and
- * pickup counts grow to a bounded 110-original / 14-pickup late-game budget.
+ * density grows to a bounded 110 originals. Bonus counts are 1/2/2, then
+ * seeded random 2–5 distinct types on every subsequent level and repeat.
  */
 export function arenaDefinition(level) {
   const { level: n, index, cycle, arena } = selected(level);
