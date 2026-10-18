@@ -1,7 +1,7 @@
-// Deterministic camera translation only. Apply these ABSOLUTE offsets after the
-// normal aim pose, to both camera position and look-at target (no yaw/rotation).
-// Positive zoom is an inward distance fraction. Pause by supplying dt = 0.
-export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, zoom: .075 });
+// Deterministic camera feedback. Apply ABSOLUTE translation to the normal aim
+// position and target; blend the target with focus and subtract fovZoom degrees
+// from base FOV. Black Hole never dollies the camera. Pause with dt = 0.
+export const CAMERA_FX_LIMITS = Object.freeze({ x: .42, y: .28, z: .18, translation: .5, fovZoom: 6, focusSeconds: .4 });
 
 const TAU = Math.PI * 2;
 const clamp01 = value => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
@@ -15,7 +15,7 @@ const envelope = (age, duration, attack) => {
 export class CameraFX {
  constructor() {
   // Reuse this result object; update never allocates geometry or per-frame arrays.
-  this.offsets = { x: 0, y: 0, z: 0, zoom: 0 };
+  this.offsets = { x: 0, y: 0, z: 0, focus: 0, fovZoom: 0 };
   this.reset();
  }
  reset() {
@@ -25,10 +25,11 @@ export class CameraFX {
   this.lastPulseAt = -Infinity;
   this.pulseTokens = 2;
   this.wind = 0;
-  this.zoom = 0;
+  this.focusPhase = 0;
+  this.fovZoom = 0;
   this.transition = false;
   this.visibility = 1;
-  this.offsets.x = this.offsets.y = this.offsets.z = this.offsets.zoom = 0;
+  this.offsets.x = this.offsets.y = this.offsets.z = this.offsets.focus = this.offsets.fovZoom = 0;
   return this.offsets;
  }
  pulse() {
@@ -45,7 +46,7 @@ export class CameraFX {
   this.bombAge = 0; // Replace the transient; repeated bombs never add amplitude.
   return true;
  }
- update(dt, { tornadoIntensity = 0, blackHoleIntensity = 0, reducedMotion = false, transition = false } = {}) {
+ update(dt, { tornadoIntensity = 0, blackHoleIntensity = 0, blackHoleActive = false, reducedMotion = false, transition = false } = {}) {
   // A paused frame is an exact freeze, even if incoming effect flags changed.
   if (!Number.isFinite(dt) || dt <= 0) return this.offsets;
   this.time += dt;
@@ -56,10 +57,17 @@ export class CameraFX {
   this.visibility = approach(this.visibility, transition ? 0 : 1, dt, transition ? .16 : .35);
   const windTarget = transition ? 0 : clamp01(tornadoIntensity);
   this.wind = approach(this.wind, windTarget, dt, windTarget > this.wind ? .65 : .9);
-  const zoomTarget = transition ? 0 : CAMERA_FX_LIMITS.zoom * clamp01(blackHoleIntensity);
-  this.zoom = approach(this.zoom, zoomTarget, dt, zoomTarget > this.zoom ? .7 : .85);
+  const focusActive = !!blackHoleActive && !transition;
+  this.focusPhase = focusActive
+   ? Math.min(1, this.focusPhase + dt / CAMERA_FX_LIMITS.focusSeconds)
+   : Math.max(0, this.focusPhase - dt / .65);
+  // First establish the subject, then narrow the lens. An active hole can focus
+  // immediately even while its force/intensity is still zero during startup.
+  const zoomTarget = focusActive && this.focusPhase >= 1
+   ? CAMERA_FX_LIMITS.fovZoom * clamp01(blackHoleIntensity) : 0;
+  this.fovZoom = approach(this.fovZoom, zoomTarget, dt, zoomTarget > this.fovZoom ? .7 : .85);
   if (this.wind < 1e-6 && windTarget === 0) this.wind = 0;
-  if (this.zoom < 1e-6 && zoomTarget === 0) this.zoom = 0;
+  if (this.fovZoom < 1e-4 && zoomTarget === 0) this.fovZoom = 0;
 
   const t = this.time, pulse = envelope(this.pulseAge, .19, .018), bomb = envelope(this.bombAge, 1.05, .025);
   // Fixed frequencies, not frame-random noise. The wind's 0.09–0.21 Hz movement
@@ -81,7 +89,9 @@ export class CameraFX {
   this.offsets.x = x * scale || 0;
   this.offsets.y = y * scale || 0;
   this.offsets.z = z * scale || 0;
-  this.offsets.zoom = this.zoom * this.visibility * (reducedMotion ? .12 : 1) || 0;
+  this.offsets.focus = this.focusPhase * this.focusPhase * (3 - 2 * this.focusPhase)
+   * this.visibility * (reducedMotion ? .12 : 1) || 0;
+  this.offsets.fovZoom = this.fovZoom * this.visibility * (reducedMotion ? .12 : 1) || 0;
   return this.offsets;
  }
 }

@@ -61,8 +61,10 @@ Polished chamfers, tinted transparent surfaces, procedural normal detail, an emb
 
 Following owner approval, focused controller dispatch, Rapier secondary-effect, particle lifecycle, pooled feedback and early-arena layout checks passed. Browser rendering and device-performance validation remain pending; these logic checks do not establish visual or full gameplay acceptance.
 
-Work is on `prototype/0.3`. Main remains the approved prior version until an explicit merge request. Important iterations are committed and pushed, and every deployment reuses the same public Site. Keep caches, recordings and test artifacts outside Git.
+Work is on `prototype/0.4`. Main remains the approved prior version until an explicit merge request. Important iterations are committed and pushed, and every deployment reuses the same public Site. Keep caches, recordings and test artifacts outside Git.
 
 Contained powers use a dense 32-particle sun and layered additive sprites, without an embedded pickup model. Destruction removes the sun, grows the pickup over 0.38 seconds, and retains 16 smaller attached orbit particles. Each power has pooled world feedback and a distinct synthesized sound. The default lower-zone ball position projects near 64% screen height.
 
 Camera feedback uses bounded, deterministic translation: short Pulse impacts, a decaying Bomb shake, slow Tornado wind sway, and a slight progressive Black Hole zoom. Pause freezes the effect clock; restart clears offsets. The lens copies display-encoded RGBA8 without a second color transform. QA routes support `lens=off` and `lens=identity` for comparison.
+
+Black Hole now uses a 6.6-ball-diameter radius, focuses the fixed-position camera over 0.4 seconds, then narrows FOV by up to 6 degrees. All free balls smoothly run at 45% motion speed while cubes retain normal simulation time. Logical velocities are converted only around each Rapier step, preserving post-collision responses and external impulses; held and parked balls are excluded. The one-second lower-zone catch window stays in real simulation seconds. BONUS TEST opens the same diagnostic menu as Q, and FULLSCREEN uses the browser-supported API with an explicit unsupported fallback.

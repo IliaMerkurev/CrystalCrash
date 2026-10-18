@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+assert(html.includes('id="bonus-test"'));assert(html.includes('id="fullscreen"'));assert(html.includes('Collected powers activate immediately'));
+const start=source.indexOf('function setupFullscreen()'),end=source.indexOf('\nfunction ',start+10);let requests=0,exits=0,cancels=0;const notices=[],events={},button={setAttribute(k,v){this[k]=v;}},controls={addEventListener(k,fn){events[k]=fn;}};
+const document={documentElement:{async requestFullscreen(){requests++;document.fullscreenElement=this;}},fullscreenElement:null,async exitFullscreen(){exits++;this.fullscreenElement=null;},querySelector:()=>controls,addEventListener(k,fn){events[k]=fn;}};
+const context={document,$:()=>button,cancelDrag(){cancels++;},tell:m=>notices.push(m)};vm.createContext(context);vm.runInContext(source.slice(start,end),context);context.setupFullscreen();
+await button.onclick();assert.equal(requests,1);assert.equal(button.textContent,'EXIT FULLSCREEN');assert.equal(button['aria-pressed'],'true');await button.onclick();assert.equal(exits,1);assert.equal(button.textContent,'FULLSCREEN');
+delete document.documentElement.requestFullscreen;await button.onclick();assert(notices.at(-1).includes('not available'));assert.equal(button['aria-pressed'],'false');let stopped=false;events.pointerdown({stopPropagation(){stopped=true;}});assert(stopped);assert.equal(cancels,3);
+console.log('PASS visible test/fullscreen controls, trusted-click API toggle, unsupported fallback and pointer isolation');

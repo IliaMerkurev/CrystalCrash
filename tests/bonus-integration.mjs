@@ -72,3 +72,6 @@ assert(context.powers.has('pulse')&&context.powers.has('pierce')&&context.powers
 context.activatePickup(context.powers.collect('gravity'),pickupPoint,{id:321});assert.equal(instantWell[0],pickupPoint);assert(context.powers.has('pulse')&&context.powers.has('pierce'));
 const combined=context.powers.consumeDirect(context.powers.capture(),444,0);assert.equal(combined.damage,8);assert(combined.pierced);assert(combined.effects.some(e=>e.kind==='pulse'));assert(!source.includes('powers.halo'));
 console.log('PASS immediate collector-position Split/Tornado dispatch, concurrent Pulse/Pierce and immediate collision-mask refresh; no Halo rescue');
+blocks.clear();block(80,0,.44,-10);block(81,0,.44,-12);block(82,0,.44,-24);block(83,0,1.5,-1);
+const fallback=context.chainedGroundTargets(new THREE.Vector3(0,.44,0),new Set(),3.344);assert.deepEqual(Array.from(fallback,t=>t.o.origin.id),[80,81]);assert.equal(fallback[0].from.z,0);assert.equal(fallback[1].from.z,-10);blocks.clear();assert.equal(context.chainedGroundTargets(new THREE.Vector3(),new Set(),3.344).length,0);
+console.log('PASS Arc first-link nearest-ground fallback, later gap still stops, empty arena safe');

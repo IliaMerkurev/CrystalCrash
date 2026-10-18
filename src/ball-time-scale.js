@@ -1,0 +1,79 @@
+// Selective time dilation around ONE shared Rapier step. Between calls, velocity,
+// force and torque stay in logical (normal-time) units for gameplay and impulses.
+// The world's timestep, cubes, and all unlisted bodies remain untouched.
+const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+const vector = value => ({ x: value.x, y: value.y, z: value.z });
+const scaled = (value, factor) => ({ x: value.x * factor, y: value.y * factor, z: value.z * factor });
+
+export class BallTimeScale {
+  constructor({ minimumScale = .45, attack = .25, release = .4 } = {}) {
+    this.minimumScale = Math.min(1, Math.max(.05, finite(minimumScale, .45)));
+    this.attack = Math.max(.001, finite(attack, .25));
+    this.release = Math.max(.001, finite(release, .4));
+    this.scale = 1;
+    this._pending = [];
+  }
+
+  // bodies must exclude held, parked, staged, or otherwise externally controlled
+  // balls. Call AFTER game forces are applied and BEFORE world.step(), with no
+  // gameplay callbacks between this and afterStep(). New split balls need only
+  // appear in this list; no per-body history or birth registration is necessary.
+  beforeStep(dt, bodies, intensity = 0) {
+    // Never accumulate scaling if a caller accidentally missed its prior restore.
+    this.afterStep();
+    dt = Math.max(0, finite(dt, 0));
+    if (!dt) return this.scale; // pause preserves the envelope and body properties
+    const amount = Math.min(1, Math.max(0, finite(intensity, 0)));
+    const target = 1 - (1 - this.minimumScale) * amount;
+    const tau = target < this.scale ? this.attack : this.release;
+    this.scale += (target - this.scale) * -Math.expm1(-dt / tau);
+    if (Math.abs(this.scale - target) < 1e-6) this.scale = target;
+    const s = this.scale;
+    if (s === 1) return s;
+    const seen = new Set();
+    for (const body of bodies ?? []) {
+      if (!body || seen.has(body.handle) || !body.isValid() || !body.isDynamic()) continue;
+      seen.add(body.handle);
+      const state = {
+        body, scale: s, gravity: body.gravityScale(),
+        linearDamping: body.linearDamping(), angularDamping: body.angularDamping(),
+        force: vector(body.userForce()), torque: vector(body.userTorque()),
+      };
+      this._pending.push(state);
+      body.setLinvel(scaled(body.linvel(), s), false);
+      body.setAngvel(scaled(body.angvel(), s), false);
+      body.setGravityScale(state.gravity * s * s, false);
+      body.setLinearDamping(state.linearDamping * s);
+      body.setAngularDamping(state.angularDamping * s);
+      body.resetForces(false);
+      body.addForce(scaled(state.force, s * s), false);
+      body.resetTorques(false);
+      body.addTorque(scaled(state.torque, s * s), false);
+    }
+    return s;
+  }
+
+  afterStep() {
+    for (const state of this._pending) {
+      const { body, scale } = state;
+      if (!body.isValid()) continue;
+      // Crucially restore from the solver's NEW velocities, never a pre-step
+      // snapshot: collision bounce, friction, forces and gravity are preserved.
+      body.setLinvel(scaled(body.linvel(), 1 / scale), false);
+      body.setAngvel(scaled(body.angvel(), 1 / scale), false);
+      body.setGravityScale(state.gravity, false);
+      body.setLinearDamping(state.linearDamping);
+      body.setAngularDamping(state.angularDamping);
+      body.resetForces(false);
+      body.addForce(state.force, false);
+      body.resetTorques(false);
+      body.addTorque(state.torque, false);
+    }
+    this._pending.length = 0;
+  }
+
+  reset() {
+    this.afterStep();
+    this.scale = 1;
+  }
+}
