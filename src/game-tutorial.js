@@ -20,7 +20,7 @@ export function projectTutorialPoint(point,camera,viewport,sceneOffset=0){
 }
 export class GameTutorial {
  constructor({document:doc=globalThis.document,storage,root,project=projectTutorialPoint}={}){
-  this.doc=doc;this.project=project;this.context=null;this.index=0;this.done=new Set();this.seenBonuses=new Set();this.bonusQueue=[];this.bonusTime=new Map();this.visible=false;
+  this.doc=doc;this.project=project;this.context=null;this.index=0;this.done=new Set();this.seenBonuses=new Set();this.bonusQueue=[];this.bonusTime=new Map();this.visible=false;this.chargeCueAge=0;
   try{this.storage=storage===undefined?globalThis.localStorage:storage;const raw=this.storage?.getItem(TUTORIAL_STORAGE_KEY);const saved=JSON.parse(raw||'0');if(typeof saved==='number'&&Number.isInteger(saved)&&saved>=0&&saved<=LEGACY_TUTORIAL_STEPS.length){for(const action of LEGACY_TUTORIAL_STEPS.slice(0,saved))this.done.add(action);}else if(Array.isArray(saved?.done)){for(const action of saved.done)if(TUTORIAL_STEPS.includes(action))this.done.add(action);}if(Array.isArray(saved?.bonuses))for(const kind of saved.bonuses)if(TUTORIAL_BONUSES[kind])this.seenBonuses.add(kind);this.index=this.done.size;}catch{}
   if(!doc)return;
   this.style=doc.createElement('style');this.style.textContent=`
@@ -76,11 +76,12 @@ export class GameTutorial {
   this.element.appendChild(this.pointer);(root||doc.body).appendChild(this.element);
  }
  get step(){return TUTORIAL_STEPS.find(step=>!this.done.has(step))||'done';}
- get chargeUnlocked(){return this.done.has('release')&&this.done.has('attract');}
+ get chargeUnlocked(){return true;}
+ chargeCue(dt,fullPull){if(!this.chargeUnlocked||this.done.has('charged')||!fullPull)return false;this.chargeCueAge+=Math.max(0,Math.min(dt||0,.1));if(this.chargeCueAge>=2.5){this.done.add('charged');this.index=this.done.size;this.persist();return false;}return true;}
  get controlsCompleted(){return this.index>=TUTORIAL_STEPS.length;}
  get completed(){return this.controlsCompleted&&this.seenBonuses.size===Object.keys(TUTORIAL_BONUSES).length;}
  persist(){try{this.storage?.setItem(TUTORIAL_STORAGE_KEY,JSON.stringify({done:[...this.done],bonuses:[...this.seenBonuses]}));}catch{}}
- replay(){this.done.clear();this.seenBonuses.clear();this.bonusQueue=[];this.bonusTime.clear();this.index=0;this.persist();this.hide();}
+ replay(){this.chargeCueAge=0;this.done.clear();this.seenBonuses.clear();this.bonusQueue=[];this.bonusTime.clear();this.index=0;this.persist();this.hide();}
  hide(){this.visible=false;if(this.element)this.element.hidden=true;}
  active(c){return !!c?.started&&!c.paused&&!c.menu&&!c.test&&!['READY','TRANSITION'].includes(c.state)&&(c.state!=='REPOSITION'||!!c.drag?.echo);}
  /** Pass context overrides when the action changes state before the next render. */
@@ -99,7 +100,6 @@ export class GameTutorial {
   const candidates=[];const add=(step,point,label=LABELS[step])=>{if(point&&!this.done.has(step))candidates.push({step,point,label});};
   // Active control gestures and the unlocked exit always take precedence.
   if(c.state!=='REPOSITION'&&c.gateReady){if(c.gateOpen)add('gate',c.gatePoint);else if(!this.done.has('gate'))candidates.push({step:'gateBreak',point:c.gatePoint,label:'Break the glass gate'});}
-  if(this.chargeUnlocked&&c.drag?.mode==='aim'&&!this.done.has('charged')){const point=c.drag.echo?(c.extraPoints||[]).find(e=>e.id===c.drag.echo.b?.handle)?.point:c.mainPoint;const q=c.charge||{};add('charged',point,!q.fullPull?'PULL FULL':q.window?'RELEASE IN ×2 SECTOR':q.state==='spent'?'EASE BACK, THEN PULL FULL':'HOLD · RELEASE IN ×2 SECTOR');}
   if(c.drag?.echo){
    const activeId=c.activeExtraId??c.drag.echo.b?.handle;const heldCandidates=(c.extraPoints||[]).filter(e=>e.isHeld&&!e.parked&&!e.staged);const held=activeId!==undefined?heldCandidates.find(e=>e.id===activeId):(heldCandidates.length===1?heldCandidates[0]:null);add('extraRelease',held?.point);
   }else{

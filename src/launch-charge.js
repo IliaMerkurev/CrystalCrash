@@ -75,6 +75,7 @@ const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
  * Small, pointer-transparent timing dial. x/y are the ball's viewport CSS pixels;
  * width/height are viewport bounds. update() uses the game's unscaled frame dt.
  * render(snapshot, {visible:false}) hides only the dial; hide() clears success FX.
+ * The caller owns first-use hint timing; render(..., {hint:true}) only displays it.
  */
 export class LaunchChargeMeter {
   constructor(parent = globalThis.document?.body) {
@@ -108,6 +109,7 @@ export class LaunchChargeMeter {
     });
     const svg = make('svg', { viewBox: '0 0 160 108', width: '100%', height: '100%', 'aria-hidden': 'true' });
     svg.style.display = 'block';
+    svg.style.overflow = 'visible';
     svg.appendChild(make('path', { d: 'M 20 78 A 60 60 0 0 1 140 78', fill: 'none', stroke: '#2e475b', 'stroke-width': 7, 'stroke-linecap': 'round' }));
     this.sector = make('path', { fill: 'none', stroke: '#69efbc', 'stroke-width': 9 });
     svg.appendChild(this.sector);
@@ -128,6 +130,14 @@ export class LaunchChargeMeter {
     svg.appendChild(make('circle', { cx: 80, cy: 78, r: 4, fill: '#f2faff' }));
     this.label = text('TIMED LAUNCH', { x: 80, y: 100, fill: '#e9f7ff', 'font-size': 13, 'font-weight': 700, 'letter-spacing': '.2', 'text-anchor': 'middle' });
     svg.appendChild(this.label);
+    this.hintElement = make('g', { class: 'launch-charge-hint' });
+    Object.assign(this.hintElement.style, { display: 'none', pointerEvents: 'none' });
+    this.hintElement.appendChild(make('rect', { x: 0, y: -26, width: 160, height: 21, rx: 6, fill: '#123a30', stroke: '#69efbc', 'stroke-width': 1 }));
+    this.hintText = text('RELEASE IN ×2 SECTOR', { x: 80, y: -12, fill: '#d9ffe9', 'font-size': 10.5, 'font-weight': 700, 'text-anchor': 'middle' });
+    this.hintElement.appendChild(this.hintText);
+    this.hintPointer = make('path', { fill: 'none', stroke: '#69efbc', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+    this.hintElement.appendChild(this.hintPointer);
+    svg.appendChild(this.hintElement);
     this.element.appendChild(svg);
     parent.appendChild(this.element);
 
@@ -147,7 +157,7 @@ export class LaunchChargeMeter {
     parent.appendChild(this.successElement);
   }
 
-  render(snapshot, { x, y, width, height, visible = true, realDt } = {}) {
+  render(snapshot, { x, y, width, height, visible = true, hint = false, realDt } = {}) {
     if (realDt !== undefined) this.update(realDt);
     if (!this.element) return;
     const view = this.document.defaultView ?? globalThis;
@@ -164,21 +174,27 @@ export class LaunchChargeMeter {
       this.bonusLabel.setAttribute('x', String(80 + Math.cos(middleAngle) * 38));
       this.bonusLabel.setAttribute('y', String(83 - Math.sin(middleAngle) * 38));
       this.timingLabel.textContent = `${windowStart.toFixed(2)}–${windowEnd.toFixed(2)} s`;
+      const sectorX = 80 + Math.cos(middleAngle) * 60;
+      const sectorY = 78 - Math.sin(middleAngle) * 60;
+      this.hintPointer.setAttribute('d', `M 148 -5 Q 150 18 ${sectorX} ${sectorY} M ${sectorX + 4} ${sectorY - 4} L ${sectorX} ${sectorY} L ${sectorX + 5} ${sectorY + 2}`);
       this.renderedWindowStart = windowStart;
       this.renderedWindowEnd = windowEnd;
     }
+    const showHint = Boolean(hint && visible && snapshot?.fullPull);
+    this.hintElement.style.display = showHint ? 'block' : 'none';
     if (!visible || !snapshot?.fullPull) { this.element.style.display = 'none'; return; }
 
     // Normal phone width: about 132px. Never cover the whole screen on resize.
-    const meterWidth = Math.min(clamp(viewportWidth * .34, 128, 152), viewportWidth - 16, (viewportHeight - 16) * 160 / 108);
-    if (meterWidth < 40) { this.element.style.display = 'none'; return; }
+    const meterWidth = Math.min(clamp(viewportWidth * .34, 128, 152), viewportWidth - 16, (viewportHeight - 16) * 160 / (showHint ? 136 : 108));
+    if (meterWidth < 40) { this.element.style.display = 'none'; this.hintElement.style.display = 'none'; return; }
     const meterHeight = meterWidth * 108 / 160;
     const ballX = finite(x, viewportWidth / 2), sideGap = 28;
     const fitsRight = ballX + sideGap + meterWidth <= viewportWidth - 8;
     const fitsLeft = ballX - sideGap - meterWidth >= 8;
     const placeRight = fitsRight || (!fitsLeft && ballX <= viewportWidth / 2);
     const left = clamp(placeRight ? ballX + sideGap : ballX - sideGap - meterWidth, 8, viewportWidth - meterWidth - 8);
-    const top = clamp(finite(y, viewportHeight / 2) - meterHeight - 38, 8, viewportHeight - meterHeight - 8);
+    const minTop = 8 + (showHint ? 28 * meterWidth / 160 : 0);
+    const top = clamp(finite(y, viewportHeight / 2) - meterHeight - 38, minTop, viewportHeight - meterHeight - 8);
     Object.assign(this.element.style, { display: 'block', width: `${meterWidth}px`, height: `${meterHeight}px`, left: `${left}px`, top: `${top}px` });
     const progress = clamp(finite(snapshot.progress, 0), 0, 1);
     const angle = Math.PI * (1 - progress);
@@ -197,6 +213,7 @@ export class LaunchChargeMeter {
 
   hide() {
     if (this.element) this.element.style.display = 'none';
+    if (this.hintElement) this.hintElement.style.display = 'none';
     if (this.successElement) this.successElement.style.display = 'none';
     this.successRemaining = 0;
   }

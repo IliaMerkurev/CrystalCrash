@@ -363,6 +363,53 @@ test('dial sector, bonus marker and label use the chosen window from the first f
   meter.dispose();
 });
 
+test('optional sector hint requires a visible full-pull dial and follows the selected sector', () => {
+  const document = fakeDOM();
+  const meter = new LaunchChargeMeter(document.body);
+  const charge = fixedCharge();
+  const point = { x: 200, y: 700, width: 390, height: 844 };
+  assert.equal(meter.hintElement.style.display, 'none');
+  assert.equal(meter.hintElement.style.pointerEvents, 'none');
+  assert.equal(meter.hintText.textContent, 'RELEASE IN ×2 SECTOR');
+  meter.render(charge.snapshot(), { ...point, hint: true });
+  assert.equal(meter.hintElement.style.display, 'none');
+  charge.setPull(14);
+  meter.render(charge.snapshot(), { ...point, hint: true });
+  assert.equal(meter.hintElement.style.display, 'none');
+  charge.setPull(15);
+  meter.render(charge.snapshot(), point);
+  assert.equal(meter.hintElement.style.display, 'none', 'default false leaves hint ownership with the caller');
+  meter.render(charge.snapshot(), { ...point, hint: true });
+  assert.equal(meter.hintElement.style.display, 'block');
+  const firstPointer = meter.hintPointer.attributes.d;
+  for (const unit of [0, .5, 1]) {
+    const snapshot = fixedCharge(unit).setPull(15);
+    meter.render(snapshot, { ...point, hint: true });
+    const coords = meter.hintPointer.attributes.d.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi).map(Number);
+    const angle = Math.PI * (1 - (snapshot.windowStart + snapshot.windowEnd) / 4);
+    near(coords[4], 80 + Math.cos(angle) * 60);
+    near(coords[5], 78 - Math.sin(angle) * 60);
+  }
+  assert.notEqual(meter.hintPointer.attributes.d, firstPointer);
+  meter.render(charge.snapshot(), { ...point, hint: true, visible: false });
+  assert.equal(meter.hintElement.style.display, 'none');
+  meter.render(charge.snapshot(), { ...point, hint: true });
+  meter.render(charge.snapshot(), point);
+  assert.equal(meter.hintElement.style.display, 'none');
+  meter.render(charge.snapshot(), { ...point, y: -100, hint: true });
+  const scale = parseFloat(meter.element.style.width) / 160;
+  assert.ok(parseFloat(meter.element.style.top) - 26 * scale >= 8, 'hint stays inside the viewport above the dial');
+  charge.setPull(14.54);
+  meter.render(charge.snapshot(), { ...point, hint: true });
+  assert.equal(meter.hintElement.style.display, 'none');
+  charge.setPull(15);
+  meter.render(charge.snapshot(), { ...point, hint: true });
+  meter.hide();
+  assert.equal(meter.hintElement.style.display, 'none');
+  meter.dispose();
+  assert.equal(document.body.children.length, 0);
+});
+
 test('success glow is small, non-interactive and bounded by supplied active time', () => {
   const document = fakeDOM();
   const meter = new LaunchChargeMeter(document.body);

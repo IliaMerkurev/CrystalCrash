@@ -24,7 +24,7 @@ test('launch guidance has a visible press, pull-back, hand-lift and launch loop'
  assert.equal(tutorial.done.size,0,'illustrative animations never complete a gameplay step');
 });
 
-test('initial aim and release cues teach normal launch before charge unlock',()=>{
+test('initial aim and release cues teach the basic launch gesture',()=>{
  const tutorial=make();tutorial.update({...base,state:'AIMING',drag:{mode:'aim'}});
  assert.equal(tutorial.displayStep,'aim');assert.equal(tutorial.detail.textContent,'Pull back, then release');
  assert.equal(tutorial.notify('aim'),true);tutorial.update({...base,state:'AIMING',drag:{mode:'aim'}});
@@ -102,6 +102,6 @@ test('animated overlays remain input-through, reduced-motion aware and within th
  tutorial.update({...attracting,paused:true});assert.equal(tutorial.visible,false);
 });
 
-test('charge unlock requires launch and stationary HOLD; replay relocks without needing HOLD MOVE',()=>{const t=make();assert.equal(t.chargeUnlocked,false);t.done.add('release');assert.equal(t.chargeUnlocked,false);t.done.add('attract');assert.equal(t.chargeUnlocked,true);assert.equal(t.done.has('attractMove'),false);t.replay();assert.equal(t.chargeUnlocked,false);});
+test('full-pull charge is available from the first shot and after replay',()=>{const t=make();assert.equal(t.chargeUnlocked,true);t.replay();assert.equal(t.chargeUnlocked,true);});
 
-test('charged lesson follows basics and progresses full pull / hold / release only on a successful timed shot',()=>{const t=make();t.done.add('release');t.done.add('attract');const context={...base,state:'AIMING',drag:{mode:'aim'},charge:{fullPull:false}};t.update(context);assert.equal(t.displayStep,'charged');assert.equal(t.label.textContent,'PULL FULL');assert.equal(t.notify('charged'),false);t.update({...context,charge:{fullPull:true,state:'charging'}});assert.match(t.label.textContent,/HOLD/);t.update({...context,charge:{fullPull:true,state:'window',window:true}});assert.equal(t.label.textContent,'RELEASE IN ×2 SECTOR');assert.equal(t.notify('charged',{chargedSuccess:true}),true);t.replay();assert.equal(t.chargeUnlocked,false);});
+test('first full pull shows a brief meter cue without pre-full tutorial sequence',()=>{const t=make();assert.equal(t.chargeCue(.1,true),true);assert.equal(t.chargeCue(.1,false),false);assert.equal(t.chargeCue(.1,true),true);t.update({...base,state:'AIMING',drag:{mode:'aim'},charge:{fullPull:false}});assert.notEqual(t.displayStep,'charged');for(let i=0;i<30;i++)t.chargeCue(.1,true);assert.equal(t.chargeCue(.1,true),false);assert(t.done.has('charged'));t.replay();assert.equal(t.chargeUnlocked,true);assert.equal(t.chargeCueAge,0);});
