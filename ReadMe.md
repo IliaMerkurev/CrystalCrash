@@ -195,3 +195,5 @@ Preview lighting budget correction: four continuous unshadowed area lights cover
 Transition consistency: the cool directional light target now moves with the arena, keeping its lighting direction constant after travel; reset stale gate instructions on next section. ?qa=transition&transitionSpeed=0.1 slows only gate-wave/camera-travel diagnostics to one tenth speed; normal play unchanged.
 
 Aim-camera comfort revision: fixed centered pose, no lateral movement, shot-direction yaw or off-center ball tracking. Camera moves 25% closer and 30% lower with the same gentle FOV reduction; aim-time shake is suppressed. Frozen gesture projection and smooth return retained.
+
+Section progress: both neon rails fill green from the lower edge to the gate based on removed original shell area, including partial chipping. Progress is monotonic and resets per arena; preview decks remain orange. The unlocked gate uses a green emissive pulse. Shared shader uniforms avoid per-frame mesh/material rebuilds. Aim pose is lower and more forward-looking, still centered without yaw tracking.
