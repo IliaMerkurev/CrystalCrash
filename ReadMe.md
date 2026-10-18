@@ -165,3 +165,7 @@ With sorting and rail alignment visually verified, the final focused pass keeps 
 ## Regression fixes 28
 
 Restores clean single-sample 512px floor reflections and the earlier floor coat, removing multi-image blur ghosting. Portrait boundaries now follow one straight taper with matching floor and walls. Remaining broken glass has a separate non-emissive material instead of reusing the intact face-edge mask. Detached debris no longer uses transmission or shadows; its materials are retained for reuse, mesh shader variants warm before PLAY, and fracture cell geometry is cached at section creation. These address identified hit-time costs; real-device timing still needs comparison.
+
+## Follow-up visual candidate 29
+
+Startup waits for the reflection environment before shader warmup. A narrow edge-mask-supported grazing highlight is view-dependent; face opacity is unchanged. Damaged structures share the intact diffuse/specular balance without UV border emission. Upper spawns clamp whole rotated cube bounds away from straight tapered rails, preserving stack counts. Current PCF shadow mode replaces the deprecated alias.
