@@ -99,7 +99,22 @@ export class PowerFX {
       blending:THREE.AdditiveBlending,toneMapped:false,
     }));
     this.blackHoleHalo.renderOrder=7;this.blackHoleRoot.add(this.blackHoleHalo);
-    this.blackHoleParticles=new THREE.InstancedMesh(fireGeometry,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.7,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false}),36);
+    const streamGeometry=fireGeometry.clone();
+    this.blackHoleStreamAlpha=new THREE.InstancedBufferAttribute(new Float32Array(36),1).setUsage(THREE.DynamicDrawUsage);
+    streamGeometry.setAttribute('fxAlpha',this.blackHoleStreamAlpha);
+    const streamMaterial=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.85,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false});
+    streamMaterial.onBeforeCompile=material.onBeforeCompile;
+    streamMaterial.customProgramCacheKey=material.customProgramCacheKey;
+    this.blackHoleParticles=new THREE.InstancedMesh(streamGeometry,streamMaterial,36);
+    this.blackHoleStreamPhase=new Float64Array(36);
+    this.blackHoleStreamDirections=[];
+    this.blackHoleLastAge=null;
+    for(let i=0;i<36;i++){
+      // Fixed spherical lanes, kept vertically bounded above the arena floor.
+      const y=.5*(1-2*(i+.5)/36),a=i*2.399963,r=Math.sqrt(1-y*y);
+      this.blackHoleStreamDirections.push(new THREE.Vector3(Math.cos(a)*r,y,Math.sin(a)*r));
+      this.blackHoleStreamPhase[i]=i/36;
+    }
     this.blackHoleParticles.frustumCulled=false;
     this.blackHoleParticles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     for(let i=0;i<36;i++)this.blackHoleParticles.setColorAt(i,this.color.setHex(i%3===0?0xffa54b:(BONUS_DEFS.blackhole?.color ?? 0x8878ff)));
@@ -196,7 +211,7 @@ export class PowerFX {
   /** Main owns the scene-color lens pass; this pool only draws physical visuals.
    * Pass current simulation state each step. null immediately hides everything. */
   syncBlackHole(state) {
-    if(!state?.point){this.blackHoleRoot.visible=false;return;}
+    if(!state?.point){this.blackHoleRoot.visible=false;this.blackHoleLastAge=null;return;}
     this.blackHoleRoot.visible=true;this.blackHoleRoot.position.copy(state.point);
     const intensity=Math.max(0,Math.min(1,state.intensity||0));
     const age=Number.isFinite(state.age)?state.age:this.time;
@@ -206,26 +221,37 @@ export class PowerFX {
     for(let i=0;i<3;i++) {
       const ring=this.blackHoleRings[i];
       ring.scale.setScalar(core*(2.05+i*.53));
-      // A stable inclined disk keeps its projected minor axis outside the core.
-      // Small precession changes its tilt without periodically turning edge-on.
-      ring.rotation.set(-.83+i*.13,.12*Math.sin(age*.6+i),.12*Math.sin(age*.35+i));
+      // Static inclined accretion rim; only its light flickers, never its orbit.
+      ring.rotation.set(-.83+i*.13,.06*(i-1),.04*i);
       ring.position.y=(i-1)*core*.12;
-      ring.material.opacity=.3+intensity*(.62-i*.1);
+      ring.material.opacity=(.3+intensity*(.62-i*.1))*(.96+.04*Math.sin(age*11+i*2));
     }
     this.blackHoleHalo.scale.set(core*3.65,core*3.05,core*3.65);
-    this.blackHoleHalo.rotation.set(-.9,.08*Math.sin(age*.45),.12);
-    this.blackHoleHalo.material.opacity=.07+intensity*.18;
+    this.blackHoleHalo.rotation.set(-.9,0,.12);
+    this.blackHoleHalo.material.opacity=(.035+intensity*.10)*(.97+.03*Math.sin(age*8));
+    const reset=this.blackHoleLastAge===null||age<this.blackHoleLastAge;
+    const dt=reset?0:Math.max(0,age-this.blackHoleLastAge);
+    this.blackHoleLastAge=age;
+    const outer=Math.max(this.radius*2,range*.85),sink=this.radius*.36;
+    const density=6+30*intensity,speed=.18+.30*intensity;
     for(let i=0;i<36;i++) {
-      const phase=(i/36+age*(.12+intensity*.17))%1;
-      const radius=core*2.15+(range*.85-core*2.15)*(1-phase)*(1-phase);
-      const angle=i*2.399963+age*(.4+intensity*2.8)+phase*5;
-      this.dummy.position.set(Math.cos(angle)*radius,Math.sin(angle*2+i)*core*.2*(1-phase),Math.sin(angle)*radius);
-      this.dummy.rotation.set(0,-angle,0);
-      const size=this.radius*(.045+intensity*.10)*(.25+.75*Math.sin(Math.PI*phase));
-      this.dummy.scale.set(size*(2+intensity*3),size,size);
+      if(reset)this.blackHoleStreamPhase[i]=i/36;
+      const phase=this.blackHoleStreamPhase[i]=(this.blackHoleStreamPhase[i]+dt*speed)%1;
+      // r(t) = outer - distance*t^2.2: strictly inward, with growing speed.
+      // The endpoint is inside even the smallest dormant core, so no orbital gap.
+      const radius=outer-(outer-sink)*Math.pow(phase,2.2);
+      const direction=this.blackHoleStreamDirections[i];
+      this.dummy.position.copy(direction).multiplyScalar(radius);
+      this.dummy.quaternion.setFromUnitVectors(this.up,direction);
+      const fadeIn=Math.min(1,phase/.12),fadeOut=Math.min(1,(1-phase)/.13);
+      const densityFade=Math.max(0,Math.min(1,density-i));
+      const size=this.radius*(.035+intensity*.055);
+      const stretch=1.5+(2+intensity*4)*Math.pow(phase,1.2);
+      this.dummy.scale.set(size,size*stretch,size);
       this.dummy.updateMatrix();this.blackHoleParticles.setMatrixAt(i,this.dummy.matrix);
+      this.blackHoleStreamAlpha.array[i]=fadeIn*fadeOut*densityFade*(.25+intensity*.75);
     }
-    this.blackHoleParticles.material.opacity=.15+intensity*.7;
+    this.blackHoleStreamAlpha.needsUpdate=true;
     this.blackHoleParticles.instanceMatrix.needsUpdate=true;
   }
 
@@ -330,9 +356,9 @@ export class PowerFX {
       clone.material.onBeforeCompile=object.material.onBeforeCompile;
       clone.material.customProgramCacheKey=object.material.customProgramCacheKey;
       clone.userData.powerFXWarmupMaterial=true;
-      if(object===this.mesh){
+      if(object===this.mesh||object===this.blackHoleParticles){
         clone.geometry=object.geometry.clone();
-        clone.geometry.setAttribute('fxAlpha',new this.T.InstancedBufferAttribute(new Float32Array(this.particles.length).fill(1),1));
+        clone.geometry.setAttribute('fxAlpha',new this.T.InstancedBufferAttribute(new Float32Array(object===this.mesh?this.particles.length:36).fill(1),1));
         clone.userData.powerFXWarmupGeometry=true;
       }
       if(clone.isInstancedMesh){
@@ -354,6 +380,7 @@ export class PowerFX {
     this.spiral.visible = false; this.gravityAge = 2;
     this.hasLastBall = false; this.trailClock = 0; this.cursor = 0;
     this.bombAge=1.3; this.fire.visible=false; this.flash.visible=false;
-    this.blackHoleRoot.visible=false;
+    this.blackHoleRoot.visible=false;this.blackHoleLastAge=null;
+    this.blackHoleStreamAlpha.array.fill(0);this.blackHoleStreamAlpha.needsUpdate=true;
   }
 }
