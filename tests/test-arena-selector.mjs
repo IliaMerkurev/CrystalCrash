@@ -49,7 +49,7 @@ const previousDocument=globalThis.document;globalThis.document=document;
 await RAPIER.init();
 const v3=(...n)=>new THREE.Vector3(...n),powers=new BonusController(),scene=new THREE.Scene();
 let effectsCleared=0,notices=[],windowEvents={};
-const context={
+const context={tutorialEvent(){},tutorial:null,
  BlackHoleRelease,CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
  arenaDefinition,arenaBlocks,document,window:{addEventListener:(name,fn)=>windowEvents[name]=fn},$ :id=>elements.get(id),
  v3,clamp:THREE.MathUtils.clamp,C:{...TUNE},GROUP:{table:0x0001001f,ball:0x00020017,structure:0x0004001f,debris:0x00080005},

@@ -389,3 +389,12 @@ test('Production aim camera treats main and extra balls equally and tracks off-c
   assert.deepEqual([active.aimBlend, active.aimShift, active.aimPanX, active.aimPanZ], beforeHole, 'Black Hole freezes the aim camera envelopes');
  }
 });
+
+test('Bomb doubles displacement coefficients and uses two-thirds frequencies without clipping the requested isolated shake',()=>{
+ const fx=new CameraFX();fx.bomb();const t=.06,out=fx.update(t),envelope=Math.sin(Math.min(1,t/.025)*Math.PI/2)*(1-t/1.05)**2,tau=2*Math.PI;
+ near(out.x,.84*envelope*(.8*Math.sin(tau*(8/1.5)*t)+.2*Math.sin(tau*(13/1.5)*t+.7)));
+ near(out.y,.52*envelope*Math.sin(tau*(10/1.5)*t+1.1));
+ near(out.z,.28*envelope*Math.sin(tau*(7/1.5)*t+.6));
+ assert(Math.abs(out.x)>.42,'new Bomb is not silently clipped to the old x limit');
+ fx.update(1.1);assert.equal(magnitude(fx.offsets),0);
+});
