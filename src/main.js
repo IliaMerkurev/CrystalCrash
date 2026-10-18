@@ -72,18 +72,67 @@ function glassEdgeTexture(){
  const edge=Math.exp(-Math.pow(d/.018,2)),inner=.24*Math.exp(-Math.pow((d-.065)/.012,2)),value=Math.round(Math.min(1,edge+inner)*255),i=(y*size+x)*4;data[i]=data[i+1]=data[i+2]=value;data[i+3]=255;}
  const texture=new THREE.DataTexture(data,size,size);texture.magFilter=texture.minFilter=THREE.LinearFilter;texture.needsUpdate=true;return texture;
 }
+function createLoadingFractureRehearsal(){
+ const savedUid=uid,savedRng=rngState,existing=new Set(originals.keys());
+ const cleanup=()=>{
+  const rehearsed=new Set([...originals.values()].filter(o=>!existing.has(o.id)));
+  for(const o of [...blocks.values()])if(rehearsed.has(o.origin))removeCluster(o);
+  for(let i=fragments.length-1;i>=0;i--)if(rehearsed.has(fragments[i].origin)){disposeDebris(fragments[i]);fragments.splice(i,1);}
+  for(const origin of rehearsed){for(const cell of origin.graph.cells)cell.geometry?.dispose();originals.delete(origin.id);}
+  uid=savedUid;rngState=savedRng;
+ };
+ try{
+  // One actual split per tier exercises hull creation, material pooling, merged
+  // fragment buffers and the surviving fractured shell, without stepping play.
+  for(let type=0;type<5;type++){
+   const o=addBlock((type-2)*.7,.8,MID-.8,type);o.origin.loadingRehearsal=true;
+   const ids=[...o.ids];splitCluster(o,[[ids[0]],ids.slice(1)],v3().copy(o.b.translation()),new Set([ids[0]]));
+  }
+  return cleanup;
+ }catch(error){cleanup();throw error;}
+}
 async function warmGlassShaders(){
- // Exercise actual draw paths before PLAY, not just program linking. This also
- // allocates the reflection/shadow targets and uploads the instanced chip buffers.
  const temporary=[],instances=[...dustMeshes,glints,particleGlow],counts=instances.map(m=>m.count);
  const size=renderer.getDrawingBufferSize(new THREE.Vector2()),target=new THREE.WebGLRenderTarget(size.x,size.y),previous=renderer.getRenderTarget();
- const matrix=new THREE.Matrix4().makeTranslation(0,.8,MID);
- for(let type=0;type<5;type++)for(const material of [debrisMaterials[type],fractureMaterials[type]]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,.12),material);mesh.position.set((type-2)*.2,.8,MID);mesh.frustumCulled=false;mesh.receiveShadow=material===fractureMaterials[type];mesh.castShadow=mesh.receiveShadow;scene.add(mesh);temporary.push(mesh);}
- for(const mesh of instances){mesh.count=1;mesh.setMatrixAt(0,matrix);mesh.instanceMatrix.needsUpdate=true;}
- const bonusWarm=bonusWorld?.warmupObjects();if(bonusWarm&&secondary)bonusWarm.add(secondary.warmupObjects());if(bonusWarm&&powerFX)bonusWarm.add(powerFX.warmupObjects());if(bonusWarm&&tornadoVisual)bonusWarm.add(tornadoVisual.warmupObjects());if(bonusWarm&&softContacts)bonusWarm.add(softContacts.warmupObjects());if(bonusWarm){bonusWarm.position.set(0,.6,MID);scene.add(bonusWarm);}
- const gateWasVisible=gatePanelGroup?.visible,previewFull=previewGroup?.userData.full,previewWasVisible=previewFull?.visible;if(gatePanelGroup)gatePanelGroup.visible=true;if(previewFull)previewFull.visible=true;
- try{const cubeEnv=performanceSettings.cubeEnvironment,debrisEnv=performanceSettings.debrisEnvironment;try{for(const enabled of [false,true]){performanceSettings.cubeEnvironment=performanceSettings.debrisEnvironment=enabled;applyMaterialOptions('cubeEnvironment');applyMaterialOptions('debrisEnvironment');await renderer.compileAsync(scene,camera);}}finally{performanceSettings.cubeEnvironment=cubeEnv;performanceSettings.debrisEnvironment=debrisEnv;applyMaterialOptions('cubeEnvironment');applyMaterialOptions('debrisEnvironment');}await renderer.compileAsync(scene,camera);renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.getContext().finish();const samples=[];for(let i=0;i<6;i++){const start=performance.now();renderer.render(scene,camera);renderer.getContext().finish();if(i)samples.push(performance.now()-start);}if(renderQuality.auto)renderQuality.calibrate(samples);}
- finally{if(bonusWarm){scene.remove(bonusWarm);bonusWorld.visuals.releaseInstance(bonusWarm);}if(gatePanelGroup)gatePanelGroup.visible=gateWasVisible;if(previewFull)previewFull.visible=previewWasVisible;renderer.setRenderTarget(previous);instances.forEach((m,i)=>{m.count=counts[i];});for(const mesh of temporary){scene.remove(mesh);mesh.geometry.dispose();}target.dispose();}
+ const canvasVisibility=canvas.style.visibility,hidden=[],hide=o=>{if(o?.visible){hidden.push(o);o.visible=false;}};
+ // compileAsync must see exactly the lights submitted by gameplay, including
+ // disabled fill lights. Keep visibility scoped across asynchronous compilation.
+ if(!effectiveAreaLights())railLights.forEach(hide);
+ if(!performanceSettings.fillLighting)(scene.userData.fillLights||[]).forEach(hide);
+ const gateWasVisible=gatePanelGroup?.visible,previewFull=previewGroup?.userData.full,previewWasVisible=previewFull?.visible;
+ let bonusWarm,cleanupRehearsal;
+ canvas.style.visibility='hidden';
+ try{
+  cleanupRehearsal=createLoadingFractureRehearsal();
+  for(const o of blocks.values()){o.mesh.position.copy(o.b.translation());o.mesh.quaternion.copy(o.b.rotation());}
+  ballMesh.position.copy(ball.translation());ballMesh.quaternion.copy(ball.rotation());
+  const matrix=new THREE.Matrix4().makeTranslation(0,.8,MID);
+  for(let type=0;type<5;type++)for(const material of [debrisMaterials[type],fractureMaterials[type]]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,.12),material);mesh.position.set((type-2)*.2,.8,MID);mesh.frustumCulled=false;mesh.receiveShadow=material===fractureMaterials[type];mesh.castShadow=mesh.receiveShadow;scene.add(mesh);temporary.push(mesh);}
+  for(const mesh of instances){mesh.count=1;mesh.setMatrixAt(0,matrix);mesh.instanceMatrix.needsUpdate=true;}
+  bonusWarm=bonusWorld?.warmupObjects();if(bonusWarm&&secondary)bonusWarm.add(secondary.warmupObjects());if(bonusWarm&&powerFX)bonusWarm.add(powerFX.warmupObjects());if(bonusWarm&&tornadoVisual)bonusWarm.add(tornadoVisual.warmupObjects());if(bonusWarm&&softContacts)bonusWarm.add(softContacts.warmupObjects());if(bonusWarm){bonusWarm.position.set(0,.6,MID);scene.add(bonusWarm);}
+  if(gatePanelGroup)gatePanelGroup.visible=true;if(previewFull)previewFull.visible=true;
+  applyMaterialOptions();applyRenderQuality();
+  renderer.setRenderTarget(target);await renderer.compileAsync(scene,camera);
+  const samples=[];for(let i=0;i<6;i++){const start=performance.now();renderer.render(scene,camera);renderer.getContext().finish();if(i)samples.push(performance.now()-start);}
+  if(renderQuality.auto)renderQuality.calibrate(samples);
+  // Calibration can resize reflection/transmission/shadow targets. Finish with
+  // selected quality and the real default framebuffer (ACES/output variants).
+  applyRenderQuality();renderer.setRenderTarget(null);
+  await renderer.compileAsync(scene,camera);renderer.render(scene,camera);
+  blackHoleLens=new BlackHoleLens(renderer,{identity:qaPower&&new URLSearchParams(location.search).get('lens')==='identity'});await blackHoleLens.warm();
+  blastLens=new BlastLens(renderer);await blastLens.warm();
+  const point=v3(0,1,MID-.8);blackHoleLens.render(camera,{point,range:3,intensity:.01},arenaOffset);
+  blastLens.trigger(point,3);blastLens.update(.02);blastLens.render(camera,arenaOffset);blastLens.clear();
+  renderer.getContext().finish();
+ }finally{
+  cleanupRehearsal?.();
+  if(bonusWarm){scene.remove(bonusWarm);bonusWorld.visuals.releaseInstance(bonusWarm);}
+  if(gatePanelGroup)gatePanelGroup.visible=gateWasVisible;if(previewFull)previewFull.visible=previewWasVisible;
+  instances.forEach((m,i)=>{m.count=counts[i];});for(const mesh of temporary){scene.remove(mesh);mesh.geometry.dispose();}
+  target.dispose();renderer.setRenderTarget(previous);
+  // Replace the hidden rehearsal image before making the canvas visible again.
+  try{renderer.render(scene,camera);}finally{for(const light of hidden)light.visible=true;canvas.style.visibility=canvasVisibility;}
+ }
 }
 
 function setupScene(){
@@ -307,7 +356,7 @@ function spawnShards(o,n){const pos=o.b.translation(),vel=o.b.linvel();for(let i
 function removeCluster(o){blackHoleRelease?.release(o);captureCollisionProxy?.release(o);secondary?.detachFrostCluster(o.id);if(o.origin.bonus)bonusWorld.capturePose(o.origin,o.b);if(o.ownsMaterial)o.mesh.material.dispose();const fi=fragments.indexOf(o);if(fi>=0)fragments.splice(fi,1);blocks.delete(o.id);o.origin.clusters.delete(o.id);o.cs.forEach(c=>colliders.delete(c.handle));scene.remove(o.mesh);o.mesh.traverse(x=>{x.geometry?.dispose();if(x!==o.mesh)x.material?.dispose();});world.removeRigidBody(o.b);}
 function updateRailLighting(){const edge=THREE.MathUtils.lerp(BOTTOM,TOP,railProgress.value);for(const light of railLights){const [a,b]=light.userData.span,coverage=Math.max(0,Math.min(b,BOTTOM)-Math.max(a,edge))/(b-a);light.color.set(0xff8c22).lerp(railGreen,coverage);}}
 function updateSectionProgress(){let total=0,remaining=0;for(const origin of originals.values())total+=origin.graph.totalArea;for(const o of blocks.values())for(const id of o.ids)remaining+=o.origin.graph.cells[id].area;if(total)railProgress.value=Math.max(railProgress.value,clamp(1-remaining/total,0,1));updateRailLighting();}
-function awardOriginal(origin){if(origin.rewarded||origin.clusters.size)return;origin.rewarded=true;bonusWorld?.release(origin);updateSectionProgress();for(const cell of origin.graph.cells){cell.geometry?.dispose();cell.geometry=null;}if(origin.cleanupNoScore){audio.play('break',.7,origin.type);return;}chain=comboTime>0?chain+1:1;comboTime=C.comboWindow;const mult=comboFor(chain);score+=Math.round(GLASS[origin.type].score*mult);$('score').textContent=score.toLocaleString('en-US');$('combo').textContent=chain>1?`${chain} CHAIN · ×${mult}`:'';document.querySelector('.score').classList.remove('pop');void $('score').offsetWidth;document.querySelector('.score').classList.add('pop');audio.play('break',clamp(chain*.18+.5,.5,1.4),origin.type);if(chain===5&&!reduced)slow=.12;}
+function awardOriginal(origin){if(origin.loadingRehearsal)return;if(origin.rewarded||origin.clusters.size)return;origin.rewarded=true;bonusWorld?.release(origin);updateSectionProgress();for(const cell of origin.graph.cells){cell.geometry?.dispose();cell.geometry=null;}if(origin.cleanupNoScore){audio.play('break',.7,origin.type);return;}chain=comboTime>0?chain+1:1;comboTime=C.comboWindow;const mult=comboFor(chain);score+=Math.round(GLASS[origin.type].score*mult);$('score').textContent=score.toLocaleString('en-US');$('combo').textContent=chain>1?`${chain} CHAIN · ×${mult}`:'';document.querySelector('.score').classList.remove('pop');void $('score').offsetWidth;document.querySelector('.score').classList.add('pop');audio.play('break',clamp(chain*.18+.5,.5,1.4),origin.type);if(chain===5&&!reduced)slow=.12;}
 function destroy(o){if(!blocks.has(o.id))return;spawnShards(o,12,false);removeCluster(o);awardOriginal(o.origin);updateSectionProgress();}
 function dissolveDuration(size){return .5+.5*clamp(size/1.6,0,1);}
 function meltLife(size=.12){const max=dissolveDuration(size);return {life:max,max};}
@@ -333,7 +382,7 @@ function updateMelt(f,dt){
  f.v.multiplyScalar(Math.exp(-.12*dt));f.mesh.position.copy(f.p);f.mesh.quaternion.copy(f.q);
 }
 function disposeDebris(f){scene.remove(f.mesh);f.mesh.geometry.dispose();debrisMaterialPool[f.type].push(f.mesh.material);}
-function clusterChips(o,point,count=12){const pos=point||o.b.translation(),v=o.b.linvel();for(let i=0;i<count&&dust.length<C.maxDust;i++)dust.push({p:v3(pos.x,pos.y,pos.z),v:v3(v.x*.2+(rand()-.5)*2,rand()*2,v.z*.2+(rand()-.5)*2),type:o.type,variant:Math.floor(rand()*4),...chipSizing(.25,.7),spin:rand()*7});}
+function clusterChips(o,point,count=12){if(o.origin?.loadingRehearsal)return;const pos=point||o.b.translation(),v=o.b.linvel();for(let i=0;i<count&&dust.length<C.maxDust;i++)dust.push({p:v3(pos.x,pos.y,pos.z),v:v3(v.x*.2+(rand()-.5)*2,rand()*2,v.z*.2+(rand()-.5)*2),type:o.type,variant:Math.floor(rand()*4),...chipSizing(.25,.7),spin:rand()*7});}
 function isResidual(origin,ids){
  const cells=ids.map(id=>origin.graph.cells[id]),area=cells.reduce((sum,c)=>sum+c.area,0),faces=new Set(cells.map(c=>c.normal.toArray().join(',')));
  const opposed=cells.some(c=>cells.some(d=>c.normal.dot(d.normal)<-.9));
@@ -355,7 +404,7 @@ function splitCluster(o,parts,point,detached=null){const ratio=o.kind==='fragmen
  if(terminal){const geometry=mergeGeometries(geometries);geometries.forEach(g=>g.dispose());createDebris(geometry,origin.type,position,rotation,velocity,angular,oldCom,{origin,ids,born:elapsed,type:origin.type});continue;}
  const b=world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(position.x,position.y,position.z).setRotation(rotation).setLinearDamping(.12).setAngularDamping(.25).setCcdEnabled(true)),cs=descriptors.map(d=>world.createCollider(d,b));b.recomputeMassPropertiesFromColliders();const newCom=v3().copy(b.worldCom());b.setLinvel(velocity.clone().add(angular.clone().cross(newCom.sub(oldCom))),true);b.setAngvel(angular,true);const geometry=mergeGeometries(geometries);geometries.forEach(g=>g.dispose());const mesh=new THREE.Mesh(geometry,terminal?debrisMaterials[origin.type]:(fractureMaterials[origin.type]||materials[origin.type]));mesh.castShadow=mesh.receiveShadow=true;mesh.position.copy(position);mesh.quaternion.copy(rotation);scene.add(mesh);
  const next={id:++uid,kind:terminal?'fragment':'block',origin,ids,frameScale,frameOffset,heatStart,b,c:cs[0],cs,mesh,type:origin.type,sx:origin.sx,sy:origin.sy,sz:origin.sz,stage:0,damage:0,lastHit,born:elapsed,life:remainingLife};cs.forEach(c=>colliders.set(c.handle,next));blocks.set(next.id,next);origin.clusters.add(next.id);
- }awardOriginal(origin);updateSectionProgress();audio.play('chip',.85,origin.type);}
+ }if(!origin.loadingRehearsal){awardOriginal(origin);updateSectionProgress();audio.play('chip',.85,origin.type);}}
 function profileContacts(callback){if(!profiler?.enabled)return callback();const outer=profileContactDepth++===0,start=outer?performance.now():0;try{return callback();}finally{profileContactDepth--;if(outer)frameTiming.contacts+=performance.now()-start;}}
 function chipByStrike(...args){return profileContacts(()=>chipByStrikeImpl(...args));}
 function chipByStrikeImpl(o,point,bonusHit=false,damageUnits=1,source='player'){
@@ -575,7 +624,7 @@ function setPause(p){paused=p;if(p)audio.stopRolling();cancelDrag();$('paused').
 $('pause').onclick=()=>started&&setPause(true);$('resume').onclick=()=>{audio.unlock();setPause(false);};let muted=false;$('sound').onclick=()=>{muted=!muted;audio.setMuted(muted);$('sound').textContent=muted?'♩':'♫';$('sound').setAttribute('aria-label',muted?'Enable sounds':'Mute sounds');audio.unlock();audio.play('click');};$('restart').onclick=()=>{blackHoleRelease?.reset();captureCollisionProxy?.reset();setArenaRunSeed(Math.floor(Math.random()*0x100000000));powerFX?.clear();tornadoVisual?.clear();blastLens?.clear();frostScreenMask?.clear();secondary?.clear();bonusWorld?.reset({run:true});for(const o of blocks.values()){scene.remove(o.mesh);o.mesh.geometry.dispose();o.cs.forEach(c=>colliders.delete(c.handle));world.removeRigidBody(o.b);}blocks.clear();for(const origin of originals.values())for(const cell of origin.graph.cells)cell.geometry?.dispose();originals.clear();for(const f of fragments){disposeDebris(f);}fragments.length=0;dust.length=0;section=1;powerTime=0;arenaOffset=0;scene.position.z=0;score=0;chain=0;comboTime=0;$('score').textContent='0';generateSection();setPause(false);};document.addEventListener('visibilitychange',()=>{if(document.hidden&&started)setPause(true);});
 $('play').onclick=()=>{audio.unlock();audio.play('click');started=true;bonusWorld?.teach('launch','Hold · Aim · Release',()=>v3().copy(ball.translation()));$('start').classList.add('hidden');syncModalBlur();};
 function setupTransitionQA(){if(typeof location==='undefined'||new URLSearchParams(location.search).get('qa')!=='transition')return;const panel=document.createElement('div');panel.className='glass-panel';panel.style.cssText='position:fixed;left:8px;bottom:12px;z-index:20;display:flex;gap:4px;flex-wrap:wrap;max-width:90vw;padding:6px;background:#121923e8;border:1px solid #a8ccdf;border-radius:8px;font-size:10px';panel.textContent=QA_SLOW?'TRANSITION TEST · 0.1×':'TRANSITION TEST';for(const [label,run]of [['CLEAR TARGETS',()=>{if(!started)return;for(const o of [...blocks.values()]){const origin=o.origin;removeCluster(o);awardOriginal(origin);}}],['MIRROR ON/OFF',()=>{const o=stageGroup.userData.mirror;o.visible=!o.visible;}],['COAT ON/OFF',()=>{const o=stageGroup.userData.coat;o.visible=!o.visible;}]]){const button=document.createElement('button');button.textContent=label;button.style.cssText='font-size:10px;padding:5px';button.onclick=run;panel.appendChild(button);}document.body.appendChild(panel);}
-try{await RAPIER.init();setupScene();setupPhysics();bonusWorld=new BonusWorld({scene,controller:powers,radius:C.ballRadius,bounds:()=>({top:TOP,mid:MID,bottom:BOTTOM,half:tableHalf}),blocked:pickupBlocked,onSound:name=>audio.play(name),onNotice:message=>tell(message,1.5),onBomb:explodeBomb,onActivate:activatePickup});secondary=new SecondaryPowers({THREE,RAPIER,scene,world,colliders,radius:C.ballRadius,tableGroup:GROUP.table,structureGroup:GROUP.structure,onFinishSplit:id=>powers.finishSplit(id),onBlackHoleExpire:(hole,now)=>blackHoleRelease.beginNaturalExpiry(hole,now,elapsed)});heavyBallMaterial=new HeavyBallMaterial({mainMaterial:ballMesh.material,extraMaterial:secondary.echoMaterial});powerFX=new PowerFX({THREE,scene,radius:C.ballRadius});tornadoVisual=new TornadoVisual({THREE,scene});softContacts=new SoftContactShadows({THREE,scene});generateSection();await environmentReady;await warmGlassShaders();applyRenderQuality();blackHoleLens=new BlackHoleLens(renderer,{identity:qaPower&&new URLSearchParams(location.search).get('lens')==='identity'});await blackHoleLens.warm();blastLens=new BlastLens(renderer);await blastLens.warm();frostScreenMask=new FrostScreenMask();setupTransitionQA();setupBonusQA();setupBonusTestMenu();performanceOverlay=createPerformanceOverlay({parent:document.body,settings:performanceSettings,getDiagnostics:performanceDiagnostics});applyMaterialOptions();setupFullscreen();setupProfiler();tutorial=new GameTutorial();$('replay-tutorial').onclick=()=>{tutorial.replay();setPause(false);};syncModalBlur();$('play').disabled=false;$('play').textContent='PLAY';let last=performance.now();function frame(now){
+try{await RAPIER.init();setupScene();setupPhysics();bonusWorld=new BonusWorld({scene,controller:powers,radius:C.ballRadius,bounds:()=>({top:TOP,mid:MID,bottom:BOTTOM,half:tableHalf}),blocked:pickupBlocked,onSound:name=>audio.play(name),onNotice:message=>tell(message,1.5),onBomb:explodeBomb,onActivate:activatePickup});secondary=new SecondaryPowers({THREE,RAPIER,scene,world,colliders,radius:C.ballRadius,tableGroup:GROUP.table,structureGroup:GROUP.structure,onFinishSplit:id=>powers.finishSplit(id),onBlackHoleExpire:(hole,now)=>blackHoleRelease.beginNaturalExpiry(hole,now,elapsed)});heavyBallMaterial=new HeavyBallMaterial({mainMaterial:ballMesh.material,extraMaterial:secondary.echoMaterial});powerFX=new PowerFX({THREE,scene,radius:C.ballRadius});tornadoVisual=new TornadoVisual({THREE,scene});softContacts=new SoftContactShadows({THREE,scene});generateSection();await environmentReady;await warmGlassShaders();frostScreenMask=new FrostScreenMask();setupTransitionQA();setupBonusQA();setupBonusTestMenu();performanceOverlay=createPerformanceOverlay({parent:document.body,settings:performanceSettings,getDiagnostics:performanceDiagnostics});applyMaterialOptions();setupFullscreen();setupProfiler();tutorial=new GameTutorial();$('replay-tutorial').onclick=()=>{tutorial.replay();setPause(false);};syncModalBlur();$('play').disabled=false;$('play').textContent='PLAY';let last=performance.now();function frame(now){
  requestAnimationFrame(frame);const frameMs=now-last,dt=Math.min(frameMs/1000,.06);last=now;
  const simulationActive=started&&!paused&&!bonusTestOpen&&!document.hidden,baselineActive=simulationActive&&state!=='TRANSITION';
  if(renderQuality.observe(frameMs,baselineActive))applyRenderQuality();
