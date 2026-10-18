@@ -121,7 +121,7 @@ test('Lower-zone catch window lasts one second, has hysteresis, and preserves de
     assert.equal(powers.releaseEcho(echo, { x: 3, y: 0, z: -20 }), true);
     powers.step(DT, 5.01, BOUNDS);
     vectorNear(echo.b.linvel(), { x: 3, y: 0, z: -20 }, 'deliberate launch is not catch-speed capped');
-    echo.b.setTranslation({ x: 0, y: 1, z: 3.5 }, true);
+    echo.b.setTranslation({ x: 0, y: 1, z: BOUNDS.lowerZoneZ - Math.max(.3,powers.echoRadius*1.5) - .1 }, true);
     powers.step(DT, 5.1, BOUNDS);
     assert.equal(echo.inLowerZone, false, 'full upper-zone excursion rearms entry');
     echo.b.setTranslation({ x: 0, y: 1, z: 5 }, true);

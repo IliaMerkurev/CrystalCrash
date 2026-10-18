@@ -1,9 +1,16 @@
 // Selective time dilation around ONE shared Rapier step. Between calls, velocity,
 // force and torque stay in logical (normal-time) units for gameplay and impulses.
-// The world's timestep, cubes, and all unlisted bodies remain untouched.
+// The world's timestep, cubes, and all unlisted bodies remain untouched. If the
+// whole world is already slowed, apply only the remaining selective slowdown.
 const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
 const vector = value => ({ x: value.x, y: value.y, z: value.z });
 const scaled = (value, factor) => ({ x: value.x * factor, y: value.y * factor, z: value.z * factor });
+const validGlobalScale = value => Number.isFinite(value) && value > 0 ? Math.min(1, value) : 1;
+
+// The effective wall-clock speed is min(globalScale, absoluteScale), not their
+// product. For example .4 global plus .35 Black Hole needs .875 relative speed.
+export const relativeBallTimeScale = (absoluteScale, globalScale = 1) =>
+  Math.min(1, Math.max(0, finite(absoluteScale, 1)) / validGlobalScale(globalScale));
 
 export class BallTimeScale {
   constructor({ minimumScale = .35, attack = .25, release = .4 } = {}) {
@@ -18,18 +25,21 @@ export class BallTimeScale {
   // balls. Call AFTER game forces are applied and BEFORE world.step(), with no
   // gameplay callbacks between this and afterStep(). New split balls need only
   // appear in this list; no per-body history or birth registration is necessary.
-  beforeStep(dt, bodies, intensity = 0) {
+  // dt is the simulated step duration. globalScale belongs to the world clock;
+  // this.scale remains the ABSOLUTE Black Hole envelope in wall-clock units.
+  beforeStep(dt, bodies, intensity = 0, globalScale = 1) {
     // Never accumulate scaling if a caller accidentally missed its prior restore.
     this.afterStep();
     dt = Math.max(0, finite(dt, 0));
     if (!dt) return this.scale; // pause preserves the envelope and body properties
+    globalScale = validGlobalScale(globalScale);
     const amount = Math.min(1, Math.max(0, finite(intensity, 0)));
     const target = 1 - (1 - this.minimumScale) * amount;
     const tau = target < this.scale ? this.attack : this.release;
-    this.scale += (target - this.scale) * -Math.expm1(-dt / tau);
+    this.scale += (target - this.scale) * -Math.expm1(-dt / globalScale / tau);
     if (Math.abs(this.scale - target) < 1e-6) this.scale = target;
-    const s = this.scale;
-    if (s === 1) return s;
+    const s = relativeBallTimeScale(this.scale, globalScale);
+    if (s === 1) return this.scale;
     const seen = new Set();
     for (const body of bodies ?? []) {
       if (!body || seen.has(body.handle) || !body.isValid() || !body.isDynamic()) continue;
@@ -50,7 +60,7 @@ export class BallTimeScale {
       body.resetTorques(false);
       body.addTorque(scaled(state.torque, s * s), false);
     }
-    return s;
+    return this.scale;
   }
 
   afterStep() {

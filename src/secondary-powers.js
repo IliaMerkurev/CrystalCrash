@@ -3,11 +3,12 @@
 export class SecondaryPowers {
  constructor({THREE,RAPIER,scene,world,colliders,radius,tableGroup=1,structureGroup=4,onEchoHit,onFinishSplit}) {
   Object.assign(this,{THREE,RAPIER,scene,world,colliders,radius,onEchoHit,onFinishSplit});
-  this.echoRadius=radius*.65;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.blackHole=null;this.frictionLeases=new Map();this.marks=new Map();this.markPool=[];this.transitionParked=false;
+  this.echoRadius=radius;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.blackHole=null;this.frictionLeases=new Map();this.marks=new Map();this.markPool=[];this.transitionParked=false;
   const membership=g=>g>0xffff?(g>>>16):g;
   this.echoGroups=(16<<16)|(membership(tableGroup)|membership(structureGroup)|2|16);
-  this.echoGeometry=new THREE.SphereGeometry(this.echoRadius,20,14);
-  this.echoMaterial=new THREE.MeshStandardMaterial({color:0xF27ED2,emissive:0xF27ED2,emissiveIntensity:.5,metalness:.7,roughness:.18});
+  this.echoGeometry=new THREE.SphereGeometry(this.echoRadius,32,24);
+  // Use the main ball's polished steel response, with a pink metal tint.
+  this.echoMaterial=new THREE.MeshStandardMaterial({color:0xF27ED2,metalness:1,roughness:.095,envMapIntensity:2.4});
   this.ensureEchoCapacity(32);
   this.ringGeometry=new THREE.TorusGeometry(1,.025,4,48);
   this.wellMaterial=new THREE.MeshBasicMaterial({color:0x7887FF,transparent:true,opacity:.7,depthWrite:false});

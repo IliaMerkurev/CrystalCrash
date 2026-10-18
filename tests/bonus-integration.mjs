@@ -76,3 +76,9 @@ blocks.clear();block(80,0,.44,-10);block(81,0,.44,-12);block(82,0,.44,-24);block
 const fallback=context.chainedGroundTargets(new THREE.Vector3(0,.44,0),new Set(),3.344);assert.deepEqual(Array.from(fallback,t=>t.o.origin.id),[80,81]);assert.equal(fallback[0].from.z,0);assert.equal(fallback[1].from.z,-10);blocks.clear();assert.equal(context.chainedGroundTargets(new THREE.Vector3(),new Set(),3.344).length,0);
 console.log('PASS Arc first-link nearest-ground fallback, later gap still stops, empty arena safe');
 blocks.clear();hits.length=0;const protectedCube=block(999,0,.44,-3);context.powers=new BonusController();context.holeImpactGuard={has:id=>id===999};assert.equal(context.damage(protectedCube,2,new THREE.Vector3(0,.44,-3),false),false);assert.equal(hits.length,0);assert.equal(context.damage(protectedCube,2,new THREE.Vector3(0,.44,-3),true,context.powers.capture()),true);assert.equal(hits.length,1);console.log('PASS production Black Hole guard suppresses environmental damage while direct ball damage remains enabled');
+assert(source.includes("aimTimeScale.update(simulationActive?dt:0,drag?.mode==='aim')"));
+assert(source.includes('accumulator+=dt*aimTimeScale.scale'));
+assert(source.includes('ballTimeScale.beforeStep(dt,slowedBalls,secondary.blackHole?1:0,aimTimeScale.scale)'));
+assert(source.includes('render(simulationActive?dt*aimTimeScale.scale:0,dt)'));
+assert(source.includes('updateAimCamera(cameraDt)'));
+console.log('PASS any-ball aim-only simulation scale, modal freeze, real-time camera and normalized Black Hole composition wiring');
