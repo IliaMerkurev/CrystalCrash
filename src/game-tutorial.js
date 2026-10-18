@@ -27,18 +27,18 @@ export class GameTutorial {
 /* This whole overlay is input-through, including its animated contact cues. */
 .cc-tutorial{position:fixed;inset:0;z-index:18;pointer-events:none!important;overflow:hidden;contain:layout style;user-select:none}
 .cc-tutorial[hidden]{display:none!important}.cc-tutorial *{pointer-events:none!important;box-sizing:border-box}
-.cc-tutorial-label{position:absolute;max-width:216px;padding:9px 13px;border:1px solid #b6f6ff66;border-radius:13px;background:var(--glass-fill,#102339e8);backdrop-filter:var(--glass-blur,blur(10px));-webkit-backdrop-filter:var(--glass-blur,blur(10px));color:#edfdff;font:600 13px/1.25 system-ui,sans-serif;text-align:center;box-shadow:0 4px 22px #0005;text-wrap:balance}
-.cc-tutorial-detail{margin-top:5px;color:#aeeaf4;font:500 11px/1.3 system-ui,sans-serif}.cc-tutorial-detail[hidden]{display:none}
+.cc-tutorial-label{position:absolute;max-width:216px;padding:9px 13px;border:2px solid #b6f6ffbb;border-radius:13px;background:var(--glass-fill,#102339e8);backdrop-filter:var(--glass-blur,blur(10px));-webkit-backdrop-filter:var(--glass-blur,blur(10px));color:#edfdff;font:700 14px/1.25 system-ui,sans-serif;text-align:center;box-shadow:0 4px 22px #0005;text-wrap:balance}
+.cc-tutorial-detail{margin-top:5px;color:#d2f7ff;font:600 12px/1.3 system-ui,sans-serif}.cc-tutorial-detail[hidden]{display:none}
 .cc-tutorial:is([data-gesture=hold],[data-gesture=hold-move]) .cc-tutorial-title{color:#a5faff;font-weight:800}
 .cc-tutorial-pointer{position:absolute;width:68px;height:112px;filter:drop-shadow(0 2px 5px #001722);--cc-tutorial-pull:44px}
-.cc-tutorial-pointer svg{overflow:visible}.cc-tutorial-hand-motion{transform-origin:16px 23px;animation:cc-tutorial-nudge 1.25s ease-in-out infinite}
-.cc-tutorial-arrow,.cc-tutorial-pull-trail,.cc-tutorial-steer-trail{fill:none;stroke:#acfbff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
-.cc-tutorial-hand{fill:#eaffff;stroke:#21475c;stroke-width:1.5;stroke-linejoin:round}
+.cc-tutorial-pointer svg{overflow:visible;transform:scale(1.18);transform-origin:16px 23px}.cc-tutorial-hand-motion{transform-origin:16px 23px;animation:cc-tutorial-nudge 1.25s ease-in-out infinite}
+.cc-tutorial-arrow,.cc-tutorial-pull-trail,.cc-tutorial-steer-trail{fill:none;stroke:#d5feff;stroke-width:4.5;stroke-linecap:round;stroke-linejoin:round}
+.cc-tutorial-hand{fill:#eaffff;stroke:#123248;stroke-width:2.5;stroke-linejoin:round}
 .cc-tutorial-pull-trail,.cc-tutorial-steer-trail,.cc-tutorial-contact,.cc-tutorial-release-ball,.cc-tutorial-release-burst,.cc-tutorial-hold-ring,.cc-tutorial-hold-word{display:none}
 .cc-tutorial-pull-trail{transform-origin:16px 23px;transform:scaleY(var(--cc-tutorial-pull-scale,1))}
-.cc-tutorial-contact{fill:#94f9ff33;stroke:#a7faff;stroke-width:2;transform-origin:16px 23px}
+.cc-tutorial-contact{fill:#94f9ff55;stroke:#d5feff;stroke-width:3;transform-origin:16px 23px}
 .cc-tutorial-release-ball{fill:#e8ffff;stroke:#6eefff;stroke-width:2}
-.cc-tutorial-release-burst,.cc-tutorial-hold-ring{fill:none;stroke:#79f6ff;stroke-width:2;transform-origin:16px 23px}
+.cc-tutorial-release-burst,.cc-tutorial-hold-ring{fill:none;stroke:#a6fcff;stroke-width:3;transform-origin:16px 23px}
 /* Press, visibly drag down, pause under tension, then lift away as the ball launches. */
 .cc-tutorial[data-gesture=pull-release] .cc-tutorial-hand-motion{animation:cc-tutorial-pull-release 2.6s ease-in-out infinite}
 .cc-tutorial[data-gesture=pull-release] .cc-tutorial-arrow{display:none}
@@ -127,7 +127,7 @@ export class GameTutorial {
   this.element.hidden=false;this.element.setAttribute('data-step',step);this.element.setAttribute('data-gesture',gesture);if(this.label.textContent!==label)this.label.textContent=label;
   if(this.detail.textContent!==detail)this.detail.textContent=detail;this.detail.hidden=!detail;
   const width=Math.min(216,viewport.width-32),labelX=clamp(screen.x-width/2,left+16,left+viewport.width-width-16);
-  const anchorY=Math.max(top+104,screen.y),gestureHeight=gesture==='pull-release'?116:gesture.startsWith('hold')?96:78;
+  const anchorY=Math.max(top+104,screen.y),gestureHeight=gesture==='pull-release'?132:gesture.startsWith('hold')?110:90;
   const labelHeight=detail?82:60,labelY=anchorY+gestureHeight+labelHeight<top+viewport.height-76?anchorY+gestureHeight:anchorY-labelHeight;
   this.callout.style.width=`${width}px`;this.callout.style.left=`${labelX}px`;this.callout.style.top=`${Math.max(top+104,labelY)}px`;
   this.pointer.style.left=`${clamp(screen.x-16,left+8,left+viewport.width-60)}px`;this.pointer.style.top=`${Math.max(top+104,screen.y+4)}px`;
