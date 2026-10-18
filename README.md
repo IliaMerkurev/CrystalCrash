@@ -72,3 +72,8 @@ Onboarding demonstrates press→pull→release and two separate attraction lesso
 - v92 nominal maximum pull is 1.25× the original range (15 world-input units, aim guide max5), halfway between the original and v90 range. Normal maximum launch speed is still fully reachable.
 
 - Latest v92 instruction supersedes v91 onboarding lock: full pull alone enables the meter and ×2 timing from the very first shot, including after Replay Tutorial. Partial pulls remain normal.
+
+### v94 — Cold Start diagnostic
+- Test → Cold Start shows inline Cancel / Reset & Reload confirmation. It removes only the explicit Crystal Crash performance/tutorial keys from local/session storage, then reloads normally for a fresh WebGL context with production warmup retained.
+- No origin-wide clear, IndexedDB or CacheStorage deletion: this game currently owns no such caches. Editor presets and unrelated data are untouched. Browser/driver shader caches and HTTP cache cannot be cleared by this control; it does not claim a true driver-cold launch.
+- Storage failures require a separate Reload Anyway choice; cancel is nonmutating. Reload errors remain visible. Focused tests use isolated mock storage only; no user data was reset during development.

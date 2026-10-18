@@ -1,3 +1,4 @@
+import {createColdStartControl} from './cold-start.js';
 import {safePullEnd,adaptPull,frameAimRunway} from './aim-runway.js';
 import {LaunchCharge,LaunchChargeMeter} from './launch-charge.js';
 import {ChargedLaunches} from './charged-launches.js';
@@ -273,6 +274,7 @@ function setupBonusTestMenu(){
  const card=document.createElement('div');card.className='glass-panel bonus-test-card';card.style.cssText='width:min(340px,88vw);padding:18px;border:1px solid #678ca9;border-radius:16px;background:#122130;color:#e7f4ff;font:14px sans-serif;box-shadow:0 12px 40px #0008';
  card.innerHTML='<b>BONUS TEST</b><p style="font-size:12px;color:#aac0d1">Activate a power immediately. Q / Escape to close.</p>';
  const profileButton=document.createElement('button');profileButton.textContent='Profiler';profileButton.type='button';profileButton.style.cssText='width:100%;margin:8px 0';profileButton.onclick=()=>{close();profiler?.open();};card.append(profileButton);
+ const coldStart=createColdStartControl({parent:card});
  const sectionPanel=title=>{const d=document.createElement('details'),label=document.createElement('summary');label.textContent=title;label.style.cssText='padding:12px 0;min-height:44px;cursor:pointer;font-weight:700';d.append(label);card.append(d);return d;};const arenaPanel=sectionPanel('Arena');
  const arenaTools=document.createElement('div');arenaTools.className='test-arena-tools';
  const current=document.createElement('p');current.className='test-arena-current';
@@ -288,7 +290,7 @@ function setupBonusTestMenu(){
  const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px';
  const open=()=>{cancelDrag();performanceUI.refresh();current.textContent=`Current: ${section} · ${arenaDefinition(section).name}`;select.value=String((section-1)%14+1);bonusTestOpen=true;bonusTestPanel.hidden=false;bonusTestPanel.style.display='grid';accumulator=0;syncModalBlur();};
  $('bonus-test').onclick=()=>{if(bonusTestOpen)close();else open();};
- const close=()=>{bonusTestOpen=false;bonusTestPanel.hidden=true;bonusTestPanel.style.display='none';accumulator=0;syncModalBlur();};
+ const close=()=>{coldStart.close();bonusTestOpen=false;bonusTestPanel.hidden=true;bonusTestPanel.style.display='none';accumulator=0;syncModalBlur();};
 
  load.onclick=()=>{if(loadTestArena(select.value)){audio.play('click');close();}};
  for(const [kind,def] of Object.entries(BONUS_DEFS)){const b=document.createElement('button');b.textContent=def.name;b.style.cssText='padding:10px 5px;border:1px solid '+def.colorCss+';border-radius:8px;background:#1c3043;color:#fff;font-size:13px';b.onclick=()=>{equipTestBonus(kind);close();};grid.append(b);}
