@@ -13,6 +13,8 @@ export class BonusWorld {
   this.label=document.createElement('div');this.label.className='power-tip';document.body.appendChild(this.label);
   this.hud=document.createElement('div');this.hud.id='power-hud';this.hud.setAttribute('aria-live','polite');document.body.appendChild(this.hud);this.hudKey='';
   this.accents={};for(const kind of Object.keys(BONUS_DEFS)){const m=this.visuals.createBallAccent(kind);m.visible=false;m.scale.setScalar(radius*2);scene.add(m);this.accents[kind]=m;}
+  this.extraPulse=this.visuals.createPulseAccentBatch();scene.add(this.extraPulse);
+  this.pulseRootMatrix=new THREE.Matrix4();this.pulseBandMatrices=[new THREE.Matrix4(),new THREE.Matrix4()];this.pulseInstanceMatrix=new THREE.Matrix4();
   this.bombTimerGeometry=new THREE.RingGeometry(.64,.7,80,1);this.bombTimerMaterial=new THREE.MeshBasicMaterial({color:0xff9438,transparent:true,opacity:.95,depthWrite:false,toneMapped:false});
   this.rings=Array.from({length:4},()=>{const m=new THREE.Mesh(new THREE.TorusGeometry(1,.018,5,64),new THREE.MeshBasicMaterial({color:0xffb44a,transparent:true,opacity:0,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.visible=false;scene.add(m);return {mesh:m,age:0,duration:.5,max:1};});
   // Each pooled LineSegments mesh holds 64 links; large arena bursts use chunks.
@@ -44,7 +46,33 @@ export class BonusWorld {
  returnItem(item){const points=this.safePoints().filter(p=>!this.blocked(p,.42));if(!points.length)return;points.sort((a,b)=>a.distanceToSquared(item.p)-b.distanceToSquared(item.p));item.from=item.p.clone();item.to=points[0];this.arc([item.from,item.to],BONUS_DEFS[item.kind].color);item.returning=.32;item.landed=false;item.bounced=false;item.blockedFor=0;item.v.set(0,0,0);}
  // Section changes discard uncollected physical items, but can retain independent
  // active timers, the armed Heavy strike and live Split state.
- reset({run=false,preservePowers=false}={}){for(const {mesh}of this.cores.values()){this.scene.remove(mesh);this.visuals.releaseInstance(mesh);}this.cores.clear();for(const p of this.pickups){this.disposeReleasedCore(p);this.scene.remove(p.mesh);this.visuals.releaseInstance(p.mesh);this.scene.remove(p.shadow);this.disposeTimer(p);}this.pickups.length=0;if(!preservePowers)this.controller.reset();this.lastBall=null;this.collectorHistory.clear();this.currentBall=null;this.tip=null;this.tipAge=0;this.pendingTips.length=0;this.label.style.opacity=0;this.activeId=null;this.hudKey='';for(const fx of [...this.rings,...this.arcs])fx.mesh.visible=false;if(run)this.seen.clear();this.updateHUD();}
+ reset({run=false,preservePowers=false}={}){for(const {mesh}of this.cores.values()){this.scene.remove(mesh);this.visuals.releaseInstance(mesh);}this.cores.clear();for(const p of this.pickups){this.disposeReleasedCore(p);this.scene.remove(p.mesh);this.visuals.releaseInstance(p.mesh);this.scene.remove(p.shadow);this.disposeTimer(p);}this.pickups.length=0;if(!preservePowers)this.controller.reset();this.lastBall=null;this.collectorHistory.clear();this.currentBall=null;this.tip=null;this.tipAge=0;this.pendingTips.length=0;this.label.style.opacity=0;this.activeId=null;this.hudKey='';for(const fx of [...this.rings,...this.arcs])fx.mesh.visible=false;this.clearExtraPulse();if(run)this.seen.clear();this.updateHUD();}
+ clearExtraPulse(){this.extraPulse.visible=false;const data=this.extraPulse.userData.pulseBatch;data.core.count=data.halo.count=data.aura.count=0;}
+ ensureExtraPulseCapacity(count){const old=this.extraPulse,data=old.userData.pulseBatch;if(count<=data.capacity)return;let capacity=data.capacity;while(capacity<count)capacity*=2;this.extraPulse=this.visuals.createPulseAccentBatch(capacity);this.scene.add(this.extraPulse);old.removeFromParent();this.visuals.releaseInstance(old);}
+ renderExtraPulse(extraBalls){
+  if(!this.accents.pulse.visible||!extraBalls.length){this.clearExtraPulse();return;}
+  this.ensureExtraPulseCapacity(extraBalls.length);
+  const data=this.extraPulse.userData.pulseBatch,template=this.accents.pulse,animation=template.userData.pulseAnimation,matrix=this.pulseInstanceMatrix;
+  template.updateMatrix();this.pulseRootMatrix.copy(template.matrix).setPosition(0,0,0);
+  for(let i=0;i<2;i++){animation.bands[i].updateMatrix();this.pulseBandMatrices[i].multiplyMatrices(this.pulseRootMatrix,animation.bands[i].matrix);}
+  const auraDiameter=this.radius*2*animation.aura.scale.x;let count=0;
+  for(const echo of extraBalls){
+   if(!echo||echo.removed||echo.valid===false||!echo.b||typeof echo.b.translation!=='function'||(typeof echo.b.isValid==='function'&&!echo.b.isValid()))continue;
+   const p=echo.b.translation();if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.z))continue;
+   for(let band=0;band<2;band++){matrix.copy(this.pulseBandMatrices[band]).setPosition(p.x,p.y,p.z);data.core.setMatrixAt(count*2+band,matrix);data.halo.setMatrixAt(count*2+band,matrix);}
+   matrix.makeScale(auraDiameter,auraDiameter,1).setPosition(p.x,p.y,p.z);data.aura.setMatrixAt(count++,matrix);
+  }
+  data.core.count=data.halo.count=count*2;data.aura.count=count;this.extraPulse.visible=count>0;
+  for(const object of [data.core,data.halo,data.aura])object.instanceMatrix.needsUpdate=true;
+ }
+ dispose(){
+  if(this.disposed)return;this.disposed=true;this.reset();
+  for(const accent of Object.values(this.accents))accent.removeFromParent();
+  this.extraPulse.removeFromParent();this.visuals.releaseInstance(this.extraPulse);
+  const geometries=new Set([this.shadowGeometry,this.bombTimerGeometry,this.arcTubeGeometry,this.arcImpactGeometry]),materials=new Set([this.shadowMaterial,this.bombTimerMaterial]);
+  for(const fx of [...this.rings,...this.arcs]){fx.mesh.removeFromParent();fx.mesh.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material)materials.add(object.material);});this.visuals.releaseInstance(fx.mesh);}
+  for(const geometry of geometries)geometry.dispose();for(const material of materials)material.dispose();this.visuals.dispose();this.label.remove?.();this.hud.remove?.();
+ }
  clearAutomatic(){for(let i=this.pickups.length-1;i>=0;i--){const item=this.pickups[i];if(!BONUS_DEFS[item.kind].automatic)continue;this.pickups.splice(i,1);this.disposeReleasedCore(item);this.disposeTimer(item);item.mesh.removeFromParent();this.visuals.releaseInstance(item.mesh);item.shadow.removeFromParent();}}
  disposeTimer(item){if(item.timerRing){item.timerRing.removeFromParent();item.timerRing.geometry.dispose();item.timerRing=null;}}
  disposeReleasedCore(item){if(item.releasedCore){this.scene.remove(item.releasedCore);this.visuals.releaseInstance(item.releasedCore);item.releasedCore=null;}}
@@ -76,7 +104,7 @@ export class BonusWorld {
   if(this.cores.size){const first=this.cores.values().next().value;this.teach('container','Break it to release a power',()=>first.mesh.position);}
   for(let n=pickupSweep.length-1;n>=0;n--){const item=pickupSweep[n],i=this.pickups.indexOf(item);if(i<0)continue;
    if(item.returning>0){item.returning=Math.max(0,item.returning-dt);const t=1-item.returning/.32;item.p.lerpVectors(item.from,item.to,t*t*(3-2*t));item.p.y+=Math.sin(t*Math.PI)*.25;}
-   else if(!item.landed){item.v.y-=18*dt;item.p.addScaledVector(item.v,dt);if(!this.safe(item.p)){this.returnItem(item);continue;}if(item.p.y<=item.height){item.p.y=item.height;if(!item.bounced&&item.v.y<-.5){item.v.y=Math.min(1.1,-item.v.y*.13);item.v.x*=.2;item.v.z*=.2;item.bounced=true;}else{item.v.set(0,0,0);item.landed=true;this.onSound('land');this.pulse(item.p,.36,BONUS_DEFS[item.kind].color);this.teach(item.kind==='bomb'?'bomb-fuse':'pickup',item.kind==='bomb'?'Bomb armed · 5 seconds':'Collect to activate',()=>item.p);}}}
+   else if(!item.landed){item.v.y-=18*dt;item.p.addScaledVector(item.v,dt);if(!this.safe(item.p)){this.returnItem(item);continue;}if(item.p.y<=item.height){item.p.y=item.height;if(!item.bounced&&item.v.y<-.5){item.v.y=Math.min(1.1,-item.v.y*.13);item.v.x*=.2;item.v.z*=.2;item.bounced=true;}else{item.v.set(0,0,0);item.landed=true;this.onSound('land');this.pulse(item.p,.36,BONUS_DEFS[item.kind].color);this.teach(item.kind==='bomb'?'bomb-fuse':'pickup',item.kind==='bomb'?'Bomb armed · 3 seconds':'Collect to activate',()=>item.p);}}}
    else if(item.kind==='bomb'){
     if(!effectsPaused)item.fuseRemaining=Math.max(0,item.fuseRemaining-dt);
     item.timerRing.visible=true;item.timerRing.position.set(item.p.x,.035,item.p.z);item.timerRing.geometry.setDrawRange(0,Math.ceil(item.timerRing.geometry.index.count*item.fuseRemaining/BONUS_DEFS.bomb.countdown/3)*3);
@@ -114,8 +142,9 @@ export class BonusWorld {
   for(const a of entries){const hits=Math.max(1,a.remaining??a.charges??1),status=a.kind==='heavy'?(hits===1?'1 NEXT HIT':`${hits} HITS`):a.exiting?'EXITING':'ACTIVE',timer=Number.isFinite(a.secondsLeft)&&!a.exiting?` · ${Math.ceil(Math.max(0,a.secondsLeft))}s`:'';add(a.kind,`${(a.name||BONUS_DEFS[a.kind].name).toUpperCase()} · ${status}${timer}`);}
   if(h.splitActive&&!entries.some(a=>a.kind==='split'))add('split','SPLIT · EXTRA BALLS LIVE');
  }
- render(camera,ballPoint){const h=this.controller.snapshotHUD(),active=new Map((h.activeEffects||[]).map(a=>[a.kind,a]));if((h.heavy||h.heavyArmed)&&!active.has('heavy'))active.set('heavy',{kind:'heavy'});
+ render(camera,ballPoint,extraBalls=[]){const h=this.controller.snapshotHUD(),active=new Map((h.activeEffects||[]).map(a=>[a.kind,a]));if((h.heavy||h.heavyArmed)&&!active.has('heavy'))active.set('heavy',{kind:'heavy'});
   for(const [kind,mesh]of Object.entries(this.accents)){const a=active.get(kind);mesh.visible=kind==='split'?(Boolean(h.splitActive)||Boolean(a)):Boolean(a);mesh.position.copy(ballPoint);mesh.rotation.y=this.time*.6;if(mesh.visible)this.visuals.animateBallAccent(mesh,this.time);if(kind==='pierce'||kind==='frost'){const duration=BONUS_DEFS[kind].duration,fraction=a?Math.max(0,Number.isFinite(a.secondsLeft)?a.secondsLeft:duration)/duration:0;mesh.userData.charges?.forEach((segment,i,all)=>segment.visible=i/all.length<fraction);}}
+  this.renderExtraPulse(extraBalls);
   if(this.tip&&this.tipAge>0){const point=typeof this.tip.point==='function'?this.tip.point():this.tip.point;if(point){const p=point.clone().add(new THREE.Vector3(0,.5,0));p.z+=this.scene.position.z;p.project(camera);this.label.textContent=this.tip.text;this.label.style.left=`${THREE.MathUtils.clamp((p.x+1)*innerWidth/2,85,innerWidth-85)}px`;this.label.style.top=`${this.tip.screenY?innerHeight*this.tip.screenY:THREE.MathUtils.clamp((1-p.y)*innerHeight/2,100,innerHeight-110)}px`;this.label.style.opacity=p.z<1?1:0;}}else this.label.style.opacity=0;
  }
 }

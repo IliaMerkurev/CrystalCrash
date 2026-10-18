@@ -82,3 +82,6 @@ Black Hole now uses a 6.6-ball-diameter radius, eases camera focus over 1.1 seco
 
 ### Pulse readability
 Pulse impacts now show a short local amber flash, two broader luminous expanding waves and 48 brighter radial sparks. Wave geometry and warmup are pooled; damage, radius and mini-shake are unchanged. The active-ball amber cue is also enlarged and animated while preserving the reflective ball surface.
+
+### Short Bomb fuse and heat shock
+Bomb countdown is 3 simulation seconds after landing, with a synchronized circular fuse display. A thin bright shock ring scales outward and fades in .38 seconds; a short local heat-distortion pass follows the expanding blast. Fire/ember glow increases without changing damage or ball impulses. Pulse's persistent amber cue is shared by all live balls through instanced effects.

@@ -75,6 +75,22 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     map: pulseGlowTexture, color: 0xff9e23, transparent: true, opacity: .48,
     blending: THREE.AdditiveBlending, depthTest: true, depthWrite: false, toneMapped: false,
   }));
+  // Extras share the same aura texture/color, with camera-facing quads batched
+  // into one draw instead of a separate Sprite for every live ball.
+  const pulseInstancedAura = ownMaterial(new THREE.MeshBasicMaterial({
+    map: pulseGlowTexture, color: 0xff9e23, transparent: true, opacity: .48,
+    blending: THREE.AdditiveBlending, depthTest: true, depthWrite: false, toneMapped: false,
+  }));
+  pulseInstancedAura.customProgramCacheKey = () => 'pulse-instanced-aura-v1';
+  pulseInstancedAura.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `
+      vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(0., 0., 0., 1.);
+      vec2 pulseSize = vec2(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz));
+      mvPosition.xy += position.xy * pulseSize * length(modelViewMatrix[0].xyz);
+      gl_Position = projectionMatrix * mvPosition;
+    `);
+  };
+  const pulseBatches = new Set();
   function polygon(points) {
     const shape = new THREE.Shape();
     shape.moveTo(points[0][0], points[0][1]);
@@ -362,6 +378,24 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     const diameter = 1.84 * (1 + .045 * breath);
     data.aura.scale.set(diameter, diameter, 1);
   }
+  /** Three draws regardless of population: both bands, both halos, all auras.
+   * Capacity is supplied by the caller; replacing a batch only frees instance
+   * buffers. Its geometry/materials remain shared with other live batches.
+   */
+  function createPulseAccentBatch(capacity = 32) {
+    if (!Number.isSafeInteger(capacity) || capacity < 1) throw new RangeError('Pulse batch capacity must be a positive integer');
+    const group = new THREE.Group(); group.name = 'pulse-extra-accents';
+    const make = (geometry, material, count) => {
+      const object = new THREE.InstancedMesh(geometry, material, count);
+      object.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      object.frustumCulled = false; object.count = 0; group.add(object); return object;
+    };
+    const core = make(pulseBand, pulseBandLight, capacity * 2);
+    const halo = make(pulseBandHalo, pulseBandGlow, capacity * 2);
+    const aura = make(cloudQuad, pulseInstancedAura, capacity);
+    group.userData.pulseBatch = {capacity, core, halo, aura, released: false};
+    group.visible = false; pulseBatches.add(group); return group;
+  }
   /** Add this group to a lit scene for compileAsync + a real offscreen draw.
    * Remove afterward without disposing geometries/materials. All draw variants
    * (standard, basic, sprites, instancing) are represented before PLAY.
@@ -374,6 +408,14 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       model.position.x = (i - (kinds.length - 1) / 2) * 1.2; core.position.set(model.position.x, .8, .1); accent.position.set(model.position.x, -.8, .1);
       group.add(model, core, accent);
     }
+    const pulseBatch = createPulseAccentBatch(1), data = pulseBatch.userData.pulseBatch;
+    const matrix = new THREE.Matrix4().makeScale(.12, .12, .12);
+    for (const object of [data.core, data.halo, data.aura]) {
+      object.count = object === data.aura ? 1 : 2;
+      for (let i = 0; i < object.count; i++) object.setMatrixAt(i, matrix);
+      object.instanceMatrix.needsUpdate = true;
+    }
+    pulseBatch.visible = true; pulseBatch.position.y = -1.1; group.add(pulseBatch);
     group.traverse(object => {object.frustumCulled = false;});
     return group;
   }
@@ -382,7 +424,12 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
    */
   function releaseInstance(root) {
     root.traverse(object => {
-      if (object.isInstancedMesh) object.dispose();
+      if (object.userData.pulseBatch) {
+        object.userData.pulseBatch.released = true; pulseBatches.delete(object);
+      }
+      if (object.isInstancedMesh && !object.userData.bonusInstanceReleased) {
+        object.userData.bonusInstanceReleased = true; object.dispose();
+      }
       if (object.userData.powerFXWarmupGeometry) object.geometry.dispose();
       if (object.userData.powerFXWarmupMaterial) object.material.dispose();
     });
@@ -391,10 +438,11 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   function dispose() {
     if (disposed) return;
     disposed = true;
+    for (const batch of pulseBatches) {batch.removeFromParent(); releaseInstance(batch);}
     geometries.forEach(geometry => geometry.dispose());
     materials.forEach(material => material.dispose());
     glowTexture.dispose();
     pulseGlowTexture.dispose();
   }
-  return {createModel, createPickup: createModel, createCore, createPickupAura, animateCore, createBallAccent, animateBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
+  return {createModel, createPickup: createModel, createCore, createPickupAura, animateCore, createBallAccent, animateBallAccent, createPulseAccentBatch, warmupObjects, releaseInstance, dispose, colors, unitBounds};
 }

@@ -177,7 +177,7 @@ test('Arc, Tornado and Black Hole return immediate descriptors on every pickup',
 
 test('Automatic Bomb remains outside inventory with bounded blast tuning', () => {
   const def = BONUS_DEFS.bomb, powers = new BonusController();
-  assert.equal(def.countdown, 5); assert.equal(def.radiusD, 4.4); assert.equal(def.damage, 8);
+  assert.equal(def.countdown, 3); assert.equal(def.radiusD, 4.4); assert.equal(def.damage, 8);
   assert.equal(def.maxBallSpeed, 30); assert.equal(def.kickSpeed, 22); assert.equal(def.color, 0xff9438);
   powers.collect('pulse'); powers.collect('frost'); powers.collect('heavy');
   const before = powers.snapshotHUD();
@@ -412,15 +412,15 @@ test('Black Hole lens skips post-draw after a copy GL error and warns only once'
   assert.equal(renderer.autoClear, true);
 });
 
-test('Automatic Bomb starts five-second fuse only on landing, pauses and explodes exactly once',()=>{
+test('Automatic Bomb starts three-second fuse only on landing, pauses and explodes exactly once',()=>{
  const {world,controller}=makeWorld();let explosions=0;world.onBomb=()=>explosions++;
  world.release({id:'bomb-check',bonus:'bomb',bonusPose:{p:new THREE.Vector3(0,2,-2),q:new THREE.Quaternion(),v:new THREE.Vector3()}});
  const item=world.pickups[0],ball=new THREE.Vector3(0,.38,-2),velocity=new THREE.Vector3(0,0,10);
- for(let i=0;i<300&&!item.landed;i++){world.update(.01,ball,velocity,true,new Map());assert.equal(item.fuseRemaining,5);}
+ for(let i=0;i<300&&!item.landed;i++){world.update(.01,ball,velocity,true,new Map());assert.equal(item.fuseRemaining,3);}
  assert(item.landed);assert(item.timerRing);assert.equal(controller.active,null);
  for(let i=0;i<100;i++)world.update(.01,ball,velocity,true,new Map(),[],true);
- assert.equal(item.fuseRemaining,5);assert.equal(explosions,0);
- for(let i=0;i<499;i++)world.update(.01,ball,velocity,true,new Map());
+ assert.equal(item.fuseRemaining,3);assert.equal(explosions,0);
+ for(let i=0;i<299;i++)world.update(.01,ball,velocity,true,new Map());
  assert.equal(explosions,0);assert(item.fuseRemaining<.011);
  world.update(.011,ball,velocity,true,new Map());assert.equal(explosions,1);assert.equal(world.pickups.length,0);assert.equal(item.timerRing,null);
  world.update(1,ball,velocity,true,new Map());assert.equal(explosions,1);

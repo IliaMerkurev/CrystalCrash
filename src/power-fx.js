@@ -46,7 +46,7 @@ export class PowerFX {
     this.mesh.frustumCulled = false;
     this.root.add(this.mesh);
     const ringGeometry = new THREE.RingGeometry(.935, 1, 64);
-    this.ringGeometry=ringGeometry;this.pulseRingGeometry=new THREE.RingGeometry(.80,1,64);this.pulseFlashGeometry=new THREE.RingGeometry(.08,1,48);
+    this.ringGeometry=ringGeometry;this.bombRingGeometry=new THREE.RingGeometry(.985,1,96);this.pulseRingGeometry=new THREE.RingGeometry(.80,1,64);this.pulseFlashGeometry=new THREE.RingGeometry(.08,1,48);
     this.rings = Array.from({ length: 4 }, () => {
       const mesh = new THREE.Mesh(ringGeometry, new THREE.MeshBasicMaterial({
         transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
@@ -100,6 +100,7 @@ export class PowerFX {
           float heat=clamp(veins*veins-.29-bombPhase*.16,0.,1.);
           diffuseColor.rgb=mix(vec3(.28,.012,.001),vec3(1.,.18,.008),smoothstep(.05,.45,heat));
           diffuseColor.rgb=mix(diffuseColor.rgb,vec3(1.,.78,.19),smoothstep(.36,.70,heat));
+          diffuseColor.rgb*=vec3(1.25,1.18,1.08);
           diffuseColor.a*=smoothstep(.14,.48,turbulence);`}
         `);
       };
@@ -169,7 +170,7 @@ export class PowerFX {
 
   _ring(kind, point, start, end, life, rise = 0, delay = 0, opacity = .8, flash = false) {
     const r = this.rings.find(r => !r.mesh.visible) || this.rings.reduce((a, b) => a.age / a.life > b.age / b.life ? a : b);
-    r.mesh.geometry=kind==='pulse'?(flash?this.pulseFlashGeometry:this.pulseRingGeometry):this.ringGeometry;
+    r.mesh.geometry=kind==='pulse'?(flash?this.pulseFlashGeometry:this.pulseRingGeometry):kind==='bomb'?this.bombRingGeometry:this.ringGeometry;
     r.mesh.position.copy(point); r.y = Math.max(.065, point.y);
     r.mesh.position.y = r.y; r.mesh.material.color.setHex(BONUS_DEFS[kind].color);
     r.age = -delay; r.life = life; r.start = start; r.end = end; r.rise = rise; r.opacity = opacity;
@@ -180,10 +181,11 @@ export class PowerFX {
     if (!BONUS_DEFS[kind] || !point) return;
     const d = this.radius * 2;
     if (kind === 'bomb') {
-      // Fire, smoke and streaks carry the blast silhouette, not geometric rings.
+      // Fire and smoke carry the volume; one thin, fast ring traces the shock front.
       this.bombPoint.copy(point); this.bombPoint.y=Math.max(.08,point.y);
       this.bombAge=0;this.bombShaderTime.value=0;
       this.fire.visible=true;this.smoke.visible=true;this.flash.visible=true;
+      this._ring(kind,point,d*.18,d*BONUS_DEFS.bomb.radiusD*1.15,.38,.035,0,1.8);
       this.fire.material.opacity=0;this.smoke.material.opacity=0;this.flash.material.opacity=0;
     } else if (kind === 'pulse') {
       const radius = d * Math.max(4.4, BONUS_DEFS.pulse.radiusD);
@@ -225,7 +227,7 @@ export class PowerFX {
       const stretch = kind === 'bomb' ? (i%3===0?2.5:18+Math.random()*12) : kind === 'frost' ? 5 : kind === 'arc' || kind === 'pierce' ? 10 : kind === 'heavy' ? 2.6 : 4;
       const p = this._particle(kind, point, a, speed, life, size, stretch);
       if (kind === 'bomb') {
-        p.v.y=d*(1.5+Math.random()*9);p.glow=1.65;if(i%3===0)p.v.multiplyScalar(.55);
+        p.v.y=d*(1.5+Math.random()*9);p.glow=2.1;if(i%3===0)p.v.multiplyScalar(.55);
         this.mesh.setColorAt((this.cursor-1)%this.particles.length,this.color.setHex(i%3===0?0xff6b12:i%2?0xfff1a8:0xffac32));
       }
       if (kind === 'pulse') {p.glow=1.65;p.stretch=6;p.v.y=d*(.5+Math.random()*2);}
@@ -414,7 +416,7 @@ export class PowerFX {
       } else clone.scale.setScalar(.12);
       clone.position.set(0,0,0);group.add(clone);
     }
-    for(const geometry of [this.pulseRingGeometry,this.pulseFlashGeometry]){const mesh=new this.T.Mesh(geometry.clone(),this.rings[0].mesh.material.clone());mesh.material.opacity=.5;mesh.scale.setScalar(.12);mesh.userData.powerFXWarmupMaterial=true;mesh.userData.powerFXWarmupGeometry=true;group.add(mesh);}
+    for(const geometry of [this.pulseRingGeometry,this.pulseFlashGeometry,this.bombRingGeometry]){const mesh=new this.T.Mesh(geometry.clone(),this.rings[0].mesh.material.clone());mesh.material.opacity=.5;mesh.scale.setScalar(.12);mesh.userData.powerFXWarmupMaterial=true;mesh.userData.powerFXWarmupGeometry=true;group.add(mesh);}
     return group;
   }
 
