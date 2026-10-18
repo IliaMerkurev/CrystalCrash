@@ -6,6 +6,9 @@ import vm from 'node:vm';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import {GLASS,TUNE} from '../src/config.js';
+import {RenderQuality,QUALITY_TIERS} from '../src/render-quality.js';
+import {intactShellColliderDesc} from '../src/intact-shell-collider.js';
+import {FractureTemplateCache} from '../src/fracture-template-cache.js';
 import {createGraph} from '../src/cluster-graph.js';
 import {wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells} from '../src/glass-shell.js';
 import {arenaDefinition,arenaBlocks,setArenaRunSeed} from '../src/arena-data.js';
@@ -50,7 +53,7 @@ await RAPIER.init();
 const v3=(...n)=>new THREE.Vector3(...n),powers=new BonusController(),scene=new THREE.Scene();
 let effectsCleared=0,notices=[],windowEvents={};
 const context={tutorialEvent(){},tutorial:null,
- BlackHoleRelease,CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
+ QUALITY_TIERS,renderQuality:new RenderQuality(),REFLECTION_RES:1024,applyRenderQuality(){},intactShellColliderDesc,fractureTemplates:new FractureTemplateCache(),BlackHoleRelease,CaptureCollisionProxy,THREE,RAPIER,GLASS,BONUS_DEFS,createGraph,wallThickness,shellPanels,shellGeometry,plateGeometry,fractureFaces,voronoiCells,
  arenaDefinition,arenaBlocks,document,window:{addEventListener:(name,fn)=>windowEvents[name]=fn},$ :id=>elements.get(id),
  v3,clamp:THREE.MathUtils.clamp,C:{...TUNE},GROUP:{table:0x0001001f,ball:0x00020017,structure:0x0004001f,debris:0x00080005},
  scene,powers,camera:new THREE.PerspectiveCamera(42,390/844,.1,100),cameraBase:v3(0,15,17),
