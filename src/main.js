@@ -34,9 +34,17 @@ function glassEdgeTexture(){
  const texture=new THREE.DataTexture(data,size,size);texture.magFilter=texture.minFilter=THREE.LinearFilter;texture.needsUpdate=true;return texture;
 }
 async function warmGlassShaders(){
- const temporary=[];for(let type=0;type<5;type++)for(const material of [debrisMaterials[type],fractureMaterials[type]]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(.1,.1,.1),material);mesh.position.set(0,-10,0);mesh.receiveShadow=material===fractureMaterials[type];mesh.castShadow=mesh.receiveShadow;scene.add(mesh);temporary.push(mesh);}
- await renderer.compileAsync(scene,camera);for(const mesh of temporary){scene.remove(mesh);mesh.geometry.dispose();}
+ // Exercise actual draw paths before PLAY, not just program linking. This also
+ // allocates the reflection/shadow targets and uploads the instanced chip buffers.
+ const temporary=[],instances=[...dustMeshes,glints,particleGlow],counts=instances.map(m=>m.count);
+ const size=renderer.getDrawingBufferSize(new THREE.Vector2()),target=new THREE.WebGLRenderTarget(size.x,size.y),previous=renderer.getRenderTarget();
+ const matrix=new THREE.Matrix4().makeTranslation(0,.8,MID);
+ for(let type=0;type<5;type++)for(const material of [debrisMaterials[type],fractureMaterials[type]]){const mesh=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,.12),material);mesh.position.set((type-2)*.2,.8,MID);mesh.frustumCulled=false;mesh.receiveShadow=material===fractureMaterials[type];mesh.castShadow=mesh.receiveShadow;scene.add(mesh);temporary.push(mesh);}
+ for(const mesh of instances){mesh.count=1;mesh.setMatrixAt(0,matrix);mesh.instanceMatrix.needsUpdate=true;}
+ try{await renderer.compileAsync(scene,camera);renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.getContext().finish();}
+ finally{renderer.setRenderTarget(previous);instances.forEach((m,i)=>{m.count=counts[i];});for(const mesh of temporary){scene.remove(mesh);mesh.geometry.dispose();}target.dispose();}
 }
+
 function setupScene(){
  RectAreaLightUniformsLib.init();
  renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;
