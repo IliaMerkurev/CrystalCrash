@@ -20,3 +20,10 @@ const modalStart=source.indexOf('function syncModalBlur()'),modalEnd=source.inde
 console.log('PASS scene blur follows start, Test, pause and gameplay restoration');
 
 assert.deepEqual(musicStates,[false,true,false,false,true]);modal.document.hidden=true;modal.syncModalBlur();assert.equal(musicStates.at(-1),false);console.log('PASS music follows modal and hidden-page eligibility');
+
+const longPress=source.split('\n').find(line=>line.startsWith("document.addEventListener('contextmenu'"));assert(longPress);let guard;
+vm.runInNewContext(longPress,{document:{addEventListener:(kind,fn)=>{assert.equal(kind,'contextmenu');guard=fn;}}});
+let prevented=0;const event=(editable,game)=>({target:{closest:selector=>selector.startsWith('input')?editable:game},preventDefault(){prevented++;}});
+guard(event(false,true));assert.equal(prevented,1);guard(event(true,true));guard(event(false,false));guard({target:null,preventDefault(){prevented++;}});assert.equal(prevented,1);
+assert(css.includes('-webkit-user-select:none;user-select:none;-webkit-touch-callout:none'));assert(css.includes('-webkit-user-select:text;user-select:text;-webkit-touch-callout:default'));assert(css.includes('touch-action:none'));
+console.log('PASS game long-press callout/selection guard preserves editable fields and unrelated browser context menus');

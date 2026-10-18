@@ -49,3 +49,6 @@ button{backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blu
 
 /* Explicit effect/HUD layers keep frosty screen edges below every label/control. */
 #game{position:fixed;inset:0;z-index:0}.frost-screen-mask{z-index:1!important}header,footer,#section,#toast{z-index:3}.overlay{z-index:10}
+
+/* iOS long presses belong to gameplay, not text selection or callouts. */
+body,canvas,header,footer,.overlay,.power-slot,.power-tip,.cc-tutorial,button,#toast,#section,.bonus-test-card{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
