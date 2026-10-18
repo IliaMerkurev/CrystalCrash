@@ -122,3 +122,6 @@ Arena 2 always offers Bomb plus a different eligible bonus. Frost is excluded wh
 
 ### Contextual onboarding
 A lightweight animated hand/arrow teaches main-ball catch, pull/release, lower-zone attraction, extra-ball catch/relaunch, bonus collection and the unlocked gate. Actual actions advance control lessons; nine first-appearance power cards use live targets and pause behind higher-priority controls. Progress is saved locally under a stable tutorial key; Replay Tutorial in Pause restarts guidance without resetting the arena. Menus hide cues and pause progression. Bomb camera shake now uses twice the displacement coefficients and two-thirds oscillation frequency, with its original duration; other camera effects retain their previous bounds.
+
+### Dense Bomb placement
+Bomb carriers are one-hit T1 glass and are chosen by maximum nearby-original coverage at the actual landed blast height/radius, rather than the general bonus spacing rule. Other bonus kinds remain on separate, dispersed towers. Bombs drop vertically from the broken carrier; rare out-of-table recovery moves visibly to the nearest upper-table point instead of the player pickup area. Deterministic placement and real model-drop checks cover normal, long and narrow fields; moving/destroyed neighbors can change the eventual blast count.

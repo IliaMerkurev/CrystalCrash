@@ -178,7 +178,7 @@ test('Retuning preserves all pre-change cube geometry, tiers and progression thr
   }
 });
 
-test('World-space spread retains distinct towers and the farthest pair for every bonus set', () => {
+test('World-space spread retains distinct towers and the farthest pair when Bomb is absent', () => {
   const distance = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
   try {
     for (const seed of [1, DEFAULT_SEED, 0xffffffff]) {
@@ -202,8 +202,10 @@ test('World-space spread retains distinct towers and the farthest pair for every
           for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) maximum = Math.max(maximum, distance(points[i], points[j]));
           return maximum;
         };
-        assert.ok(Math.abs(farthest(pickups) - farthest(candidates)) < 1e-9,
-          `arena ${level} keeps the farthest available host pair`);
+        if (!specs.some(spec => spec[7] === 'bomb')) {
+          assert.ok(Math.abs(farthest(pickups) - farthest(candidates)) < 1e-9,
+            `arena ${level} keeps the farthest available host pair`);
+        }
       }
     }
   } finally { setArenaRunSeed(DEFAULT_SEED); }

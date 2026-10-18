@@ -1,4 +1,6 @@
-import { GLASS } from './config.js';
+import { GLASS, TUNE } from './config.js';
+import { BONUS_DEFS } from './bonus-controller.js';
+import { BOMB_LANDING_Y, bombLandingPoint } from './bomb-placement.js';
 
 /** Authored CrystalCrash progression. Tiers in blueprints are one-based.
  * Stack coordinates use a collision-safe horizontal/depth pitch, with row zero
@@ -342,34 +344,59 @@ export function arenaBlocks(level, { cube = .88, layoutZ = z => z, bounds = {} }
   return specs;
 }
 
-/** Distribute the already chosen bonus kinds in horizontal world space. Measuring
- * final positions includes rear rows, short-field fallback and tapered-edge
- * clamping. Same level, seed and bounds always produce the same assignments. */
+/** Bomb belongs in the densest blast-sized cluster; the other chosen bonuses
+ * spread out around it. Measuring final positions includes rear rows, short-field
+ * fallback and tapered-edge clamping. Assignments remain seed/bounds stable. */
 function spreadBonusHosts(specs, bounds) {
   const kinds = specs.filter(spec => spec[7]).map(spec => spec[7]);
   if (!kinds.length) return;
   const halfAt = typeof bounds.half === 'function' ? bounds.half
     : () => Number.isFinite(bounds.half) ? bounds.half : 6.25;
   const candidates = [], byTower = new Map();
-  specs.forEach((spec, index) => {
+  const originals = specs.map((spec, index) => {
     if (spec[7]) spec.length = 7;
-    if (spec[3] !== 0) return;
     const rotated = spec[4] === spec[5] && spec[5] === spec[6];
     const ex = rotated ? (spec[4] + spec[6]) * Math.SQRT1_2 / 2 : spec[4] / 2;
     const ez = rotated ? ex : spec[6] / 2;
     const limit = Math.min(halfAt(spec[2] - ez), halfAt(spec[2] + ez)) - ex - .34;
     const x = Math.max(-limit, Math.min(limit, spec[0])), z = spec[2];
     const key = `${Math.round(x * 1e6)}:${Math.round(z * 1e6)}`;
-    const candidate = { spec, index, x, z, key };
+    const candidate = { spec, index, x, y: spec[1], z, key };
+    if (spec[3] !== 0) return candidate;
     candidates.push(candidate);
     const current = byTower.get(key);
     if (!current || spec[1] < current.spec[1]) byTower.set(key, candidate);
+    return candidate;
   });
   if (candidates.length < kinds.length) throw new RangeError('Arena lacks distinct T1 bonus hosts');
   const order = (a, b) => b.z - a.z || a.x - b.x || a.spec[1] - b.spec[1] || a.index - b.index;
   const towers = [...byTower.values()].sort(order), chosen = [];
   const distance = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
-  if (kinds.length > 1 && towers.length > 1) {
+  if (kinds.includes('bomb')) {
+    // The released Bomb model is normalized to one unit tall, centered, then
+    // scaled by ball diameter * 1.3. BonusWorld rests its bottom .012 above the
+    // table. Score the actual 3D blast, not a circle at the carrier's elevation:
+    // tall towers and isolated rear hosts must not inflate useful coverage.
+    const radiusSquared = (BONUS_DEFS.bomb.radiusD * TUNE.ballRadius * 2) ** 2;
+    let best = null, bestCount = -1, bestDistance = Infinity;
+    for (const candidate of candidates) {
+      const landing = bombLandingPoint(candidate, bounds);
+      let count = 0, totalDistance = 0;
+      for (const original of originals) {
+        if (original === candidate) continue; // The T1 carrier already broke.
+        const d = distance(landing, original) + (original.y - BOMB_LANDING_Y) ** 2;
+        if (d <= radiusSquared) { count++; totalDistance += d; }
+      }
+      if (count > bestCount || count === bestCount && (candidate.y < best.y ||
+        candidate.y === best.y && (totalDistance < bestDistance - 1e-9 ||
+        Math.abs(totalDistance - bestDistance) <= 1e-9 && order(candidate, best) < 0))) {
+        best = candidate; bestCount = count; bestDistance = totalDistance;
+      }
+    }
+    chosen.push(best);
+    // Preserve every scheduled kind while assigning Bomb its scored host first.
+    kinds.splice(kinds.indexOf('bomb'), 1); kinds.unshift('bomb');
+  } else if (kinds.length > 1 && towers.length > 1) {
     // Start with the globally farthest pair so two-bonus arenas use opposite
     // regions instead of neighboring tiers or adjacent front containers.
     let pair = [towers[0], towers[1]], separation = -1;
@@ -392,7 +419,9 @@ function spreadBonusHosts(specs, bounds) {
     }
     return best;
   };
-  while (chosen.length < Math.min(kinds.length, towers.length)) chosen.push(pickFarthest(towers));
+  while (chosen.length < Math.min(kinds.length, towers.length)) {
+    chosen.push(pickFarthest(towers.filter(candidate => !chosen.some(other => other.key === candidate.key))));
+  }
   // Only extremely narrow/short custom bounds can leave fewer towers than
   // bonuses. Keep every kind on a distinct original, balancing occupied towers
   // before reusing one; never silently drop a pickup to satisfy spacing.

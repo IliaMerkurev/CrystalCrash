@@ -1,3 +1,4 @@
+import { bombLandingPoint } from './bomb-placement.js';
 import * as THREE from 'three';
 import {createBonusVisuals} from './bonus-visuals.js';
 import {BONUS_DEFS} from './bonus-controller.js';
@@ -35,7 +36,7 @@ export class BonusWorld {
  capturePose(origin,body){origin.bonusPose={p:new THREE.Vector3().copy(body.translation()),q:new THREE.Quaternion().copy(body.rotation()),v:new THREE.Vector3().copy(body.linvel())};}
  release(origin){if(!Object.prototype.hasOwnProperty.call(BONUS_DEFS,origin.bonus)||origin.bonusReleased)return;origin.bonusReleased=true;this.dismiss('container');const core=this.cores.get(origin.id);if(core){this.cores.delete(origin.id);}
   const kind=origin.bonus,mesh=this.visuals.createModel(kind),scale=this.radius*2*1.3;mesh.scale.setScalar(scale);const box=new THREE.Box3().setFromObject(mesh),height=Math.max(.1,-box.min.y+.012),pose=origin.bonusPose;
-  const p=pose?.p.clone()||new THREE.Vector3(0,1,this.bounds().mid-1),v=pose?.v.clone().multiplyScalar(.18)||new THREE.Vector3();v.clampLength(0,1.4);v.y=Math.max(v.y,.25);
+  const p=pose?.p.clone()||new THREE.Vector3(0,1,this.bounds().mid-1),v=pose?.v.clone().multiplyScalar(.18)||new THREE.Vector3();v.clampLength(0,1.4);v.y=Math.max(v.y,.25);if(kind==='bomb'){v.x=0;v.z=0;}
   const aura=this.visuals.createPickupAura(kind);mesh.add(aura);
   const shadow=new THREE.Mesh(this.shadowGeometry,this.shadowMaterial);shadow.rotation.x=-Math.PI/2;shadow.position.set(p.x,.007,p.z);this.scene.add(shadow);const item={kind,mesh,shadow,aura,releasedCore:core?.mesh||null,p,v,height,scale,landed:false,bounced:false,blockedFor:0,noticeAt:-10,returning:0};this.pickups.push(item);this.scene.add(mesh);mesh.position.copy(p);this.onSound('release');
   if(kind==='bomb'){item.fuseRemaining=BONUS_DEFS.bomb.countdown;item.timerRing=new THREE.Mesh(this.bombTimerGeometry.clone(),this.bombTimerMaterial);item.timerRing.rotation.x=-Math.PI/2;item.timerRing.visible=false;this.scene.add(item.timerRing);}
@@ -43,7 +44,7 @@ export class BonusWorld {
  }
  safe(p){const b=this.bounds();return p.z>b.top+.8&&p.z<b.bottom-this.radius*3&&Math.abs(p.x)<b.half(p.z)-.7&&p.y>-.5;}
  safePoints(){const b=this.bounds(),span=b.bottom-b.mid;return [[0,b.mid+.75],[-.9,b.mid+span*.18],[.9,b.mid+span*.18],[0,b.mid+span*.35]].map(([x,z])=>new THREE.Vector3(x,.8,Math.min(z,b.bottom-this.radius*3.2)));}
- returnItem(item){const points=this.safePoints().filter(p=>!this.blocked(p,.42));if(!points.length)return;points.sort((a,b)=>a.distanceToSquared(item.p)-b.distanceToSquared(item.p));item.from=item.p.clone();item.to=points[0];this.arc([item.from,item.to],BONUS_DEFS[item.kind].color);item.returning=.32;item.landed=false;item.bounced=false;item.blockedFor=0;item.v.set(0,0,0);}
+ returnItem(item){if(item.kind==='bomb'){const landing=bombLandingPoint(item.p,this.bounds());item.from=item.p.clone();item.to=new THREE.Vector3(landing.x,Math.max(item.height,Math.min(item.p.y,.8)),landing.z);item.returning=.32;item.v.set(0,0,0);item.landed=false;item.bounced=false;item.blockedFor=0;return;}const points=this.safePoints().filter(p=>!this.blocked(p,.42));if(!points.length)return;points.sort((a,b)=>a.distanceToSquared(item.p)-b.distanceToSquared(item.p));item.from=item.p.clone();item.to=points[0];this.arc([item.from,item.to],BONUS_DEFS[item.kind].color);item.returning=.32;item.landed=false;item.bounced=false;item.blockedFor=0;item.v.set(0,0,0);}
  // Section changes discard uncollected physical items, but can retain independent
  // active timers, the armed Heavy strike and live Split state.
  reset({run=false,preservePowers=false}={}){for(const {mesh}of this.cores.values()){this.scene.remove(mesh);this.visuals.releaseInstance(mesh);}this.cores.clear();for(const p of this.pickups){this.disposeReleasedCore(p);this.scene.remove(p.mesh);this.visuals.releaseInstance(p.mesh);this.scene.remove(p.shadow);this.disposeTimer(p);}this.pickups.length=0;if(!preservePowers)this.controller.reset();this.lastBall=null;this.collectorHistory.clear();this.currentBall=null;this.tip=null;this.tipAge=0;this.pendingTips.length=0;this.label.style.opacity=0;this.activeId=null;this.hudKey='';for(const fx of [...this.rings,...this.arcs])fx.mesh.visible=false;this.clearExtraPulse();if(run)this.seen.clear();this.updateHUD();}

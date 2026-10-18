@@ -446,6 +446,18 @@ test('Automatic Bomb starts three-second fuse only on landing, pauses and explod
  world.update(1,ball,velocity,true,new Map());assert.equal(explosions,1);
 });
 
+test('Bomb drops vertically at its useful host and never returns to empty player pickup spots',()=>{
+ const {world}=makeWorld(), point=new THREE.Vector3(1.2,2,-3.2);
+ world.release({id:'dense-bomb',bonus:'bomb',bonusPose:{p:point.clone(),q:new THREE.Quaternion(),v:new THREE.Vector3(25,1,19)}});
+ const item=world.pickups[0];assert.equal(item.v.x,0);assert.equal(item.v.z,0);
+ for(let i=0;i<300&&!item.landed;i++)world.update(.01,new THREE.Vector3(),new THREE.Vector3(),false,new Map());
+ assert(item.landed);assert.equal(item.p.x,point.x);assert.equal(item.p.z,point.z);
+ item.p.set(8,1,-9.7);world.returnItem(item);
+ assert.equal(item.p.x,8,'fallback starts at the visible release point');assert(item.to.z<0);assert(item.to.z>-9.2);assert(item.to.x<4.3);assert.equal(item.returning,.32);
+ for(let i=0;i<300&&!item.landed;i++)world.update(.01,new THREE.Vector3(),new THREE.Vector3(),false,new Map());
+ assert(item.landed);assert(item.p.z<0);world.reset();
+});
+
 test('New automatic/model kinds have finite geometry and fixed-budget Bomb/Black Hole feedback',async()=>{
  const {PowerFX}=await import('../src/power-fx.js');const {world}=makeWorld();
  for(const kind of ['bomb','blackhole','gravity']){const model=world.visuals.createModel(kind);world.visuals.animateCore(model,2);model.traverse(o=>{if(o.geometry?.attributes.position)assert([...o.geometry.attributes.position.array].every(Number.isFinite));});world.visuals.releaseInstance(model);}
