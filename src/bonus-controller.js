@@ -3,7 +3,7 @@ export const BONUS_DEFS = Object.freeze({
   pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', duration: 10, radiusD: 4.4, maxTargets: Infinity, damage: 3, description: 'On pickup, 10 seconds: every ball impact blasts nearby cubes for 3 damage' }),
   pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', duration: 10, damage: 8, description: 'On pickup, 10 seconds of smashing straight through cubes' }),
   arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1, description: 'On pickup, one hit per bottom support, chaining within 4.4 ball diameters' }),
-  frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', duration: 10, markDuration: 10, bonusDamage: 1, description: 'On pickup, 10 seconds of marking cubes for a stronger next hit' }),
+  frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', persistent: true, hitReduction: 1, minHits: 1, description: 'On pickup, freezes all cubes in the arena until the round ends: one fewer hit to break, minimum one; original colors stay visible' }),
   split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, sourceType: 'all-live-balls', persistent: true, angleDegrees: 18, damage: 1, description: 'On pickup, every live ball creates two more; collect again to multiply them' }),
   gravity: Object.freeze({ kind: 'gravity', name: 'Tornado', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'On pickup, spins nearby cubes in a tornado for 4 seconds' }),
   bomb: Object.freeze({ kind: 'bomb', name: 'Bomb', color: 0xff9438, colorCss: '#FF9438', automatic: true, countdown: 3, radiusD: 4.4, damage: 8, maxBallSpeed: 30, kickSpeed: 22, description: 'Automatically explodes after 3 seconds, blasting nearby cubes and kicking balls away' }),
@@ -46,7 +46,7 @@ export class BonusController {
     if (!def) return {kind, accepted: false, message: 'Unknown power'};
     if (def.automatic) return {kind, accepted: false, message: `${def.name} is automatic and does not use inventory`};
     const id = ++this._serial;
-    if (['pulse', 'pierce', 'frost'].includes(kind)) {
+    if (['pulse', 'pierce'].includes(kind)) {
       const prior = this.attacks.get(kind);
       const expiresAt = Math.max(this._time, prior?.expiresAt ?? this._time) + def.duration;
       this.attacks.set(kind, {kind, id, startedAt: prior?.startedAt ?? this._time,
@@ -66,6 +66,9 @@ export class BonusController {
         sourceType: def.sourceType, persistent: true, angleDegrees: def.angleDegrees, damage: def.damage};
     } else if (kind === 'arc') {
       effect = {kind, originId: null, radiusD: def.radiusD, targetType: def.targetType, damage: def.damage};
+    } else if (kind === 'frost') {
+      effect = {kind, originId: null, persistent: true, targetType: 'all-current-originals',
+        hitReduction: def.hitReduction, minHits: def.minHits};
     } else if (kind === 'gravity') {
       effect = {kind, originId: null, radiusD: def.radiusD, duration: def.duration,
         maxTargets: def.maxTargets, accelerationD: def.accelerationD,
@@ -76,6 +79,22 @@ export class BonusController {
         speedCap: def.speedCap, maxTargets: def.maxTargets};
     }
     return {kind, accepted: true, message: `${def.name} activated`, effect: Object.freeze(effect)};
+  }
+
+  /** Freeze the current arena once per original. Durability changes belong to
+   * the arena; returning only new IDs prevents repeated pickups from stacking.
+   * These records last until the round's explicit reset, not a simulation timer.
+   */
+  freezeArena(originalIds = []) {
+    const frozenIds = [];
+    if (originalIds == null || typeof originalIds[Symbol.iterator] !== 'function') return frozenIds;
+    for (const id of originalIds) {
+      const valid = (Number.isSafeInteger(id) && id >= 0) || (typeof id === 'string' && id.trim().length > 0);
+      if (!valid || this.frostMarks.has(id)) continue;
+      this.frostMarks.set(id, Infinity);
+      frozenIds.push(id);
+    }
+    return frozenIds;
   }
 
   /** Each pickup gets a fresh ID, so earlier contacts cannot spend a later pickup. */
@@ -91,15 +110,11 @@ export class BonusController {
   tick(now) {
     if (!Number.isFinite(now)) throw new TypeError('Bonus time must be finite simulation seconds');
     this._time = Math.max(this._time, now);
-    const expiredFrostIds = [];
-    for (const [id, expiresAt] of this.frostMarks) if (expiresAt <= this._time) {
-      this.frostMarks.delete(id); expiredFrostIds.push(id);
-    }
     for (const [kind, attack] of this.attacks) if (attack.expiresAt !== null && attack.expiresAt <= this._time) {
       if (kind === 'pierce') attack.exiting = true;
       else this.attacks.delete(kind);
     }
-    return {pierceExit: this.pierceExit, suppressReflection: this.suppressReflection, expiredFrostIds};
+    return {pierceExit: this.pierceExit, suppressReflection: this.suppressReflection, expiredFrostIds: []};
   }
 
   /** Pulse excludes the direct-hit origin; secondary effects must not call back.
@@ -118,7 +133,7 @@ export class BonusController {
       const attack = this.attacks.get(kind);
       return attack && snapshot.activationIds[kind] === attack.id ? attack : null;
     };
-    const pierce = captured('pierce'), pulse = captured('pulse'), frost = captured('frost'), heavy = captured('heavy');
+    const pierce = captured('pierce'), pulse = captured('pulse'), heavy = captured('heavy');
     if (pierce && !pierce.exiting) {
       if (pierce.seen.has(originalId)) return result;
       pierce.seen.add(originalId);
@@ -128,20 +143,10 @@ export class BonusController {
     if (result.pierced) damage = Math.max(damage, BONUS_DEFS.pierce.damage);
     if (pulse) damage = Math.max(damage, BONUS_DEFS.pulse.damage);
     if (heavy) damage = Math.max(damage, BONUS_DEFS.heavy.damage);
-    if (this.frostMarks.has(originalId)) {
-      this.frostMarks.delete(originalId);
-      result.frostConsumed = true;
-      damage += BONUS_DEFS.frost.bonusDamage;
-    }
     result.damage = damage;
-    result.consumed = !!(result.pierced || pulse || frost || heavy);
+    result.consumed = !!(result.pierced || pulse || heavy);
     if (pulse) result.effects.push(Object.freeze({kind: 'pulse', originId: originalId,
       radiusD: BONUS_DEFS.pulse.radiusD, maxTargets: BONUS_DEFS.pulse.maxTargets, damage: BONUS_DEFS.pulse.damage}));
-    if (frost && !result.frostConsumed) {
-      const duration = BONUS_DEFS.frost.markDuration, expiresAt = this._time + duration;
-      this.frostMarks.set(originalId, expiresAt);
-      result.effects.push(Object.freeze({kind: 'frost', originId: originalId, duration, expiresAt}));
-    }
     if (heavy) {
       heavy.remaining--;
       if (heavy.remaining <= 0) this.attacks.delete('heavy');

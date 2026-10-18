@@ -28,7 +28,7 @@ export class BonusWorld {
  }
  warmupObjects(){const group=this.visuals.warmupObjects();group.add(new THREE.Mesh(this.bombTimerGeometry,this.bombTimerMaterial));for(const fx of [...this.rings,...this.arcs]){const m=fx.mesh.clone();m.visible=true;m.traverse(o=>{if(o.isInstancedMesh){o.count=1;o.setMatrixAt(0,new THREE.Matrix4().makeScale(.05,.05,.05));o.instanceMatrix.needsUpdate=true;}});group.add(m);}return group;}
  teach(key,text,point){if(this.seen.has(key)||this.pendingTips.some(t=>t.key===key))return;const tip={key,text,point};if(this.tipAge>0){this.pendingTips.push(tip);return;}this.seen.add(key);this.tip=tip;this.tipAge=3;}
- feedback(text,point){const activation=/^(ARC |BLACK HOLE |TORNADO |BOMB |PULSE |PIERCE |SPLIT |HEAVY |FROST |BRITTLE )/.test(text);this.tip={key:'feedback',text,screenY:activation?.58:null,point:()=>this.currentBall||point};this.tipAge=activation?1.25:2.7;}
+ feedback(text,point){const activation=/^(ARC |BLACK HOLE |TORNADO |BOMB |PULSE |PIERCE |SPLIT |HEAVY |FROST |ARENA FROZEN |BRITTLE )/.test(text);this.tip={key:'feedback',text,screenY:activation?.58:null,point:()=>this.currentBall||point};this.tipAge=activation?1.25:2.7;}
  dismissReadiness(kind){const name=BONUS_DEFS[kind]?.name.toUpperCase();const stale=t=>t&&(t.key==='power-'+kind||(t.text?.toUpperCase().includes(name)&&/READY|HIT GLASS/.test(t.text.toUpperCase())));this.pendingTips=this.pendingTips.filter(t=>!stale(t));if(stale(this.tip)){this.tip=null;this.tipAge=0;}}
  attach(origin){if(!Object.prototype.hasOwnProperty.call(BONUS_DEFS,origin.bonus))return;const mesh=this.visuals.createCore(origin.bonus);if(origin.bonusPose){mesh.position.copy(origin.bonusPose.p);mesh.quaternion.copy(origin.bonusPose.q);}this.scene.add(mesh);this.cores.set(origin.id,{origin,mesh});}
  dismiss(key){this.pendingTips=this.pendingTips.filter(t=>t.key!==key);if(this.tip?.key===key){this.tip=null;this.tipAge=0;}}
@@ -113,7 +113,7 @@ export class BonusWorld {
     const collector=collectors.find(c=>{const start=this.collectorHistory.get(c.id)||c.p,delta=new THREE.Vector3().subVectors(c.p,start),t=delta.lengthSq()>0?THREE.MathUtils.clamp(new THREE.Vector3().subVectors(item.p,start).dot(delta)/delta.lengthSq(),0,1):0;return start.clone().addScaledVector(delta,t).distanceTo(item.p)<this.radius*3.6;});
     if(collector){const result=this.controller.collect(item.kind);if(result.accepted){
      this.dismiss('pickup');this.dismissReadiness(item.kind);this.disposeReleasedCore(item);this.scene.remove(item.mesh);this.visuals.releaseInstance(item.mesh);this.scene.remove(item.shadow);this.pickups.splice(i,1);
-     const name=BONUS_DEFS[item.kind].name.toUpperCase(),status=item.kind==='heavy'?'ARMED · NEXT HIT':['pulse','pierce','frost'].includes(item.kind)?'ACTIVE':'ACTIVATED';
+     const name=BONUS_DEFS[item.kind].name.toUpperCase(),status=item.kind==='heavy'?'ARMED · NEXT HIT':['pulse','pierce'].includes(item.kind)?'ACTIVE':'ACTIVATED';
      this.onSound('pickup');this.pulse(collector.p,.55,BONUS_DEFS[item.kind].color);
      const previousTip=this.tip;
      // Removed before dispatch: reentrant collection, Split creation and section

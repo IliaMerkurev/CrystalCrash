@@ -3,7 +3,7 @@
 export class SecondaryPowers {
  constructor({THREE,RAPIER,scene,world,colliders,radius,tableGroup=1,structureGroup=4,onEchoHit,onFinishSplit}) {
   Object.assign(this,{THREE,RAPIER,scene,world,colliders,radius,onEchoHit,onFinishSplit});
-  this.echoRadius=radius;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.blackHole=null;this.frictionLeases=new Map();this.marks=new Map();this.markPool=[];this.transitionParked=false;
+  this.echoRadius=radius;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.blackHole=null;this.frictionLeases=new Map();this.marks=new Map();this.markPool=[];this.frostEdges=new Map();this.transitionParked=false;
   const membership=g=>g>0xffff?(g>>>16):g;
   this.echoGroups=(16<<16)|(membership(tableGroup)|membership(structureGroup)|2|16);
   this.echoGeometry=new THREE.SphereGeometry(this.echoRadius,32,24);
@@ -12,8 +12,57 @@ export class SecondaryPowers {
   this.ensureEchoCapacity(32);
   this.ringGeometry=new THREE.TorusGeometry(1,.025,4,48);
   this.wellMaterial=new THREE.MeshBasicMaterial({color:0x7887FF,transparent:true,opacity:.7,depthWrite:false});
-  this.iceMaterial=new THREE.MeshBasicMaterial({color:0xB8E9F5,transparent:true,opacity:.8,depthWrite:false});
-  this.frostGeometry=new THREE.BoxGeometry(1,1,1);this.frostMaterial=new THREE.MeshBasicMaterial({color:0xb8e9f5,transparent:true,opacity:.16,depthWrite:false});
+  // Pool placeholders and startup-warmup geometry are ours. Live shells borrow
+  // the exact glass geometry, including missing faces and irregular fractures.
+  this.frostGeometry=new THREE.BoxGeometry(1,1,1);
+  this.frostEdgeGeometry=new THREE.EdgesGeometry(this.frostGeometry,22);
+  this.iceMaterial=new THREE.LineBasicMaterial({color:0xB8EFFF,transparent:true,opacity:.76,depthWrite:false,toneMapped:false});
+  this.frostMaterial=new THREE.ShaderMaterial({
+   transparent:true,depthWrite:false,depthTest:true,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1,
+   toneMapped:false,
+   vertexShader:`
+    varying vec3 vFrostLocalPosition;
+    varying vec3 vFrostLocalNormal;
+    varying vec3 vFrostViewPosition;
+    varying vec3 vFrostViewNormal;
+    void main(){
+     vFrostLocalPosition=position;
+     vFrostLocalNormal=normal;
+     vec4 viewPosition=modelViewMatrix*vec4(position,1.0);
+     vFrostViewPosition=viewPosition.xyz;
+     vFrostViewNormal=normalize(normalMatrix*normal);
+     gl_Position=projectionMatrix*viewPosition;
+    }
+   `,
+   fragmentShader:`
+    varying vec3 vFrostLocalPosition;
+    varying vec3 vFrostLocalNormal;
+    varying vec3 vFrostViewPosition;
+    varying vec3 vFrostViewNormal;
+    float frostHash(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
+    void main(){
+     vec3 n=abs(normalize(vFrostLocalNormal));
+     vec2 plane=n.y>n.x&&n.y>n.z?vFrostLocalPosition.xz:(n.x>n.z?vFrostLocalPosition.yz:vFrostLocalPosition.xy);
+     vec2 crystalPlane=plane*4.8;
+     vec2 cell=floor(crystalPlane),p=fract(crystalPlane)-0.5;
+     float seed=frostHash(vec3(cell,2.3));
+     float angle=seed*6.283185;
+     p=mat2(cos(angle),-sin(angle),sin(angle),cos(angle))*p;
+     float spoke=min(abs(p.y),min(abs(p.x*0.866025+p.y*0.5),abs(p.x*0.866025-p.y*0.5)));
+     float aa=max(fwidth(spoke),0.012);
+     float crystal=(1.0-smoothstep(0.012,0.026+aa,spoke))*(1.0-smoothstep(0.14,0.43,length(p)));
+     crystal*=smoothstep(0.2,0.65,seed);
+     float grain=frostHash(floor(vFrostLocalPosition*95.0));
+     float rim=pow(1.0-abs(dot(normalize(vFrostViewNormal),normalize(-vFrostViewPosition))),2.8);
+     // Clear colored windows remain between blue-white crystals. Silhouette
+     // frost is stronger, while the original colored glass is never replaced.
+     float alpha=clamp(0.065+grain*0.075+crystal*0.38+rim*0.24,0.0,0.68);
+     vec3 ice=mix(vec3(0.29,0.72,0.96),vec3(0.88,0.98,1.0),clamp(crystal+rim*0.6+grain*0.15,0.0,1.0));
+     gl_FragColor=vec4(ice,alpha);
+     #include <colorspace_fragment>
+    }
+   `
+  });
   // Five shared, low-poly arcs form a tall, widening Tornado funnel.
   this.wellGeometry=new THREE.TorusGeometry(1,.018,4,48,Math.PI*1.65);
   this.wellMesh=new THREE.Group();this.wellRings=[];
@@ -404,16 +453,64 @@ export class SecondaryPowers {
    ring.scale.setScalar(ring.userData.radius*(.94+.06*Math.sin((now-well.born)*5-index)));
   });
  }
- // markMap keys are original IDs; values may be any active mark metadata.
+ // markMap keys are original IDs; each surviving cluster gets its own shell.
+ // Attaching to the visible glass mesh follows its final render transform exactly,
+ // even when physics, scene travel, or mesh scale changes after syncMarks.
  syncMarks(markMap,blocks) {
-  const wanted=new Set(Array.isArray(markMap)?markMap.map(mark=>mark.originId):markMap.keys());
-  for(const [id,mesh]of this.marks)if(!wanted.has(id)){mesh.visible=false;this.markPool.push(mesh);this.marks.delete(id);}
-  for(const id of wanted){
-   let largest=null;for(const o of blocks.values())if(o.origin?.id===id&&(!largest||(o.ids?.length||0)>(largest.ids?.length||0)))largest=o;
-   if(!largest){const mesh=this.marks.get(id);if(mesh){mesh.visible=false;this.markPool.push(mesh);this.marks.delete(id);}continue;}
-   let mesh=this.marks.get(id);if(!mesh){mesh=this.markPool.pop();if(!mesh){mesh=new this.THREE.Group();const ring=new this.THREE.Mesh(this.ringGeometry,this.iceMaterial);ring.rotation.x=Math.PI/2;ring.scale.setScalar(.72);const veil=new this.THREE.Mesh(this.frostGeometry,this.frostMaterial);veil.scale.setScalar(1.025);mesh.add(ring,veil);}this.scene.add(mesh);this.marks.set(id,mesh);}
-   mesh.visible=true;mesh.position.copy(largest.b.translation());mesh.quaternion.copy(largest.b.rotation());mesh.scale.set(largest.sx,largest.sy,largest.sz);
+  const wanted=new Set(Array.isArray(markMap)?markMap.map(mark=>mark.originId):markMap.keys()),live=new Set();
+  for(const o of blocks.values()){
+   if(o.kind!=='block'||!wanted.has(o.origin?.id)||!o.mesh?.geometry||o.b?.isValid?.()===false)continue;
+   live.add(o.id);
+   let mesh=this.marks.get(o.id);
+   if(!mesh){
+    mesh=this.markPool.pop();
+    if(!mesh){
+     mesh=new this.THREE.Mesh(this.frostGeometry,this.frostMaterial);mesh.name='frost-shell';
+     const edges=new this.THREE.LineSegments(this.frostEdgeGeometry,this.iceMaterial);edges.name='frost-fracture-edges';mesh.add(edges);
+    }
+    this.marks.set(o.id,mesh);
+   }
+   this.bindFrostGeometry(mesh,o.mesh.geometry);
+   if(mesh.parent!==o.mesh)o.mesh.add(mesh);
+   mesh.visible=true;mesh.renderOrder=o.mesh.renderOrder+1;mesh.children[0].renderOrder=mesh.renderOrder+1;
+   mesh.position.set(0,0,0);mesh.quaternion.identity();mesh.scale.set(1,1,1);
+   mesh.userData.originId=o.origin.id;
   }
+  for(const id of this.marks.keys())if(!live.has(id))this.detachFrostCluster(id);
+ }
+ bindFrostGeometry(mesh,source) {
+  let entry=this.frostEdges.get(source);
+  if(mesh.userData.frostSource!==source){
+   this.releaseFrostGeometry(mesh);
+   if(!entry){
+    entry={geometry:new this.THREE.EdgesGeometry(source,22),position:source.attributes.position,version:source.attributes.position.version,users:new Set()};
+    this.frostEdges.set(source,entry);
+   }
+   entry.users.add(mesh);mesh.userData.frostSource=source;mesh.geometry=source;
+  }
+  // Chipping can deform the existing BufferGeometry rather than replace it.
+  // Refresh only the owned outline; never clone, modify, or dispose the glass.
+  if(entry.position!==source.attributes.position||entry.version!==source.attributes.position.version){
+   entry.geometry.dispose();entry.geometry=new this.THREE.EdgesGeometry(source,22);
+   entry.position=source.attributes.position;entry.version=entry.position.version;
+   for(const shell of entry.users)shell.children[0].geometry=entry.geometry;
+  }
+  mesh.children[0].geometry=entry.geometry;
+ }
+ releaseFrostGeometry(mesh) {
+  const source=mesh.userData.frostSource,entry=this.frostEdges.get(source);
+  if(entry){entry.users.delete(mesh);if(!entry.users.size){entry.geometry.dispose();this.frostEdges.delete(source);}}
+  delete mesh.userData.frostSource;
+  mesh.geometry=this.frostGeometry;mesh.children[0].geometry=this.frostEdgeGeometry;
+ }
+ // Call before the structure owner's recursive geometry/material disposal.
+ // Frost resources are shared across unrelated clusters and must not be visited.
+ detachFrostCluster(clusterId) {
+  const mesh=this.marks.get(clusterId);if(!mesh)return false;
+  this.releaseFrostMesh(mesh);this.marks.delete(clusterId);return true;
+ }
+ releaseFrostMesh(mesh) {
+  mesh.visible=false;mesh.removeFromParent();this.releaseFrostGeometry(mesh);delete mesh.userData.originId;this.markPool.push(mesh);
  }
  remap(fn){
   for(const echo of this.echoes){
@@ -434,7 +531,7 @@ export class SecondaryPowers {
   this.echoInstances.count=this.echoes.length;this.echoInstances.instanceMatrix.needsUpdate=true;
  }
  warmupObjects() {
-  const group=new this.THREE.Group();group.add(new this.THREE.InstancedMesh(this.echoGeometry,this.echoMaterial,1),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.wellFunnelGeometry,this.wellFunnelMaterial),new this.THREE.Mesh(this.wellRibbonGeometry,this.wellRibbonMaterial),new this.THREE.Mesh(this.ringGeometry,this.iceMaterial),new this.THREE.Mesh(this.frostGeometry,this.frostMaterial));return group;
+  const group=new this.THREE.Group();group.add(new this.THREE.InstancedMesh(this.echoGeometry,this.echoMaterial,1),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.wellFunnelGeometry,this.wellFunnelMaterial),new this.THREE.Mesh(this.wellRibbonGeometry,this.wellRibbonMaterial),new this.THREE.LineSegments(this.frostEdgeGeometry,this.iceMaterial),new this.THREE.Mesh(this.frostGeometry,this.frostMaterial));return group;
  }
  endWell(){
   if(this.well)for(const target of this.well.targets)this.releaseFriction(target.friction,target);
@@ -442,7 +539,7 @@ export class SecondaryPowers {
  }
  clear() {
   for(const echo of [...this.echoes])this.removeEcho(echo,false);this.transitionParked=false;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.splitActivations.clear();this.endWell();this.endBlackHole();
-  for(const mesh of this.marks.values()){mesh.visible=false;this.markPool.push(mesh);}this.marks.clear();
+  for(const id of this.marks.keys())this.detachFrostCluster(id);
  }
- dispose() {this.clear();this.echoInstances.removeFromParent();this.echoInstances.dispose();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.wellGeometry.dispose();this.wellFunnelGeometry.dispose();this.wellRibbonGeometry.dispose();this.wellFunnelMaterial.dispose();this.wellRibbonMaterial.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();this.frostGeometry.dispose();this.frostMaterial.dispose();}
+ dispose() {this.clear();this.echoInstances.removeFromParent();this.echoInstances.dispose();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.wellGeometry.dispose();this.wellFunnelGeometry.dispose();this.wellRibbonGeometry.dispose();this.wellFunnelMaterial.dispose();this.wellRibbonMaterial.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();this.frostGeometry.dispose();this.frostEdgeGeometry.dispose();this.frostMaterial.dispose();}
 }

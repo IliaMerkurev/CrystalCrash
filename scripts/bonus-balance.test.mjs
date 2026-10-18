@@ -33,14 +33,16 @@ test('Pulse activates on pickup and repeatedly blasts during its shared ten-seco
 test('Timed buffs coexist and duplicates add remaining time without restarting other buffs', () => {
   const powers = new BonusController();
   powers.collect('pulse'); powers.collect('pierce'); powers.collect('frost');
-  assert.equal(powers.attacks.size, 3);
+  powers.freezeArena([40]);
+  assert.equal(powers.attacks.size, 2);
   powers.tick(4);
   const pierceId = powers.attacks.get('pierce').id;
   powers.collect('pulse');
   const hud = Object.fromEntries(powers.snapshotHUD().activeEffects.map(a => [a.kind, a]));
   assert.equal(hud.pulse.secondsLeft, 16);
   assert.equal(hud.pierce.secondsLeft, 6);
-  assert.equal(hud.frost.secondsLeft, 6);
+  assert.equal(hud.frost, undefined, 'Frost has no timed ball buff');
+  assert.equal(powers.frostMarks.get(40), Infinity);
   assert.equal(powers.attacks.get('pierce').id, pierceId);
   assert.equal(powers.active.kind, 'pulse');
   powers.tick(10);
@@ -51,24 +53,28 @@ test('Timed buffs coexist and duplicates add remaining time without restarting o
   assert.equal(powers.has('pulse'), true);
   powers.tick(20);
   assert.equal(powers.attacks.size, 0);
+  assert.equal(powers.frostMarks.get(40), Infinity, 'ice remains when timed powers expire');
 });
 
-test('Simultaneous Pulse, Frost, Heavy and Pierce combine effects with max damage plus brittle', () => {
+test('Simultaneous Pulse, arena Frost, Heavy and Pierce preserve max damage without ice consumption', () => {
   const powers = new BonusController();
   powers.collect('frost');
+  powers.freezeArena([40, 41]);
   assert.equal(hit(powers, 40, 0).damage, 1);
   powers.collect('pulse'); powers.collect('heavy'); powers.collect('pierce');
   const batch = powers.capture();
   const result = powers.consumeDirect(batch, 40, 0);
-  assert.equal(result.damage, 9, 'max(8,3,3) plus one brittle damage');
+  assert.equal(result.damage, 8, 'Frost reduces arena durability instead of adding direct-hit damage');
   assert.equal(result.pierced, true);
-  assert.equal(result.frostConsumed, true);
+  assert.equal(result.frostConsumed, false);
+  assert.equal(powers.frostMarks.get(40), Infinity);
   assert.deepEqual(result.effects.map(e => e.kind), ['pulse', 'heavy']);
   assert.equal(powers.has('heavy'), false);
   assert.equal(powers.consumeDirect(batch, 40, 0).damage, 0, 'Pierce deduplicates across all balls');
   const next = powers.consumeDirect(batch, 41, 0);
   assert.equal(next.damage, 8);
-  assert.deepEqual(next.effects.map(e => e.kind), ['pulse', 'frost']);
+  assert.deepEqual(next.effects.map(e => e.kind), ['pulse']);
+  assert.equal(powers.frostMarks.get(41), Infinity);
   assert.equal(next.suppressReflection, true);
 });
 
@@ -95,22 +101,27 @@ test('Pierce timers start at pickup; exit blocks only penetrating balls and pres
   assert.equal(powers.finishPierceExit(), false);
 });
 
-test('Frost marks unlimited originals from pickup with per-impact brittle expiry', () => {
+test('Frost freezes every arena original immediately, persists and cannot stack or add hit damage', () => {
   const powers = new BonusController();
-  powers.tick(80); powers.collect('frost');
-  for (let id = 0; id < 50; id++) assert.equal(hit(powers, id, 80 + id / 10).effects[0].kind, 'frost');
+  powers.tick(80);
+  assert.equal(powers.collect('frost').effect.kind, 'frost');
+  const ids = Array.from({length: 50}, (_, id) => id);
+  assert.deepEqual(powers.freezeArena(ids), ids);
   assert.equal(powers.frostMarks.size, 50);
-  const brittle = hit(powers, 0, 85);
-  assert.equal(brittle.damage, 2);
-  assert.equal(brittle.frostConsumed, true);
-  assert.equal(brittle.effects.length, 0);
-  assert.equal(hit(powers, 0, 86).effect.expiresAt, 96);
-  powers.tick(90);
+  const frozen = hit(powers, 0, 85);
+  assert.equal(frozen.damage, 1);
+  assert.equal(frozen.frostConsumed, false);
+  assert.equal(frozen.effects.length, 0);
+  assert.equal(powers.frostMarks.get(0), Infinity);
+  assert.deepEqual(powers.tick(900).expiredFrostIds, []);
   assert.equal(powers.has('frost'), false);
   assert.equal(powers.frostMarks.has(49), true);
+  powers.collect('frost');
+  assert.deepEqual(powers.freezeArena(ids), []);
   powers.collect('heavy');
-  assert.equal(hit(powers, 49, 90).damage, 4);
-  powers.tick(96);
+  assert.equal(hit(powers, 49, 900).damage, 3);
+  assert.equal(powers.frostMarks.size, 50);
+  powers.reset();
   assert.equal(powers.frostMarks.size, 0);
 });
 
@@ -150,18 +161,19 @@ test('Repeated Split activates immediately and multiplies live sources 1→3→9
     assert.equal('duration' in result.effect, false);
     live += live * result.effect.echoCount;
     assert.equal(live, expected);
-    assert.equal(powers.attacks.size, 3, 'instant effects cannot displace active buffs');
+    assert.equal(powers.attacks.size, 2, 'instant effects cannot displace active buffs');
   }
   assert.equal(powers.has('split'), true);
   assert.equal(powers.finishSplit(first), true);
   assert.equal(powers.has('split'), false);
-  assert.equal(powers.attacks.size, 3);
+  assert.equal(powers.attacks.size, 2);
 });
 
-test('Arc, Tornado and Black Hole return immediate descriptors on every pickup', () => {
+test('Arc, Frost, Tornado and Black Hole return immediate descriptors on every pickup', () => {
   const powers = new BonusController();
   powers.collect('pulse'); powers.collect('frost');
   assert.deepEqual(powers.collect('arc').effect, {kind: 'arc', originId: null, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1});
+  assert.deepEqual(powers.collect('frost').effect, {kind: 'frost', originId: null, persistent: true, targetType: 'all-current-originals', hitReduction: 1, minHits: 1});
   const tornado = powers.collect('gravity');
   assert.match(tornado.message, /Tornado activated/);
   assert.deepEqual(tornado.effect, {kind: 'gravity', originId: null, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, targetType: 'intact-cube'});
@@ -170,9 +182,9 @@ test('Arc, Tornado and Black Hole return immediate descriptors on every pickup',
   assert.equal('damage' in hole.effect, false);
   assert.equal(powers.collect('gravity').effect.kind, 'gravity');
   assert.equal(powers.collect('blackhole').effect.kind, 'blackhole');
-  assert.equal(powers.attacks.size, 2);
+  assert.equal(powers.attacks.size, 1);
   assert.equal(powers.has('pulse'), true);
-  assert.equal(powers.has('frost'), true);
+  assert.equal(powers.has('frost'), false);
 });
 
 test('Automatic Bomb remains outside inventory with bounded blast tuning', () => {
@@ -193,6 +205,7 @@ test('Retired IDs reject gracefully; reset removes every buff and invalidates ol
   }
   assert.equal(typeof powers.consumeHalo, 'undefined');
   for (const kind of ['pulse', 'pierce', 'frost', 'heavy', 'split']) powers.collect(kind);
+  powers.freezeArena([1, 2]);
   const stale = powers.capture();
   powers.reset();
   assert.equal(powers.consumeDirect(stale, 1, 0).damage, 0);
@@ -241,11 +254,13 @@ test('Section reset preserves all simultaneous buffs and timers while clearing l
   assert.equal(controller.splitActive, false);
 });
 
-test('HUD and accents display simultaneous timed buffs, Heavy charges and persistent Split', () => {
+test('HUD and accents display timed buffs, Heavy and Split without a Frost ball timer or accent', () => {
   const {world, controller} = makeWorld();
   for (const kind of ['split', 'pulse', 'pierce', 'frost', 'heavy']) controller.collect(kind);
   world.updateHUD();
-  for (const name of ['PULSE', 'PIERCE', 'FROST']) assert.match(textOf(world.hud), new RegExp(name + ' · ACTIVE · 10s'));
+  controller.freezeArena([55]);
+  for (const name of ['PULSE', 'PIERCE']) assert.match(textOf(world.hud), new RegExp(name + ' · ACTIVE · 10s'));
+  assert.doesNotMatch(textOf(world.hud), /FROST · ACTIVE/);
   assert.match(textOf(world.hud), /HEAVY HIT/);
   assert.match(textOf(world.hud), /SPLIT · EXTRA BALLS LIVE/);
   assert.doesNotMatch(textOf(world.hud), /NEXT ·|HIT GLASS/);
@@ -257,9 +272,11 @@ test('HUD and accents display simultaneous timed buffs, Heavy charges and persis
   assert.match(textOf(world.hud), /HEAVY HIT · 1 NEXT HIT/);
   controller.tick(3);
   world.updateHUD();
-  for (const name of ['PULSE', 'PIERCE', 'FROST']) assert.match(textOf(world.hud), new RegExp(name + ' · ACTIVE · 7s'));
+  for (const name of ['PULSE', 'PIERCE']) assert.match(textOf(world.hud), new RegExp(name + ' · ACTIVE · 7s'));
   world.render(new THREE.PerspectiveCamera(), new THREE.Vector3());
-  for (const kind of ['pulse', 'pierce', 'frost', 'heavy', 'split']) assert.equal(world.accents[kind].visible, true);
+  for (const kind of ['pulse', 'pierce', 'heavy', 'split']) assert.equal(world.accents[kind].visible, true);
+  assert.equal(world.accents.frost.visible, false);
+  assert.equal(controller.frostMarks.get(55), Infinity);
   controller.tick(10);
   world.updateHUD();
   assert.match(textOf(world.hud), /PIERCE · EXITING/);

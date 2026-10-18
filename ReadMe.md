@@ -85,3 +85,6 @@ Pulse impacts now show a short local amber flash, two broader luminous expanding
 
 ### Short Bomb fuse and heat shock
 Bomb countdown is 3 simulation seconds after landing, with a synchronized circular fuse display. A thin bright shock ring scales outward and fades in .38 seconds; a short local heat-distortion pass follows the expanding blast. Fire/ember glow increases without changing damage or ball impulses. Pulse's persistent amber cue is shared by all live balls through instanced effects.
+
+### Arena-wide Frost
+Frost activates on pickup with an arena-wide snow wave and a fading transparent crystalline screen border. Every surviving original cube stays visibly iced until the arena ends, retaining its underlying glass color. Its required hit total is reduced by one (minimum one); repeated Frost does not stack, and pickup alone never destroys an already damaged cube. Fractured parts inherit the same original ice state. Missed shots retain arena ice; Test's explicit effect reset removes both the appearance and weakening.

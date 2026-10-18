@@ -288,6 +288,18 @@ export class PowerFX {
     this.blackHoleParticles.instanceMatrix.needsUpdate=true;
   }
 
+  freezeArena(point, targets=[]) {
+    const d=this.radius*2,range=targets.reduce((r,p)=>Math.max(r,Math.hypot(p.x-point.x,p.z-point.z)+d),d*3);
+    this._ring('frost',point,d*.3,range,.72,.04,0,.6);
+    this._ring('frost',point,d*.2,range*.92,.68,.13,.08,.32);
+    if(!targets.length)return;
+    for(let i=0;i<this.particles.length;i++){
+      const target=targets[i%targets.length],p=this._particle('frost',target,i*2.399963,d*.7,.8+(i%5)*.12,d*(.055+(i%3)*.015),1.4);
+      p.p.x+=Math.sin(i*7.1)*d*.55;p.p.z+=Math.cos(i*4.3)*d*.55;p.p.y+=d*(.6+(i%4)*.18);
+      p.v.y=d*(.5+(i%3)*.2);p.glow=1.25;
+    }
+  }
+
   update(dt, ballPoint, activeKind) {
     if (!(dt > 0)) return;
     this.time += dt;
