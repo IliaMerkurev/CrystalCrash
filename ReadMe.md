@@ -1,213 +1,57 @@
 # Crystal Crash
 
-A portrait-first, tactile Three.js / Rapier glass-destruction playable.
+A portrait-first Three.js / Rapier glass-destruction playable.
 
-Preview: https://crystal-crash.pearly-haven-3558.chatgpt.site
+Live preview: https://crystal-crash.pearly-haven-3558.chatgpt.site
 
-## Run locally (Windows or macOS/Linux)
+## Run and build
 
-Install Node.js 24 LTS. In this folder run `npm ci`, then `npm run dev` and open the printed localhost URL. `npm run build` creates `dist/index.html`; `npm run preview` serves the production file. Do not open the HTML through file://.
+Use Node.js 24 LTS. Run `npm ci`, then `npm run dev`. `npm run build` creates a standalone `dist/index.html`; `npm run preview` serves it. Use HTTP rather than file://. Vite is build tooling, not an embedded development server. Three.js 0.186.1 and Rapier compatibility/WASM 0.19.3 are pinned in the lockfile.
 
-## Play
+The HTML embeds the runtime, generated reflection environment, procedural models and synthesized sounds. No runtime CDN or external media is needed. The build rejects exports at or above 5,000,000 bytes; current export is approximately 3.48 MB. This is a playable prototype, not an ad-network-certified MRAID package.
 
-Press PLAY to enable sound. In the lower half, grab the ball to stop it exactly where it is; keep holding, pull back and release to launch from that position. Hold elsewhere below the dashed center line to attract the ball toward your pointer with gradually increasing force, even when it is in the upper half. When it reaches your finger, the same gesture becomes aiming. Crossing the red bottom line is a miss and cannot be rescued; a retry preserves the section. Escape/pointer cancellation aborts aiming safely. Pause and leaving the tab freeze gameplay. Clear all original glass blocks to turn the armored upper gate into breakable glass, then launch the ball through it to travel into the next arena; score carries over.
+## Controls and progression
 
-## Implementation
+Press PLAY to unlock audio. Grab the ball anywhere in the lower half, keep holding, pull back and release. Holding elsewhere below the middle line attracts the ball; when it reaches the pointer the same gesture becomes aiming. Crossing the bottom loss line cannot be rescued by attraction. Pause or tab switching suspends gameplay.
 
-- Three.js 0.186.1, Rapier 3D compatibility/WASM 0.19.3, Vite 8.3.4; exact dependencies in lockfile.
-- Vite is build tooling, not an embedded development server. The export includes bundled game code and the physics runtime, without runtime CDN calls.
-- Dynamic towers and supported beams, CCD steel ball, normal gravity for blocks, separate gentle +Z return force for the ball.
-- Five glass tiers with 1/2/4/6/8-strike local chipping, persistent Voronoi shell clusters, bounded floor-bouncing mesh debris and instanced fine shards.
-- Original blocks score once; fragments never score. Cascade multipliers x1/x1.5/x2/x3. Endless seeded arenas, visible continuation above the gate, and player-triggered upward camera travel.
-- Procedural Web Audio: launch, wall, hit, crack, chip, material-specific break, fall, catch, miss, section clear and UI.
-- Perspective pinball camera shows glass thickness and tower height. Arena geometry adapts to the unchanged perspective camera: gate near the top, interaction divider in the middle, and fall edge near the bottom. Portrait lower rails taper to stay within the screen.
+Fourteen authored arenas introduce five glass tiers with 1/2/4/6/8 direct-hit durability. Arena 01 contains exactly 12 T1 cubes and one Pulse. Arenas 01–10 introduce Pulse, Pierce, Arc and Halo; arenas 11–14 introduce Frost, Split, Gravity Well and Heavy Hit. The fourteen-arena sequence then repeats. Clear all targets, manually break the unlocked green-pulsing gate, and launch through it to travel to the next arena.
 
-## Tuning
+Both rails fill green from bottom to top according to original shell area removed. Partial chipping counts; detached debris never counts twice.
 
-`src/config.js` contains glass score/color/density/crack/chip/fracture thresholds/roughness/transmission/thickness/shard presets plus launch power, return acceleration, start/loss positions, fixed timestep, debris budgets and combo window. `comboFor` owns combo thresholds. Section layouts and seed progression are in `generateSection` in `src/main.js`.
+## Powers
 
-## Build budget
+Break a cube containing a small colored sun, then touch its landed 3D pickup with the moving main ball. A colored cue appears around the ball. Attack powers apply automatically on the next valid glass impact; there is no activation button. One active attack and one FIFO queued attack are allowed. Halo occupies an independent save slot. Queued pickups remain visibly labelled as queued. Uncollected pickups do not block completion; inaccessible pickups visibly return to a safe point.
 
-Prototype export is one HTML, approximately 2.82 MB raw (approximately 2.83 million bytes in current build), including embedded Rapier WASM. No external art, music or videos. Build rejects HTML >= 5,000,000 bytes. This is a hosted prototype, not a certified ad-network package; no MRAID/CTA/monetization is included.
+- Pulse: one normal impact plus one damage to at most six nearby originals within 2.2 ball diameters, excluding the struck original.
+- Pierce: three distinct original hits, at most six seconds after the first, without glass bounce. Normal response resumes only after leaving all remaining shell volumes.
+- Arc: one damage to each of up to three nearest chained originals, each hop within 2.5 ball diameters. No-neighbor activation is explicitly shown.
+- Safety Halo: one automatic rescue before losing the main ball; returns to safe control without firing.
+- Frost: the next three direct hits can mark three different originals for six seconds. A later main-ball hit consumes its mark for +1 damage.
+- Split: next glass hit creates two smaller echoes at ±18° to the reflected direction. Each lasts at most ten seconds or four successful hits. Echoes cannot collect or activate powers. The queued attack waits until both echoes end.
+- Gravity Well: a two-second well attracts at most four nearby intact cube bodies within three ball diameters. Acceleration and cumulative added speed are bounded. Ball, pickups and debris are unaffected.
+- Heavy Hit: the next direct strike deals three damage. Frost adds one, making four rather than six. Main-ball mass and controls do not change.
 
-## Verification and limitations
+Main-ball loss resets powers and removes echoes. Arena transitions reset powers, marks, wells and uncollected pickups. Powers never damage the gate.
 
-Production build and inline-byte gate pass. Real-Rapier and pointer-handler checks cover stopping at the current position, same-gesture aiming/launch, upper-half attraction, acceleration ramp, arrival-to-aim without accidental launch, cancellation, irreversible loss, retry, tier damage, once-only scoring and section progression. These do not replace real-device browser/touch testing. The cloud browser has disabled WebGL; no new rendered-browser or Safari acceptance is claimed. Phone performance, touch feel and Safari audio require owner verification.
+## Rendering and physics
 
-Playable glass shells are hollow, with extruded Voronoi polygons, compound convex colliders and persistent bonds. Detached groups are visual 3D particles with floor bounce; they no longer have rigid bodies or secondary collision fracture. Shared physical materials, planar reflections and studio environment lighting approximate glass; this is not path tracing. No shop, bonuses or multiball.
+Hollow glass shells use persistent Voronoi cells and compound convex structural bodies. Local hit quotas remove actual shell patches. Detached glass uses bounded floor-bouncing mesh particles, immediate shrink and orange melting; it has no rigid-body collision cascade. The remaining cubes, main ball and at most two echoes use Rapier. Original targets score once.
 
-## Development discipline
+Polished chamfers, tinted transparent surfaces, procedural normal detail, an embedded studio environment and one shared 1024² planar reflection approximate glass without expensive cube/debris transmission passes. A coherent small reflection filter avoids duplicate contours. Four fixed area lights and shared resources limit rendering cost. Startup warms representative drawing paths before PLAY.
 
-Work on `prototype/0.2`, preserve and verify meaningful pushes, and do not merge main without owner approval. Reuse the same Site for every iteration. Keep recordings, generated test reports and caches outside Git. Retain the portable Three.js playable production checklist when starting another project.
+## Source layout
 
-## Earlier iteration notes
+- `src/arena-data.js`: authored layouts and container assignments
+- `src/bonus-controller.js`: power inventory, FIFO, charge and mark state
+- `src/bonus-visuals.js`: procedural core, pickup and ball-accent models
+- `src/bonus-world.js`: pickup lifecycle, feedback, contextual teaching and HUD
+- `src/secondary-powers.js`: bounded echoes, gravity well and Frost indicators
+- `src/main.js`: physics contacts, original damage/scoring, controls and integration
+- `src/config.js`: base material and gameplay tuning
+- `src/audio.js`: synthesized action/effect sounds
 
-The notes below describe the sequence of earlier iterations; the current controls and implementation above supersede old catcher/crack behavior.
+## Verification status
 
-Visual polish checkpoint: cracks now originate from Rapier contact positions on the impacted face; localized dents follow that contact; larger fragments use tapered glass-like prisms. Launch tuning, damage thresholds, debris caps and lifetimes are unchanged. Visual acceptance uses owner screenshots because this VM has disabled WebGL.
+This iteration received production builds, byte-budget checks and static source review only. No browser, gameplay, simulation or device-performance tests were run, at the owner's request. The owner will validate playability and balance. Previous visual checks do not establish acceptance of the new power system.
 
-3D material pass: lower-angle camera; square glass blocks rotated 45 degrees with matching physics colliders; beveled faces; saturated absorption, studio-strip reflection environment, softer diffuse fill, reflective brushed table, metal catcher and warm edge fixtures. Launch forces and damage tuning remain unchanged.
-
-Perspective material pass: perspective camera fitted to table/tower bounds, ray-projected drag aiming, 30 initial stacked glass blocks, brighter studio environment, 512×512 planar table reflection beneath a brushed translucent coating, enlarged faceted debris and sparse short-lived glints. Reflection adds one scene pass; no screen-space ray tracing or postprocess bloom. Owner screenshot review remains required.
-
-Hollow-shell fracture iteration: six actual thin wall panels and six compound colliders per cube, with wall thickness 0.025/0.040/0.055/0.070/0.090 world units. Cube mass is preserved across the hollow collider compound. Each face splits into small triangular plates, up to 48 convex-hull rigid shards per break, global 240-body fragment cap and 3.2-second lifetime. Fine instanced chips remain, capped at 420, with restrained glints. This is procedural prefracture, not runtime Unreal Geometry Collection/Voronoi. Browser/device performance remains unmeasured. Export 2,826,099 bytes.
-
-Material correction: restored v5 per-type transmission and full surface opacity/depth writing. The hollow visual shell has continuous beveled outer and reversed inner surfaces instead of overlapping alpha-blended panels. Shader thickness is an artistic optical setting; actual shell/collider thickness still follows the five physical wall values. Thin-shard fracture is unchanged.
-
-Voronoi update: each wall uses bounded random sites and clipped half-plane Voronoi cells. Whole convex polygon silhouettes are extruded; rendering fan triangulation is internal only. Physical count varies with cell count (roughly half of cells, global cap240); visual chips use four irregular polygon variants per material. Focused 20-layout test verified face area coverage and valid convex hulls, with 3–10 polygon sides observed. Existing materials preserved. HTML 2,827,164 bytes.
-
-Progressive clusters: persistent Voronoi cells are joined by a bond graph across shared in-face edges and overlapping cube-edge intervals. Solver contact impulse and local impact position weaken nearby bonds; connected components become compound rigid bodies with inherited linear/angular motion. Remaining shell clusters keep real openings and can split again. Components with 1–3 cells become expiring debris; larger structural components are never evicted by the debris cap. Score/completion is tracked once per original cube only after no structural clusters remain. Contact events are aggregated per cluster and same-origin shard contacts do not cause self-damage. Cells have a slight collision inset to reduce overlapping seam impulses. This is a custom prefractured bond model, not a full continuum stress simulation.
-Focused checks: 20 cube/beam graphs initially connected; actual launched-ball contact fractures a patch; repeated damage works; fragment+cluster mass conserved; reward not premature or duplicated; section cleanup passes. Actual device rendering/performance remains unmeasured. Export 2,831,335 bytes.
-
-### Tiered bonds and re-fracturable fragments
-
-Bond resistance now increases explicitly across all five glass tiers (0.32 / 1.8 / 3 / 4.5 / 7), independently of optical materials. The weakest glass loses a much larger patch under the same hit. Bond toughness varies deterministically by edge, so cracks can leave uneven connected patches instead of uniformly separating every cell.
-
-Connectivity determines detached patch size; there is no three-cell maximum. Larger patches remain structural compounds and can fracture repeatedly. Small two/three-cell pieces also retain their internal bonds and compound colliders, and subsequent impacts can split them further. These small debris compounds expire after at most five seconds, with inherited remaining lifetime after re-fracture, so they cannot indefinitely block section completion. Single chips retain the existing shorter lifetime and the global debris-body limit. Original-cube reward is still granted once, after its structural remnants are gone.
-
-Focused real-Rapier checks verified tier differentiation, natural bonded-patch detachment, subsequent splitting, mass conservation before budget culling, once-only rewards, section transition, and debris cleanup. Browser/device performance still requires real-device validation.
-
-### Coarser cluster fracture
-
-Ordinary cube walls now contain five or six Voronoi cells instead of fourteen to eighteen. This increases characteristic shard width by approximately 1.7 times while preserving the full wall surface and original mass. Beam walls use area-scaled cell counts with a lower upper bound. Compounds retain their real bond graph and repeat fracture; fine supplemental chip particles remain small. Geometry coverage/connectivity, launched-ball fracture, tier distinction, bonded-compound detachment/re-fracture, score, transitions, and cleanup were checked. This reduces cell-collider load substantially, but device frame rate has not been measured.
-
-### Interior-ball recovery
-
-An active ball whose center remains inside a substantial shell for 0.12 seconds opens approximately 75% of that shell's remaining cells. Detection uses each compound body's current position and rotation, with an inset interior boundary and at least four represented shell faces, so ordinary exterior contact does not trigger recovery. Loose panes receive a small outward impulse; the ball is neither teleported nor directly accelerated. A per-original cooldown and one-shell-per-step bound prevent recursive fracture bursts. The remaining patches retain normal cluster behavior and once-only original scoring.
-
-A real-Rapier regression checked exterior non-trigger, recovery inside a moved/rotated reinforced cube, majority detachment, unchanged ball pose/velocity at fracture, mass conservation, subsequent escape, reward uniqueness, and section progression. Real-device validation remains outstanding.
-
-### Strike-count chipping balance
-
-Valid distinct impacts now chip structural glass immediately instead of spending hits on crack-only feedback. Tier targets are 1 / 2 / 4 / 6 / 8 strikes. Each strike commits approximately 100% / 50% / 25% / 16.7% / 12.5% of the original shell area; coarse irregular cell boundaries create small rounding differences. Cumulative area accounting prevents exponential decay of the remaining shell. The final strike releases all remaining structural patches and grants the original reward once.
-
-Patch selection grows through connected neighboring cells from the actual contact location. Released material forms varied bonded physical groups, with normal inherited movement, particles and repeat fracture. These detached groups use bounded debris cleanup and no longer block completion. Contact-start grouping across a cube's multiple colliders plus a 0.22-second original-wide strike cooldown suppress duplicate strike accounting from the same collision. Low-energy resting contacts remain below the valid-impact threshold. Interior-ball recovery remains active.
-
-Focused checks passed all tier hit counts, local patch inclusion, cumulative removed area, mass conservation, cooldown, one-hit blue destruction from a real launched ball, unique rewards, section transitions and interior recovery. Real-device testing is still outstanding.
-
-
-### Free-position ball control
-
-Removed the launcher/catcher geometry and all carriage constraints. The dashed center boundary separates the lower control zone, with a restrained tint and pointer attraction ring. Direct lower-half grabs freeze the ball at its exact 3D position. Same-pointer pullback launches from that position; attraction ramps toward the lower-zone pointer and changes to aim on arrival with a reset baseline. The red bottom line is an irreversible loss threshold. Single-pointer capture, cancellation, UI exclusion, pause, reset and section transitions use the new flow.
-
-### Melting debris and clear lower control zone
-
-Collision masks separate ball, structural glass, debris and table/boundaries. Detached debris collide only with structural glass and table/boundaries, never with the ball or other debris. Structural target clusters retain their normal behavior. Released shards and compound debris immediately shrink around their own centers, gain orange emission progressively, and dissolve within a randomized 0.2–1-second lifetime. Convex collision shapes shrink with the visible geometry and bodies/materials are removed at expiry. A re-fractured melting group inherits its already-reduced shape and remaining lifetime. Fine instanced chips use independent lifetime/shrink/emission attributes; intact shared glass materials are unaffected.
-
-All cube spawn bounds now lie entirely above the middle divider, with clearance for rotated corners. This applies to subsequent sections too; natural falling motion is unrestricted. Focused Rapier checks verified the collision matrix, matching visual/collider scale, lifetime cleanup without deleting remaining targets, original score progression and controls. Six section layouts passed the upper-half spawn-bound check. Physics timestep, CCD policy, renderer settings and cluster system were otherwise retained.
-
-
-### Residual cleanup and lower-half destruction
-
-Flat panes (one/two represented faces), open corners without opposing faces, and remnants at or below 30% of original shell area are terminal debris, not objectives. Substantial remaining shells stay playable; once-original reward accounting remains intact. This can complete a cube before its nominal maximum strike count when only unusable remnants remain.
-
-When any actual remaining shell vertex crosses the same middle divider used for controls, all its remaining bonds are severed and its cells separate into individual physical melting shards with a restrained outward impulse. The ball-inside-shell amplified fracture rule has been removed completely.
-
-Dissolve duration is now size-dependent from 0.3 to 2 seconds; larger pieces last longer. Fine chips use their visual size too. Shrink begins immediately; orange emission is raised from 3.5 to 7.5 peak strength for both physical shards and chip particles. Previous debris collision masks are preserved. Focused checks cover residual classification, full bond separation on crossing, duration ordering/range, score uniqueness, section progression and controls.
-
-
-### Hybrid debris simulation
-
-Rapier now simulates only the ball, table/boundaries and remaining playable glass structures. Detached irregular shards and glued groups are independent 3D mesh particles with inherited linear/angular movement, gravity, approximate oriented-box floor support, bounce and friction. They pass through cubes, the ball and other debris, and do not undergo secondary rigid-body fracture. No detached convex colliders or melting collider rebuilds remain.
-
-Size-based dissolve lifetime is 0.5–3 seconds, with immediate shrink and progressive orange emission preserved. Hit quotas, local chipping, residual cleanup, complete separation below the divider, upper-half spawning, scoring and ball controls remain. Focused checks verified zero debris bodies/colliders, visual group retention, floor bounce, duration bounds, cleanup, score/section progression and pointer controls. This removes debris physics load; it does not establish device FPS or eliminate possible remaining compound-shell or rendering issues.
-
-## Gate progression and crisp debris
-
-- Melt duration is size-based from 0.5 to 1 second. Mesh debris uses actual polygon support vertices for floor contact, stronger gravity and brisk friction; fine chips also use geometric support rather than a fixed hovering height.
-- Falling cubes register distinct contact episodes. Original-object contact identities survive collider reconstruction; resting contact does not repeatedly spend hit quotas. Cube-floor restitution uses the minimum material coefficient to avoid artificial high bounces and their repeated impacts. Residual scraps still clear automatically.
-- Clearing targets changes the armored gate into breakable glass and smoothly returns the ball to the lower start point or held pointer. The player must launch into the gate to shatter it, then pass through the opening. The next arena similarly positions the ball safely without an automatic launch. A smooth upward travel leads to the next seeded arena with a continuous surrounding platform.
-- Aiming eases the camera toward the lower edge to create finger room. The gesture projects through a frozen camera, so camera movement cannot change its launch vector. Portrait framing spans more screen width; landscape gameplay width is retained with extended surroundings.
-- Focused real-Rapier checks cover all five tier drop impacts, floor support, gate waiting/crossing/progression, and frozen-camera aiming. Actual device visual/performance review remains necessary.
-
-## Reflection environment
-
-A generated 1536×768 sRGB studio panorama is embedded in the single HTML and filtered to a PMREM environment for glass and polished metal. Broad white strips with restrained cyan and warm accents supply contrasting highlights. It affects reflections only; the visible scene background and environment geometry remain unchanged. The source is an LDR JPEG, not a true high-dynamic-range capture.
-
-## Full-height arena layout
-
-The surrounding platform is removed. Only the active tabletop and the next tables beyond its gate remain above the void. Table length, divider, spawns, floor collider, side rails, gate, loss line and travel distance adapt together to the initial viewport and resizing; camera angle, fitting parameters, aim offset and transition behavior are retained. Horizontal upper play width remains unchanged; portrait lower edges taper slightly to fit the phone.
-
-Glass, steel and table materials explicitly bind the reflection map so their individual environment strengths apply. The generated LDR source image is unchanged and filtered through PMREM; per-material environment intensity controls reflection strength. Glass optical path length now corresponds more closely to its thin walls, and the table coat gives environment reflections more weight alongside its planar reflection.
-
-## Crisp glass, frosted gate and bounded glow
-
-Glass roughness and clearcoat roughness are 0.005; physical dielectric Fresnel remains handled by MeshPhysicalMaterial. The 12.3-wide exit gate is 1.5 units high, with matching collider and fracture dimensions. It begins as frosted glass, remains invulnerable until all targets clear, then smoothly becomes clear glass with an emissive pulse that fades to zero.
-
-Melting shards and fine chips receive bounded instanced camera-facing additive halos; side strips have narrow orange halo meshes. These are localized glow effects rather than a costly full-screen bloom pass. They do not change the generated environment image or visible background.
-
-## Visual refinement 22
-
-Glass now uses 94% transmission with lighter body tint, retained colored absorption, crisp beveled edges and reoriented studio reflections. The floor exposes more of its planar reflection. Four continuous rectangular rail lights replace the two isolated point highlights; rail halos and melting emission are brighter. The gate starts as clear reflective glass, is 0.75 units high and 0.18 units deep, remains locked until the arena clears, then pulses before manual breaking. Camera and controls are unchanged. Visual review on a real browser remains required.
-
-## Visual correction 23
-
-User screenshot review showed the previous high-transmission glass lost tier-color readability and the table became too mirror-like. Saturated original tier colors are restored with moderate 42–60% transmission and crisp physical reflections. The earlier brushed floor coat (roughness 0.22, opacity 0.76) is restored. Continuous rail illumination remains. The obsolete prototype footer label is hidden.
-
-A small tileable mathematical normal map adds broad, subtle changes of reflection direction to glass. It uses stable face UVs on shells and fracture plates, with lower amplitude on small shards; no noisy frosting or raster dependency is added.
-
-## Reference-led visual refinement 24
-
-Confirmed landscape and portrait browser frames revealed fixed-distance fog obscuring the expanded portrait arena. Fog now starts beyond the active gate. Colored glass receives a narrow procedural edge-emission mask, while normal variation is reduced to keep broad faces clean. Planar reflections use a bounded nine-tap anisotropic blur so the brushed floor shows softened color streaks instead of crisp duplicate towers. Camera and gameplay are unchanged.
-
-## Glass compositing trial 25
-
-Browser comparison still showed solid-looking faces. Intact cubes now separate a tinted alpha-blended outer surface (0.52 opacity) and faint inner shell (0.13), retaining physical environment highlights, colored rims and normals. This intentionally avoids the opaque-only transmission buffer so other glass can appear behind it; it is a stylized lightweight glass approximation, not ray-traced refraction. Floor roughness is increased and broad rectangular-light highlights reduced. The HUD is compacted for portrait readability.
-
-## Compositing and tapered-light fixes 26
-
-Actual v25 frames exposed two rendering bugs: the transparent floor coat was sorted over distant transparent cubes, and tapered rail halo/light planes had the opposite rotation sign from their rails. The coat now renders before glass, and the light planes follow the exact rail direction. This restores consistent near/far glass visibility and removes the erroneous inward-slanting orange strips without changing material balance or geometry.
-
-## Glass contrast finish 27
-
-With sorting and rail alignment visually verified, the final focused pass keeps alpha unchanged and reduces diffuse face lighting while strengthening physical specular highlights and narrow colored edge emission. A fine pale edge core adds the approved stylized reflection accent; duplicate line outlines are reduced. This is an artistic glass treatment rather than a claim of physically exact refraction.
-
-## Regression fixes 28
-
-Restores clean single-sample 512px floor reflections and the earlier floor coat, removing multi-image blur ghosting. Portrait boundaries now follow one straight taper with matching floor and walls. Remaining broken glass has a separate non-emissive material instead of reusing the intact face-edge mask. Detached debris no longer uses transmission or shadows; its materials are retained for reuse, mesh shader variants warm before PLAY, and fracture cell geometry is cached at section creation. These address identified hit-time costs; real-device timing still needs comparison.
-
-## Follow-up visual candidate 29
-
-Startup waits for the reflection environment before shader warmup. A narrow edge-mask-supported grazing highlight is view-dependent; face opacity is unchanged. Damaged structures share the intact diffuse/specular balance without UV border emission. Upper spawns clamp whole rotated cube bounds away from straight tapered rails, preserving stack counts. Current PCF shadow mode replaces the deprecated alias.
-
-Floor follow-up: coating roughness is 0.28, with a tight five-sample one-texel reflection kernel. Samples remain adjacent instead of broad displaced UV copies, providing slight softening without separated duplicate silhouettes.
-
-First-hit preparation: before enabling PLAY, render representative fracture meshes, instanced chips and glow into a hidden full-size target, including floor reflection and shadows. Finish that startup GPU work before interaction; restore zero particle counts. Actual device frame-time improvement still requires user comparison.
-
-Visual refinement: planar polished chamfers replace rounded cube edges, with geometric bevel normals and stronger reflection on the bevel only. Removed painted emissive edge fill; inner cavity remains within the shell. The default start/recenter projects to 73.5% screen height in both layouts; active held touch retains priority.
-
-Floor reflection refinement: mirror-pass-only glass specular suppression removes pale bevel hotspots without changing visible cubes, ball or rail materials. Shared uniform restored in finally; no new render pass or per-frame material recompilation. Floor coat roughness .34 with adjacent-texel Gaussian filtering.
-
-Score UI: compact frosted glass backplate with local CSS backdrop blur, Safari prefix and translucent opaque fallback; pointer events remain disabled and combo sits below the plate.
-
-Gate barrier height increased from 0.75 to 1.5 for both visible geometry and collider; upper-edge framing follows its height. Existing open-gate-only transition guard prevents airborne bypass from advancing the section. Glass material unchanged.
-
-Aim camera: while holding the ball, ease modestly closer and lower, with a small FOV reduction and lateral shot-direction bias. Keep pullback room, restore after release/cancel, freeze easing while paused, and disable aim motion for reduced-motion preference. Gesture projection remains frozen to its capture camera; aim camera never resizes the arena.
-
-Reflection follow-up: suppress the separate clearcoat specular lobe in the mirror pass too, because Three adds it after the base specular sum. Direct-view clearcoat and the ball remain unchanged.
-
-Continuous arena transition: upcoming decks share the active floor/coat/neon resources, joined by narrow decks, using one reflection surface across all visible decks. Preview cubes match the next section specification. Gate fracture cells are prepared ahead of impact; the actual contact starts a short outward release wave with aligned stationary cells until detachment. Optional ?qa=transition exposes a labeled target-clear and mirror/coat isolation panel for bounded visual diagnosis only.
-
-Reflection target defaults to 1024 square; ?reflectionRes=512 enables same-build resolution comparison. The adjacent-texel kernel follows the selected resolution.
-
-Preview lighting budget correction: four continuous unshadowed area lights cover the visible joined decks. Shared neon geometry preserves exact rail shapes; no per-preview light multiplication.
-
-Transition consistency: the cool directional light target now moves with the arena, keeping its lighting direction constant after travel; reset stale gate instructions on next section. ?qa=transition&transitionSpeed=0.1 slows only gate-wave/camera-travel diagnostics to one tenth speed; normal play unchanged.
-
-Aim-camera comfort revision: fixed centered pose, no lateral movement, shot-direction yaw or off-center ball tracking. Camera moves 25% closer and 30% lower with the same gentle FOV reduction; aim-time shake is suppressed. Frozen gesture projection and smooth return retained.
-
-Section progress: both neon rails fill green from the lower edge to the gate based on removed original shell area, including partial chipping. Progress is monotonic and resets per arena; preview decks remain orange. The unlocked gate uses a green emissive pulse. Shared shader uniforms avoid per-frame mesh/material rebuilds. Aim pose is lower and more forward-looking, still centered without yaw tracking.
-
-## Prototype 0.3: authored progression and collectible powers
-
-Ten deterministic arenas introduce T1–T5, with 12 T1 cubes and exactly one Pulse on First Spark. The ten-arena sequence repeats without new tiers or random bonus drops. Progress remains based on original shell area.
-
-Power containers retain their tier color. A small colored core follows its container; destruction releases a procedural 3D pickup that falls, lands, and must be touched by the moving main ball. Inaccessible pickups return visibly to a safe point instead of granting themselves. Uncollected pickups never block the gate.
-
-The first implementation includes Pulse, Pierce, Arc and Safety Halo, one active attack slot, one FIFO queued slot and an independent Halo. Bonus damage is bounded and never hits the gate. Pierce suppresses only glass response until it exits remaining shell volumes. Powers reset on loss or arena transition. Frost, Split, Gravity Well and Heavy Hit remain post-MVP ideas.
-
-Validation for this iteration: production build and static source review only. No browser, gameplay or scripted simulation tests were run, at the owner's request. Playability and phone performance await owner review.
-
-Contact integration explicitly sets both collision groups and solver groups: Pierce keeps floor/gate response while suppressing structural glass response. Contact points for non-solving manifolds are transformed from collider-local coordinates. HUD includes shape icons and live charge segments, with DOM updates only when inventory changes.
-
-Completion polish: upcoming arenas show the same assigned core types; shared core instance buffers are released on transition. Nonblocking labels queue instead of overwriting each other and disappear when their action is completed. Pickups have compact contact shadows and visible colored safe-return paths. Pierce displays its three segments, active countdown and exit state. Arena sequence and bonus values live in separate data modules for later expansion.
+Work is on `prototype/0.3`. Main remains the approved prior version until an explicit merge request. Important iterations are committed and pushed, and every deployment reuses the same public Site. Keep caches, recordings and test artifacts outside Git.

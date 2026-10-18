@@ -3,6 +3,10 @@ export const BONUS_DEFS = Object.freeze({
   pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', charges: 1, radiusD: 2.2, maxTargets: 6, damage: 1 }),
   pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', charges: 3, duration: 6, damage: 1 }),
   arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, hopRadiusD: 2.5, maxHops: 3, damage: 1 }),
+  frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', charges: 3, duration: 6, maxTargets: 3, bonusDamage: 1 }),
+  split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, duration: 10, hitsPerEcho: 4, angleDegrees: 18, damage: 1 }),
+  gravity: Object.freeze({ kind: 'gravity', name: 'Gravity Well', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 3, duration: 2, maxTargets: 4, accelerationD: 2, maxDeltaSpeedD: 2 }),
+  heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3 }),
   halo: Object.freeze({ kind: 'halo', name: 'Safety Halo', color: 0xff777d, colorCss: '#FF777D', charges: 1 }),
 });
 
@@ -31,6 +35,7 @@ export class BonusController {
     this.active = null;
     this.queued = null;
     this.halo = false;
+    this.frostMarks = new Map();
     this._time = 0;
     this._epoch = ++this._serial;
     this._tokens = new WeakSet();
@@ -43,7 +48,7 @@ export class BonusController {
 
   /** Only remove a physical pickup when accepted is true. */
   collect(kind) {
-    const def = BONUS_DEFS[kind];
+    const def = Object.prototype.hasOwnProperty.call(BONUS_DEFS, kind) ? BONUS_DEFS[kind] : null;
     if (!def) return { accepted: false, slot: null, message: 'Unknown power' };
     if (kind === 'halo') {
       if (this.halo) return { accepted: false, slot: null, message: 'One save already ready' };
@@ -83,10 +88,21 @@ export class BonusController {
   tick(now) {
     if (!Number.isFinite(now)) throw new TypeError('Bonus time must be finite simulation seconds');
     this._time = Math.max(this._time, now);
+    const expiredFrostIds = [];
+    for (const [id, expiresAt] of this.frostMarks) {
+      if (expiresAt <= this._time) { this.frostMarks.delete(id); expiredFrostIds.push(id); }
+    }
     const a = this.active;
     if (a?.kind === 'pierce' && a.startedAt !== null &&
         this._time - a.startedAt >= BONUS_DEFS.pierce.duration) a.exiting = true;
-    return { pierceExit: this.pierceExit, suppressReflection: this.suppressReflection };
+    return { pierceExit: this.pierceExit, suppressReflection: this.suppressReflection, expiredFrostIds };
+  }
+
+  _directDamage(originalId, baseDamage, result) {
+    const brittle = this.frostMarks.has(originalId);
+    if (brittle) this.frostMarks.delete(originalId);
+    result.frostConsumed = brittle;
+    return baseDamage + (brittle ? BONUS_DEFS.frost.bonusDamage : 0);
   }
 
   /**
@@ -104,14 +120,14 @@ export class BonusController {
         snapshot.epoch !== this._epoch || originalId === null || originalId === undefined) return result;
     // A contact begun before pickup remains an ordinary hit, never spending the new power.
     if (snapshot.kind === null) {
-      if (!this.pierceExit) result.damage = 1;
+      if (!this.pierceExit) result.damage = this._directDamage(originalId, 1, result);
       result.suppressReflection = snapshot.suppressReflection;
       return result;
     }
     const a = this.active;
     // Later valid contacts in this batch do ordinary damage without spending the queue.
     if (!a || a.id !== snapshot.id) {
-      if (!this.pierceExit) result.damage = 1;
+      if (!this.pierceExit) result.damage = this._directDamage(originalId, 1, result);
       result.suppressReflection = snapshot.suppressReflection;
       return result;
     }
@@ -121,27 +137,62 @@ export class BonusController {
       if (a.startedAt === null) a.startedAt = this._time;
       a.seen.add(originalId);
       a.remaining -= 1;
-      result.damage = 1;
+      result.damage = this._directDamage(originalId, 1, result);
       result.consumed = true;
       if (a.remaining === 0) a.exiting = true;
       result.pierceExit = a.exiting;
       return result;
     }
     const def = BONUS_DEFS[a.kind];
-    result.damage = 1;
-    result.consumed = true;
-    result.effect = Object.freeze(a.kind === 'pulse'
-      ? { kind: 'pulse', originId, radiusD: def.radiusD, maxTargets: def.maxTargets, damage: def.damage }
-      : { kind: 'arc', originId, hopRadiusD: def.hopRadiusD, maxHops: def.maxHops, damage: def.damage });
-    this._advance();
-    // Keep this contact's original reflection mode even when Pierce is promoted.
+    result.damage = this._directDamage(originalId, a.kind === 'heavy' ? def.damage : 1, result);
     result.suppressReflection = false;
+    // Echoes do not call consumeDirect: they cannot spend powers or brittle marks.
+    if (a.kind === 'split' && a.startedAt !== null) return result;
+    result.consumed = true;
+    if (a.kind === 'frost') {
+      // The next three direct hits spend charges, but each original cube is marked once.
+      if (!a.seen.has(originalId)) {
+        a.seen.add(originalId);
+        const expiresAt = this._time + def.duration;
+        this.frostMarks.set(originalId, expiresAt);
+        result.effect = Object.freeze({ kind: 'frost', originId, duration: def.duration, expiresAt });
+      }
+      a.remaining -= 1;
+      if (a.remaining === 0) this._advance();
+    } else if (a.kind === 'split') {
+      a.startedAt = this._time;
+      a.remaining = 0;
+      result.effect = Object.freeze({ kind: 'split', originId, activationId: a.id,
+        echoCount: def.echoCount, duration: def.duration, hitsPerEcho: def.hitsPerEcho,
+        angleDegrees: def.angleDegrees, damage: def.damage });
+      // Caller removes expired/lost echoes and confirms the last one with finishSplit().
+    } else {
+      if (a.kind === 'pulse') result.effect = Object.freeze({ kind: 'pulse', originId,
+        radiusD: def.radiusD, maxTargets: def.maxTargets, damage: def.damage });
+      else if (a.kind === 'arc') result.effect = Object.freeze({ kind: 'arc', originId,
+        hopRadiusD: def.hopRadiusD, maxHops: def.maxHops, damage: def.damage });
+      else if (a.kind === 'gravity') result.effect = Object.freeze({ kind: 'gravity', originId,
+        radiusD: def.radiusD, duration: def.duration, maxTargets: def.maxTargets,
+        accelerationD: def.accelerationD, maxDeltaSpeedD: def.maxDeltaSpeedD,
+        targetType: 'intact-cube' });
+      else if (a.kind === 'heavy') result.effect = Object.freeze({ kind: 'heavy', originId,
+        damage: result.damage });
+      this._advance();
+    }
     return result;
   }
 
   /** Caller asserts no glass overlaps remain; do not call while embedded in any cube. */
   finishPierceExit() {
     if (!this.pierceExit) return false;
+    this._advance();
+    return true;
+  }
+
+  /** Call once all echoes are gone. An activation ID protects against stale callbacks. */
+  finishSplit(activationId = this.active?.id) {
+    const a = this.active;
+    if (a?.kind !== 'split' || a.startedAt === null || a.id !== activationId) return false;
     this._advance();
     return true;
   }
@@ -158,12 +209,13 @@ export class BonusController {
       kind: a.kind, name: BONUS_DEFS[a.kind].name, color: BONUS_DEFS[a.kind].color,
       charges: a.remaining, remaining: a.remaining, exiting: a.exiting,
       started: a.startedAt !== null,
-      secondsLeft: a.kind === 'pierce'
-        ? (a.startedAt === null ? BONUS_DEFS.pierce.duration
-          : Math.max(0, BONUS_DEFS.pierce.duration - (this._time - a.startedAt)))
+      secondsLeft: ['pierce', 'split'].includes(a.kind)
+        ? (a.startedAt === null ? BONUS_DEFS[a.kind].duration
+          : Math.max(0, BONUS_DEFS[a.kind].duration - (this._time - a.startedAt)))
         : null,
     } : null;
     return { active: describe(this.active), queued: describe(this.queued), halo: this.halo,
+      frostMarks: Object.freeze([...this.frostMarks].map(([originId, expiresAt]) => Object.freeze({ originId, expiresAt, secondsLeft: Math.max(0, expiresAt - this._time) }))),
       pierceExit: this.pierceExit, suppressReflection: this.suppressReflection };
   }
 }

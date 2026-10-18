@@ -6,9 +6,9 @@ import * as DefaultTHREE from 'three';
  * Call dispose() only after removing every instance. No frame loop is installed.
  */
 export function createBonusVisuals(THREE = DefaultTHREE) {
-  const kinds = ['pulse', 'pierce', 'arc', 'halo'];
+  const kinds = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
   const unitBounds = {};
-  const colors = {pulse: 0xffb44a, pierce: 0x44d9ff, arc: 0xb68cff, halo: 0xff777d};
+  const colors = {pulse: 0xffb44a, pierce: 0x44d9ff, arc: 0xb68cff, halo: 0xff777d, frost: 0xb8e9f5, split: 0xf27ed2, gravity: 0x7887ff, heavy: 0xe98745};
   const geometries = new Set(), materials = new Set();
   const ownGeometry = geometry => (geometries.add(geometry), geometry);
   const ownMaterial = material => (materials.add(material), material);
@@ -51,7 +51,22 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const arrowChevron = polygon([[-.13, -.30], [.075, -.20], [.19, 0], [.075, .20], [-.13, .30], [-.025, 0]]);
   const arrowTip = polygon([[-.12, -.22], [.22, 0], [-.12, .22], [-.025, 0]]);
   const bolt = polygon([[.18, .47], [-.34, -.03], [-.075, -.065], [-.19, -.44], [.36, .10], [.075, .13]]);
+  // Six broad spokes read as three crossed icy planks at pickup scale.
+  const snowflakePoints = [];
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3;
+    for (const [offset, radius] of [[-.42, .12], [-.105, .46], [.105, .46], [.42, .12]]) {
+      snowflakePoints.push([Math.cos(a + offset) * radius, Math.sin(a + offset) * radius]);
+    }
+  }
+  const snowflake = polygon(snowflakePoints);
+  const gravityRing = torus(.39, .033), gravityInset = torus(.39, .013);
+  const weightBody = ownGeometry(new THREE.CylinderGeometry(.26, .41, .62, 6, 1));
+  const weightBase = ownGeometry(new THREE.CylinderGeometry(.42, .44, .10, 6, 1));
+  const weightCap = ownGeometry(new THREE.CylinderGeometry(.285, .285, .085, 6, 1));
   const key = kind => {
+    if (kind === 'gravityWell' || kind === 'gravity-well' || kind === 'gravity_well') return 'gravity';
+    if (kind === 'heavyHit' || kind === 'heavy-hit' || kind === 'heavy_hit') return 'heavy';
     if (kind === 'safetyHalo' || kind === 'safety-halo' || kind === 'safety_halo') return 'halo';
     if (!kinds.includes(kind)) throw new Error(`Unknown bonus visual: ${kind}`);
     return kind;
@@ -91,13 +106,44 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       mesh(group, sphere, surfaces[kind], .18, .47, .07, .036);
       mesh(group, sphere, surfaces[kind], -.19, -.44, .07, .036);
       group.scale.setScalar(1.12);
-    } else {
+    } else if (kind === 'halo') {
       mesh(group, haloRim, metal, 0, -.08);
       mesh(group, haloInset, surfaces[kind], 0, -.08, .066);
       mesh(group, haloInset, surfaces[kind], 0, -.08, -.066);
       for (const x of [-.38, .38]) {
         mesh(group, box, metal, x, -.17, 0, .22, .18, .23);
         mesh(group, box, surfaces[kind], x, -.065, 0, .145, .025, .16);
+      }
+    }
+    if (kind === 'frost') {
+      inset(group, snowflake, kind);
+      mesh(group, sphere, metal, 0, 0, 0, .115);
+      mesh(group, sphere, surfaces[kind], 0, 0, .07, .078);
+    } else if (kind === 'split') {
+      // Three separate lobes retain a recognizable silhouette in monochrome.
+      for (const [x, y] of [[0, .26], [-.28, -.22], [.28, -.22]]) {
+        mesh(group, sphere, metal, x, y, 0, .205);
+        mesh(group, sphere, surfaces[kind], x, y, .105, .145);
+        mesh(group, sphere, surfaces[kind], x, y, -.105, .145);
+      }
+    } else if (kind === 'gravity') {
+      mesh(group, sphere, darkMetal, 0, 0, 0, .19);
+      mesh(group, sphere, surfaces[kind], -.035, .035, .14, .07);
+      for (let i = 0; i < 2; i++) {
+        const orbit = new THREE.Group(); orbit.rotation.set(i ? -.78 : .78, i ? -.38 : .38, i ? -.48 : .48);
+        mesh(orbit, gravityRing, metal);
+        mesh(orbit, gravityInset, surfaces[kind], 0, 0, .031);
+        group.add(orbit);
+      }
+      mesh(group, sphere, surfaces[kind], .35, .13, .09, .05);
+    } else if (kind === 'heavy') {
+      mesh(group, weightBody, surfaces[kind]);
+      mesh(group, weightBase, metal, 0, -.305);
+      mesh(group, weightCap, metal, 0, .31);
+      // Three descending bright bars on the broad front face of the weight.
+      for (let i = 0; i < 3; i++) {
+        mesh(group, box, darkMetal, (i - 1) * .125, .02, .348, .10, .30 - i * .06, .026);
+        mesh(group, box, lights[kind], (i - 1) * .125, .02, .365, .045, .24 - i * .06, .012);
       }
     }
     // Keep the public root transform clean for physics positioning/scaling.
@@ -149,13 +195,13 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     data.dots.instanceMatrix.needsUpdate = true;
   }
   /** Diameter ~1.08: multiply scale by the ball diameter, not its radius.
-   * Pierce exposes userData.charges (three meshes) for charge visibility.
+   * Pierce and Frost expose userData.charges (three meshes) for charge visibility.
    */
   function createBallAccent(kind) {
     kind = key(kind);
     const group = new THREE.Group(); group.name = `ball-accent-${kind}`;
     group.userData.bonusKind = kind;
-    if (kind === 'pierce') {
+    if (kind === 'pierce' || kind === 'frost') {
       group.userData.charges = [];
       for (let i = 0; i < 3; i++) {
         const charge = mesh(group, chargeArc, lights[kind]);
@@ -169,6 +215,11 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
         const symbol = mesh(group, bolt, surfaces[kind], 0, .48, .22, .16);
         symbol.rotation.z = -.2;
       }
+      if (kind === 'split' || kind === 'gravity' || kind === 'heavy') {
+        const symbol = createModel(kind);
+        symbol.scale.setScalar(.19); symbol.position.set(0, .47, .24);
+        group.add(symbol);
+      }
     }
     return group;
   }
@@ -180,7 +231,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     const group = new THREE.Group(); group.name = 'bonus-visual-warmup';
     for (let i = 0; i < kinds.length; i++) {
       const model = createModel(kinds[i]), core = createCore(kinds[i]), accent = createBallAccent(kinds[i]);
-      model.position.x = (i - 1.5) * 1.2; core.position.set(model.position.x, .8, .1); accent.position.set(model.position.x, -.8, .1);
+      model.position.x = (i - (kinds.length - 1) / 2) * 1.2; core.position.set(model.position.x, .8, .1); accent.position.set(model.position.x, -.8, .1);
       group.add(model, core, accent);
     }
     group.traverse(object => {object.frustumCulled = false;});

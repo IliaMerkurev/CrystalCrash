@@ -4,6 +4,7 @@
  * Bonus tokens decorate a specific T1 cube; no runtime roll adds containers.
  */
 const P = '1:pulse', I = '1:pierce', A = '1:arc', H = '1:halo';
+const F = '1:frost', S = '1:split', G = '1:gravity', B = '1:heavy';
 const ARENAS = [
   {
     name: 'First Spark', skill: 'Release, return, collect',
@@ -94,6 +95,46 @@ const ARENAS = [
       [-1, 2, [2, 1, 1, 3]], [1, 2, [2, 1, 1]],
     ],
   },
+  {
+    name: 'Cold Return', skill: 'Mark strong glass, then return before the frost fades',
+    stacks: [
+      // The exposed front container opens a clean approach to three T3 targets.
+      [0, 0, [F, 1]],
+      [-1, 1, [3, 2, 1]], [0, 1, [3, 2, 1]], [1, 1, [3, 2, 1]],
+      [-1.5, 2, [2, 1, 1]], [-.5, 2, [2, 1, 1, 4, 5]],
+      [.5, 2, [2, 1, 1]], [1.5, 2, [2, 1, 1]],
+    ],
+  },
+  {
+    name: 'Echo Fan', skill: 'Send two echoes into the broad wings of the formation',
+    stacks: [
+      [0, 0, [S, 1, 1]],
+      [-2, 1, [2, 1, 1]], [-1, 1, [2, 1, 1]],
+      [1, 1, [2, 1, 1]], [2, 1, [2, 1, 1]],
+      [-2, 2, [2, 1, 1]], [-1, 2, [3, 2, 1]], [0, 2, [4, 3, 5]],
+      [1, 2, [3, 2, 1]], [2, 2, [2, 1, 1]],
+    ],
+  },
+  {
+    name: 'Orbit Shift', skill: 'Pull a compact group toward the weakened central support',
+    stacks: [
+      [0, 0, [G, 1]], [-2, 0, [2, 1, 1]], [2, 0, [2, 1, 1]],
+      // Adjacent stacks are within the 3-ball-diameter well radius while their
+      // initial rotated collision bounds remain separate.
+      [-1, 1, [2, 1, 1]], [0, 1, [3, 2, 1]], [1, 1, [2, 1, 1]],
+      [-1, 2, [3, 2, 1]], [0, 2, [3, 4, 5]], [1, 2, [3, 2, 1]],
+    ],
+  },
+  {
+    name: 'Decisive Strike', skill: 'Spend the heavy strike on an exposed armored support',
+    stacks: [
+      [0, 0, [B, 1]], [-2, 0, [2, 1, 1]], [2, 0, [2, 1, 1]],
+      // Two exposed strong bases give a deliberate T4-versus-T5 target choice.
+      [-1, 1, [4, 3, 1]], [1, 1, [5, 3, 1]],
+      [-2, 2, [2, 1, 1]], [-1, 2, [3, 2, 1]], [0, 2, [4, 3, 1]],
+      [1, 2, [3, 2, 1]], [2, 2, [2, 1, 1]],
+    ],
+  },
 ];
 
 function selected(level) {
@@ -107,8 +148,8 @@ function decode(token) {
   return { type: Number(tier) - 1, bonus };
 }
 
-/** Returns fresh metadata. tierCounts is ordered T1..T5; bonus IDs are MVP IDs.
- * Levels above ten repeat the exact authored cycle without added durability.
+/** Returns fresh metadata. tierCounts is ordered T1..T5; bonuses use the host effect IDs.
+ * Levels above fourteen repeat the exact authored cycle without added durability.
  */
 export function arenaDefinition(level) {
   const { level: n, index, cycle, arena } = selected(level);
