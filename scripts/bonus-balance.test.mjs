@@ -196,7 +196,7 @@ test('HUD uses timed seconds and persistent Split text rather than spent charges
   assert.match(textOf(world.hud), /FROST · MARKING · 8s/);
 });
 
-test('Arc links all 64 targets with finite jagged forks in one bounded mesh', () => {
+test('Arc links all 64 targets with finite jagged forks with bounded volumetric glow', () => {
   const {world} = makeWorld();
   const origin = new THREE.Vector3(0, .5, 0);
   const targets = Array.from({length: 64}, (_, i) => new THREE.Vector3((i % 8) - 4, .5, -1 - Math.floor(i / 8)));
@@ -206,6 +206,7 @@ test('Arc links all 64 targets with finite jagged forks in one bounded mesh', ()
   assert.equal(geometry.drawRange.count, 64 * 24);
   assert.equal(positions.count, 64 * 24);
   assert.ok([...positions.array].every(Number.isFinite));
+  assert.equal(fx.core.count,64*12);assert.equal(fx.halo.count,64*12);assert.equal(fx.impacts.count,64);assert.ok([...fx.core.instanceMatrix.array].every(Number.isFinite));assert.ok([...fx.halo.instanceMatrix.array].every(Number.isFinite));
   for (let i = 0; i < 64; i++) {
     const start = new THREE.Vector3().fromBufferAttribute(positions, i * 24);
     const end = new THREE.Vector3().fromBufferAttribute(positions, i * 24 + 15);
@@ -214,7 +215,7 @@ test('Arc links all 64 targets with finite jagged forks in one bounded mesh', ()
   }
   assert.equal(world.arcTargets(origin, [...targets, origin]), 65);
   assert.equal(world.arc([origin, targets[0], targets[1]]), 2);
-  world.update(.4, origin, new THREE.Vector3(), false, new Map());
+  world.update(.8, origin, new THREE.Vector3(), false, new Map());
   assert.equal(world.arcs.filter(f => f.mesh.visible).length, 0);
 });
 
@@ -243,3 +244,7 @@ test('Arc covers all 110 targets in distinct pooled chunks even when the pool is
   }
   assert.equal(targetIndex, 110);
 });
+
+ test('Released pickups double model scale, rest above floor and collect at wider tolerance',()=>{
+ for(const kind of Object.keys(BONUS_DEFS)){const {world,controller}=makeWorld();world.release({id:1,bonus:kind});const item=world.pickups[0];assert.equal(item.scale,.38*2*1.3);assert(item.height>=.1);item.landed=true;item.p.set(0,item.height,1);world.update(.4,new THREE.Vector3(1,item.height,1),new THREE.Vector3(1,0,0),true,new Map());assert.equal(world.pickups.length,0,kind+' collects one world unit away');assert(controller.active||controller.halo);}
+ });
