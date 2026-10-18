@@ -189,3 +189,7 @@ Reflection follow-up: suppress the separate clearcoat specular lobe in the mirro
 Continuous arena transition: upcoming decks share the active floor/coat/neon resources, joined by narrow decks, using one reflection surface across all visible decks. Preview cubes match the next section specification. Gate fracture cells are prepared ahead of impact; the actual contact starts a short outward release wave with aligned stationary cells until detachment. Optional ?qa=transition exposes a labeled target-clear and mirror/coat isolation panel for bounded visual diagnosis only.
 
 Reflection target defaults to 1024 square; ?reflectionRes=512 enables same-build resolution comparison. The adjacent-texel kernel follows the selected resolution.
+
+Preview lighting budget correction: four continuous unshadowed area lights cover the visible joined decks. Shared neon geometry preserves exact rail shapes; no per-preview light multiplication.
+
+Transition consistency: the cool directional light target now moves with the arena, keeping its lighting direction constant after travel; reset stale gate instructions on next section. ?qa=transition&transitionSpeed=0.1 slows only gate-wave/camera-travel diagnostics to one tenth speed; normal play unchanged.
