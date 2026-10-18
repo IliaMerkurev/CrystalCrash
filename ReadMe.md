@@ -73,3 +73,7 @@ Black Hole now uses a 6.6-ball-diameter radius, eases camera focus over 1.1 seco
 - Holding either the main ball or an extra ball to aim smoothly slows simulation to 40%; empty-space attraction does not. Release/cancel smoothly restores normal time. Camera/input remain responsive in real time, and menus freeze simulation.
 - Black Hole ball dilation composes by the stronger slowdown rather than multiplication: settled aiming + Black Hole yields 40% cube time and 35% free-ball time. Held bodies remain externally controlled.
 - Extra balls have the main ball's radius and polished steel response, retaining their pink tint. Spawn and carried-group spacing derive from the shared radius.
+
+### Bomb visual refinement and arena diagnostics
+- Bomb fire lobes spread 32% farther, hot streaks travel about 31% faster, and glowing embers are brighter. Smoke coverage is lighter and less opaque; damage and physical impulses are unchanged.
+- The Test menu offers an explicit arena loader for the 14 authored arenas. Loading resets that scene, score and effects while retaining the current run seed for repeatable layouts.

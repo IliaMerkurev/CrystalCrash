@@ -80,7 +80,7 @@ export class PowerFX {
     lobeGeometry.computeVertexNormals();
     this.bombShaderTime={value:0};this.bombDirection=new THREE.Vector3();
     const lobeMaterial=smoke=>{
-      const m=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false,blending:THREE.NormalBlending,toneMapped:false});
+      const m=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false,blending:smoke?THREE.NormalBlending:THREE.AdditiveBlending,toneMapped:false});
       m.onBeforeCompile=shader=>{
         shader.uniforms.bombPhase=this.bombShaderTime;
         shader.vertexShader='varying vec3 bombLocal;\n'+shader.vertexShader;
@@ -94,15 +94,15 @@ export class PowerFX {
           vec3 flow=bombLocal*3.8+vec3(0.,-bombPhase*2.8,0.);
           float turbulence=bnoise(flow)*.66+bnoise(flow*2.25+4.7)*.34;
           float veins=1.-abs(turbulence*2.-1.);
-          ${smoke ? `diffuseColor.rgb=mix(vec3(.018,.021,.026),vec3(.11,.105,.10),turbulence);
-          diffuseColor.a*=smoothstep(.13,.65,turbulence)*.72;` : `
+          ${smoke ? `diffuseColor.rgb=mix(vec3(.055,.049,.043),vec3(.16,.14,.115),turbulence);
+          diffuseColor.a*=smoothstep(.13,.65,turbulence)*.55;` : `
           float heat=clamp(veins*veins-.29-bombPhase*.16,0.,1.);
           diffuseColor.rgb=mix(vec3(.28,.012,.001),vec3(1.,.18,.008),smoothstep(.05,.45,heat));
           diffuseColor.rgb=mix(diffuseColor.rgb,vec3(1.,.78,.19),smoothstep(.36,.70,heat));
           diffuseColor.a*=smoothstep(.14,.48,turbulence);`}
         `);
       };
-      m.customProgramCacheKey=()=>smoke?'bomb-smoke-volume-v1':'bomb-flame-volume-v1';return m;
+      m.customProgramCacheKey=()=>smoke?'bomb-smoke-volume-v2':'bomb-flame-volume-v2';return m;
     };
     this.fire=new THREE.InstancedMesh(lobeGeometry,lobeMaterial(false),16);
     this.smoke=new THREE.InstancedMesh(lobeGeometry,lobeMaterial(true),12);
@@ -217,13 +217,13 @@ export class PowerFX {
       let a = i / count * Math.PI * 2;
       if (kind === 'split') a = heading + (i < count / 2 ? -.7 : .7) + ((i % 16) / 15 - .5) * .36;
       if (kind === 'pierce') a = heading + (i / count - .5) * .4;
-      const speed = d * ({ heavy: 6.2, pierce: 10, pulse: 6.8, split: 7, frost: 3.8, arc: 6, bomb:16 }[kind]) * (.65 + Math.random() * .45);
+      const speed = d * ({ heavy: 6.2, pierce: 10, pulse: 6.8, split: 7, frost: 3.8, arc: 6, bomb:21 }[kind]) * (.65 + Math.random() * .45);
       const life = kind === 'bomb' ? (i%3===0?1.15+Math.random()*.2:.45+Math.random()*.35) : kind === 'heavy' ? .48 : kind === 'arc' ? .3 + Math.random() * .2 : kind === 'frost' ? .85 : .64;
       const size = d * (kind === 'bomb' ? (i%3===0?.04:.055) : kind === 'heavy' ? .14 : kind === 'pulse' ? .095 : kind === 'frost' ? .07 : .075);
       const stretch = kind === 'bomb' ? (i%3===0?2.5:18+Math.random()*12) : kind === 'frost' ? 5 : kind === 'arc' || kind === 'pierce' ? 10 : kind === 'heavy' ? 2.6 : 4;
       const p = this._particle(kind, point, a, speed, life, size, stretch);
       if (kind === 'bomb') {
-        p.v.y=d*(1.5+Math.random()*9);p.glow=1.15;if(i%3===0)p.v.multiplyScalar(.55);
+        p.v.y=d*(1.5+Math.random()*9);p.glow=1.65;if(i%3===0)p.v.multiplyScalar(.55);
         this.mesh.setColorAt((this.cursor-1)%this.particles.length,this.color.setHex(i%3===0?0xff6b12:i%2?0xfff1a8:0xffac32));
       }
       if (kind === 'heavy') p.v.y = d * (1.4 + Math.random() * 3.2);
@@ -344,9 +344,9 @@ export class PowerFX {
       this.flash.visible=t<.16;
       for(let i=0;i<16;i++) {
         const age=Math.max(0,t-(i%4)*.018),a=i*2.399963;
-        const rise=.45+(i%5)*.19,travel=d*(.18+(1-Math.exp(-age*4))*(1.25+(i%4)*.38));
+        const rise=.45+(i%5)*.19,travel=d*1.32*(.18+(1-Math.exp(-age*4))*(1.25+(i%4)*.38));
         this.dummy.position.set(this.bombPoint.x+Math.cos(a)*travel,this.bombPoint.y+d*(.2+age*rise*2.3),this.bombPoint.z+Math.sin(a)*travel);
-        const size=d*(.12+(1-Math.exp(-age*8))*(.7+(i%3)*.19));
+        const size=d*1.12*(.12+(1-Math.exp(-age*8))*(.7+(i%3)*.19));
         this.dummy.rotation.set(i*.7+age*.4,i*.9,-age*.6);
         this.dummy.scale.set(size*(.82+(i%3)*.15),size*(1.1+age*.35),size);
         this.dummy.updateMatrix();this.fire.setMatrixAt(i,this.dummy.matrix);
@@ -362,7 +362,7 @@ export class PowerFX {
       }
       this.fire.instanceMatrix.needsUpdate=true;this.smoke.instanceMatrix.needsUpdate=true;
       this.fire.material.opacity=Math.min(1,t/.045)*Math.pow(Math.max(0,1-t/1.03),.65)*.92;
-      this.smoke.material.opacity=Math.min(1,Math.max(0,t-.07)/.22)*Math.pow(Math.max(0,1-t/1.45),.8)*.44;
+      this.smoke.material.opacity=Math.min(1,Math.max(0,t-.07)/.22)*Math.pow(Math.max(0,1-t/1.45),.8)*.22;
       this.fire.visible=t<1.03;this.smoke.visible=t<1.45;
     }
     for (const r of this.rings) {

@@ -153,7 +153,7 @@ function setupPhysics(){world=new RAPIER.World({x:0,y:-C.gravity,z:0});world.tim
 function addBlock(x,y,z,type,sx=C.cube,sy=C.cube,sz=C.cube,bonus=null){const rotated=sx===sy&&sy===sz,extentX=rotated?(sx+sz)*Math.SQRT1_2/2:sx/2,extentZ=rotated?(sx+sz)*Math.SQRT1_2/2:sz/2,limit=Math.min(tableHalf(z-extentZ),tableHalf(z+extentZ))-extentX-.34;x=clamp(x,-limit,limit);const b=world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x,y,z).setLinearDamping(.12).setAngularDamping(.25).setCcdEnabled(true));if(sx===sy&&sy===sz)b.setRotation({x:0,y:Math.sin(Math.PI/8),z:0,w:Math.cos(Math.PI/8)},true);const t=wallThickness(type),cs=shellPanels(sx,sy,sz,t).map(panel=>world.createCollider(RAPIER.ColliderDesc.cuboid(...panel.size.map(n=>n/2)).setTranslation(...panel.p).setCollisionGroups(GROUP.structure).setSolverGroups(GROUP.structure).setMass(sx*sy*sz*GLASS[type].density/6).setFriction(.65).setRestitution(.08).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),b)),c=cs[0];const geo=shellGeometry(sx,sy,sz,t),mesh=new THREE.Mesh(geo,innerMaterials[type]?[innerMaterials[type],materials[type]]:materials[type]);mesh.castShadow=mesh.receiveShadow=true;scene.add(mesh);const edge=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(sx,sy,sz)),new THREE.LineBasicMaterial({color:new THREE.Color(GLASS[type].color).lerp(new THREE.Color('white'),.18),transparent:true,opacity:.06}));mesh.add(edge);const o={id:++uid,kind:'block',b,c,cs,mesh,type,sx,sy,sz,damage:0,stage:0,lastHit:-10};o.origin={id:o.id,type,sx,sy,sz,mass:sx*sy*sz*GLASS[type].density,graph:createGraph(fractureFaces(sx,sy,sz,t,rand)),clusters:new Set([o.id]),rewarded:false,bonus};for(const cell of o.origin.graph.cells){cell.geometry=plateGeometry(cell.points,cell.t);cell.geometry.applyQuaternion(cell.q);cell.geometry.translate(cell.pos.x,cell.pos.y,cell.pos.z);const hull=plateGeometry(cell.points.map(p=>p.map(n=>n*.992)),cell.t*.98);hull.applyQuaternion(cell.q);hull.translate(cell.pos.x,cell.pos.y,cell.pos.z);cell.colliderPoints=hull.attributes.position.array.slice();hull.dispose();}
 o.ids=o.origin.graph.cells.map(c=>c.id);originals.set(o.origin.id,o.origin);blocks.set(o.id,o);cs.forEach(c=>colliders.set(c.handle,o));if(bonus){bonusWorld.capturePose(o.origin,o.b);bonusWorld.attach(o.origin);}return o;}
 function resetBall(){if(!drag?.echo)cancelDrag();ball.collider(0).setCollisionGroups(GROUP.ball);heldPosition.set(0,C.ballRadius+.03,C.startZ);ball.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased,true);ball.setTranslation(heldPosition,true);ball.setNextKinematicTranslation(heldPosition);ball.setLinvel({x:0,y:0,z:0},true);ball.setAngvel({x:0,y:0,z:0},true);state='HELD';$('hint').textContent='Hold the ball, pull back, release. Hold the lower zone to attract.';}
-const qaPower=typeof location!=='undefined'&&new URLSearchParams(location.search).get('qa')==='bonus'?new URLSearchParams(location.search).get('power'):null;
+let qaPower=typeof location!=='undefined'&&new URLSearchParams(location.search).get('qa')==='bonus'?new URLSearchParams(location.search).get('power'):null;
 function sectionBlocks(level){if(qaPower&&BONUS_DEFS[qaPower])return [[0,.44,layoutZ(-1.4),0,.88,.88,.88,qaPower],[-1.4,.44,layoutZ(-2.2),3],[0,.44,layoutZ(-2.2),4],[1.4,.44,layoutZ(-2.2),3],[-.7,1.32,layoutZ(-2.2),2],[.7,1.32,layoutZ(-2.2),2]].map(([x,y,z,type,sx=C.cube,sy=C.cube,sz=C.cube,bonus])=>[x,y,z,type,sx,sy,sz,bonus]);return arenaBlocks(level,{cube:C.cube,layoutZ,bounds:{top:TOP,mid:MID,half:tableHalf}});}
 let bonusTestOpen=false,bonusTestPanel,qaDropSerial=0;
 function equipTestBonus(kind){
@@ -167,15 +167,41 @@ function equipTestBonus(kind){
  if(!kind||kind==='bomb')bonusWorld.feedback(kind?'BOMB DROPPED · 5 SECONDS AFTER LANDING':'EFFECTS RESET',v3().copy(ball.translation()));
  audio.play('click');
 }
+function loadTestArena(level){
+ const selected=Number(level);if(!Number.isInteger(selected)||selected<1||selected>14||!world||!ball)return false;
+ // Test jumps keep this run's seeded bonus schedule, but never carry a live
+ // shot, body, pickup, field or transition into the selected authored arena.
+ cancelDrag();holeImpactGuard.reset(blocks,impactHistory,strikeContacts);secondary?.clear();
+ for(const o of [...blocks.values()])removeCluster(o);
+ for(const f of fragments)disposeDebris(f);fragments.length=0;dust.length=0;
+ for(const mesh of dustMeshes)mesh.count=0;if(glints)glints.count=0;if(particleGlow)particleGlow.count=0;
+ previousVel.clear();queue.clear();impactHistory.clear();strikeContacts.clear();
+ qaPower=null;section=selected;powerTime=0;accumulator=0;transition=0;repositionTime=0;missTimer=0;slow=0;
+ arenaOffset=0;scene.position.z=0;aimShift=aimBlend=0;travelFrom=0;repositionFrom.set(0,0,0);
+ score=0;chain=0;comboTime=0;toastTime=0;$('score').textContent='0';$('combo').textContent='';$('toast').style.opacity='0';
+ ball.resetForces(true);ball.resetTorques(true);ball.collider(0).setSolverGroups(GROUP.ball);targetRing.visible=false;
+ generateSection();secondary?.render();updateAimCamera(0);bonusWorld?.render(camera,v3().copy(ball.translation()));
+ tell(`ARENA ${String(section).padStart(2,'0')} LOADED · SCORE RESET`,1.8);return true;
+}
 function setupBonusTestMenu(){
  bonusTestPanel=document.createElement('div');bonusTestPanel.id='bonus-test-menu';bonusTestPanel.hidden=true;
  bonusTestPanel.style.cssText='position:fixed;inset:0;z-index:2000;background:#06101a88;place-items:center';
- const card=document.createElement('div');card.className='glass-panel';card.style.cssText='width:min(310px,85vw);padding:18px;border:1px solid #678ca9;border-radius:16px;background:#122130;color:#e7f4ff;font:14px sans-serif;box-shadow:0 12px 40px #0008';
+ const card=document.createElement('div');card.className='glass-panel bonus-test-card';card.style.cssText='width:min(340px,88vw);padding:18px;border:1px solid #678ca9;border-radius:16px;background:#122130;color:#e7f4ff;font:14px sans-serif;box-shadow:0 12px 40px #0008';
  card.innerHTML='<b>BONUS TEST</b><p style="font-size:12px;color:#aac0d1">Activate a power immediately. Q / Escape to close.</p>';
+ const arenaTools=document.createElement('div');arenaTools.className='test-arena-tools';
+ const current=document.createElement('p');current.className='test-arena-current';
+ const label=document.createElement('label');label.htmlFor='test-arena-select';label.textContent='Arena';
+ const row=document.createElement('div');row.className='test-arena-row';
+ const select=document.createElement('select');select.id='test-arena-select';select.setAttribute('aria-describedby','test-arena-note');
+ for(let level=1;level<=14;level++){const option=document.createElement('option');option.value=String(level);option.textContent=`${String(level).padStart(2,'0')} · ${arenaDefinition(level).name}`;select.append(option);}
+ const load=document.createElement('button');load.id='test-arena-load';load.textContent='Load';load.type='button';
+ const note=document.createElement('p');note.id='test-arena-note';note.textContent='Load resets arena and effects. Score resets to 0.';
+ row.append(select,load);arenaTools.append(current,label,row,note);card.append(arenaTools);
  const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px';
- const open=()=>{cancelDrag();bonusTestOpen=true;bonusTestPanel.hidden=false;bonusTestPanel.style.display='grid';accumulator=0;syncModalBlur();};
+ const open=()=>{cancelDrag();current.textContent=`Current: ${section} · ${arenaDefinition(section).name}`;select.value=String((section-1)%14+1);bonusTestOpen=true;bonusTestPanel.hidden=false;bonusTestPanel.style.display='grid';accumulator=0;syncModalBlur();};
  $('bonus-test').onclick=()=>{if(bonusTestOpen)close();else open();};
  const close=()=>{bonusTestOpen=false;bonusTestPanel.hidden=true;bonusTestPanel.style.display='none';accumulator=0;syncModalBlur();};
+ load.onclick=()=>{if(loadTestArena(select.value)){audio.play('click');close();}};
  for(const [kind,def] of Object.entries(BONUS_DEFS)){const b=document.createElement('button');b.textContent=def.name;b.style.cssText='padding:10px 5px;border:1px solid '+def.colorCss+';border-radius:8px;background:#1c3043;color:#fff;font-size:13px';b.onclick=()=>{equipTestBonus(kind);close();};grid.append(b);}
  card.append(grid);const reset=document.createElement('button');reset.textContent='Reset Effects';reset.style.cssText='margin-top:12px;padding:8px;width:100%';reset.onclick=()=>{equipTestBonus(null);close();};card.append(reset);bonusTestPanel.append(card);document.body.append(bonusTestPanel);
  for(const name of ['pointerdown','pointerup','pointermove'])bonusTestPanel.addEventListener(name,e=>e.stopPropagation());

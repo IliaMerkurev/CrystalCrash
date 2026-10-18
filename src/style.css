@@ -33,3 +33,16 @@ button{backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blu
 #start{background:linear-gradient(145deg,#647385cf,#263443df);backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%)}
 @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){#start{background:linear-gradient(145deg,#d5e5f040,#2c3d5377)}}
 .controls{max-width:none;flex-wrap:nowrap;gap:6px}.controls #fullscreen{order:0;display:grid;place-items:center;width:38px;height:42px;padding:8px}.controls #bonus-test{order:3}.controls #fullscreen svg{display:block}@media(max-width:600px){.controls{max-width:none;gap:4px}.controls button{padding:7px 8px}.controls #fullscreen{width:32px;height:34px}.controls #bonus-test{font-size:10px;padding:6px}}
+
+/* The Test menu stays usable on small/short viewports without moving the game. */
+#bonus-test-menu{padding:16px;overflow-y:auto;overscroll-behavior:contain}
+.bonus-test-card{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.test-arena-tools{margin:0 0 15px;padding-bottom:13px;border-bottom:1px solid var(--glass-border)}
+.test-arena-current{margin:0 0 9px;font-size:12px;line-height:1.45;color:#d7e9f7}
+.test-arena-tools label{display:block;margin-bottom:5px;font-size:12px;color:#c1d5e5}
+.test-arena-row{display:flex;align-items:stretch;gap:7px;min-width:0}
+.test-arena-row select{flex:1;min-width:0;width:0;padding:9px 7px;border:1px solid var(--glass-border);border-radius:8px;background:var(--glass-fill);box-shadow:var(--glass-shadow);color:#f3f8ff;font:12px Arial,Helvetica,sans-serif;backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur)}
+.test-arena-row option{color:#f3f8ff;background:#263443}
+.test-arena-row select:focus-visible{outline:2px solid #a8e3ff;outline-offset:3px}
+.test-arena-row button{flex:none;padding:9px 12px;font-size:13px;border-radius:8px}
+#test-arena-note{margin:8px 0 0;font-size:11px;line-height:1.45;color:#aac0d1}

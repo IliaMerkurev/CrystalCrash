@@ -7,20 +7,25 @@ const geometry=fx.fire.geometry,smokeMaterial=fx.smoke.material;
 assert.equal(fx.fire.count,16);assert.equal(fx.smoke.count,12);assert.equal(fx.particles.length,80);
 assert.equal(fx.fire.geometry,fx.smoke.geometry);
 assert.equal(fx.smoke.material.depthWrite,false);
+assert.equal(fx.fire.material.blending,THREE.AdditiveBlending);
+assert.equal(fx.smoke.material.blending,THREE.NormalBlending);
 fx.trigger('bomb',origin);fx.update(.05,null,null);
 assert(fx.flash.visible&&fx.flash.material.opacity>0);
 assert.equal(fx.rings.filter(r=>r.mesh.visible).length,0,'Bomb no longer draws geometric rings');
 fx.fire.getMatrixAt(0,matrix);position.setFromMatrixPosition(matrix);const firstDistance=position.distanceTo(origin);
 fx.update(.25,null,null);assert(!fx.flash.visible);assert(fx.fire.visible&&fx.smoke.visible);
 fx.fire.getMatrixAt(0,matrix);position.setFromMatrixPosition(matrix);assert(position.distanceTo(origin)>firstDistance,'lobes expand outward');
-assert(fx.smoke.material.opacity>0&&fx.smoke.material.opacity<.44,'restrained smoke');
+const horizontal=Math.hypot(position.x-origin.x,position.z-origin.z);
+assert(Math.abs(horizontal-.76*1.32*(.18+(1-Math.exp(-.3*4))*1.25))<1e-5,'fire scatter is 32% wider');
+assert(fx.particles.filter(p=>p.kind==='bomb').every(p=>p.glow===1.65),'hotter ember glow');
+assert(fx.smoke.material.opacity>0&&fx.smoke.material.opacity<.22,'restrained smoke');
 const streak=fx.particles.find(p=>p.kind==='bomb'&&p.stretch>=18);assert(streak);assert(streak.p.distanceTo(streak.origin)>0);
-for(let n=0;n<80;n++)fx.update(.02,null,null);
+for(let n=0;n<58;n++)fx.update(.02,null,null);
 assert(!fx.fire.visible&&!fx.smoke.visible&&!fx.flash.visible,'all volume expires before 1.5 seconds');
 assert(fx.alpha.array.every(a=>a===0),'embers expire');
 for(let n=0;n<10;n++){fx.trigger('bomb',origin);fx.update(.02,null,null);}
 assert.equal(fx.fire.geometry,geometry);assert.equal(fx.smoke.material,smokeMaterial);assert.equal(fx.fire.count,16);assert.equal(fx.smoke.count,12);
-const warm=fx.warmupObjects();assert(warm.children.some(o=>o.material.customProgramCacheKey()==='bomb-flame-volume-v1'));assert(warm.children.some(o=>o.material.customProgramCacheKey()==='bomb-smoke-volume-v1'));
+const warm=fx.warmupObjects();assert(warm.children.some(o=>o.material.customProgramCacheKey()==='bomb-flame-volume-v2'));assert(warm.children.some(o=>o.material.customProgramCacheKey()==='bomb-smoke-volume-v2'));
 for(const m of [fx.fire.material,fx.smoke.material]){const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <color_fragment>'};m.onBeforeCompile(shader);assert(shader.uniforms.bombPhase);assert(shader.fragmentShader.includes('float bnoise'));assert(shader.vertexShader.includes('bombLocal=position'));}
 fx.clear();assert(!fx.fire.visible&&!fx.smoke.visible&&!fx.flash.visible);assert.equal(fx.smoke.material.opacity,0);assert.equal(fx.bombAge,1.45);
 fx.trigger('pulse',origin);assert(fx.rings.some(r=>r.mesh.visible),'other powers retain rings');
