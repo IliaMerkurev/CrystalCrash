@@ -3,271 +3,205 @@ import test from 'node:test';
 import * as THREE from 'three';
 import {BonusController, BONUS_DEFS} from '../src/bonus-controller.js';
 import {BonusWorld} from '../src/bonus-world.js';
+import {arenaDefinition, arenaBlocks, setArenaRunSeed} from '../src/arena-data.js';
+import {BlackHoleLens} from '../src/blackhole-lens.js';
 
 const hit = (powers, id, time) => powers.consumeDirect(powers.capture(), id, time);
 
-test('Pulse waits for first impact and repeatedly blasts for one shared 10-second timer', () => {
+test('Pulse activates on pickup and repeatedly blasts during its shared ten-second timer', () => {
   const powers = new BonusController();
-  powers.collect('pulse');
-  powers.collect('heavy');
   powers.tick(100);
+  assert.equal(powers.collect('pulse').kind, 'pulse');
+  assert.equal(powers.has('pulse'), true);
+  assert.equal(powers.active.startedAt, 100);
   assert.equal(powers.snapshotHUD().active.secondsLeft, 10);
-  assert.equal(powers.snapshotHUD().active.remaining, null);
-  assert.equal(powers.active.startedAt, null);
   const batch = powers.capture();
-  const result = powers.consumeDirect(batch, 1, 100);
-  assert.equal(result.damage, 3);
-  assert.deepEqual(result.effect, {kind: 'pulse', originId: 1, radiusD: 4.4, maxTargets: Infinity, damage: 3});
-  assert.equal(powers.active.kind, 'pulse');
-  assert.equal(powers.queued.kind, 'heavy');
-  const anotherBall = powers.consumeDirect(batch, 2, 100);
-  assert.equal(anotherBall.damage, 3);
-  assert.equal(anotherBall.effect.kind, 'pulse', 'every valid direct impact from any ball blasts');
-  const repeatedOriginal = hit(powers, 1, 104);
-  assert.equal(repeatedOriginal.damage, 3);
-  assert.equal(repeatedOriginal.effect.kind, 'pulse', 'a separate impact on the same original blasts again');
-  assert.equal(powers.active.startedAt, 100, 'later impacts cannot restart the shared timer');
-  assert.equal(powers.snapshotHUD().active.secondsLeft, 6);
-  powers.tick(104);
-  powers.tick(104);
+  for (const id of [1, 2]) {
+    const result = powers.consumeDirect(batch, id, 100);
+    assert.equal(result.damage, 3);
+    assert.deepEqual(result.effects, [{kind: 'pulse', originId: id, radiusD: 4.4, maxTargets: Infinity, damage: 3}]);
+  }
+  assert.equal(hit(powers, 1, 104).effects[0].kind, 'pulse', 'later valid impacts may revisit an original');
+  powers.tick(104); powers.tick(104);
   assert.equal(powers.snapshotHUD().active.secondsLeft, 6, 'paused simulation time does not consume the buff');
-  assert.equal(hit(powers, 1, 109.99).effect.kind, 'pulse');
-  assert.equal(powers.active.kind, 'pulse');
   powers.tick(110);
-  assert.equal(powers.active.kind, 'heavy', 'FIFO advances at the duration boundary without another impact');
-  assert.equal(powers.queued, null);
-  assert.equal(powers.consumeDirect(batch, 3, 110).damage, 1);
-  assert.equal(powers.active.kind, 'heavy', 'a stale Pulse batch cannot spend the newly armed queue');
-  assert.equal(hit(powers, 3, 110).damage, 3);
-  assert.equal(powers.active, null);
+  assert.equal(powers.has('pulse'), false);
+  assert.equal(hit(powers, 1, 110).damage, 1);
+  assert.equal('queued' in powers.snapshotHUD(), false);
 });
 
-test('Queued Pulse keeps its own full duration and the HUD shows seconds while ready/active', () => {
-  const {world, controller} = makeWorld();
-  controller.collect('heavy');
-  controller.collect('pulse');
-  controller.tick(50);
-  world.updateHUD();
-  assert.match(textOf(world.hud), /NEXT · Pulse · 10s/);
-  const batch = controller.capture();
-  controller.consumeDirect(batch, 1, 50);
-  controller.consumeDirect(batch, 2, 50);
-  assert.equal(controller.active.kind, 'pulse');
-  assert.equal(controller.active.startedAt, null);
-  world.updateHUD();
-  assert.match(textOf(world.hud), /PULSE · HIT GLASS · 10s/);
-  assert.equal(hit(controller, 3, 70).effect.kind, 'pulse');
-  controller.tick(73);
-  world.updateHUD();
-  assert.match(textOf(world.hud), /PULSE · ACTIVE · 7s/);
-  assert.match(controller.snapshotHUD().active.description, /10 seconds/);
-  controller.tick(80);
-  assert.equal(controller.active, null);
+test('Timed buffs coexist and duplicates add remaining time without restarting other buffs', () => {
+  const powers = new BonusController();
+  powers.collect('pulse'); powers.collect('pierce'); powers.collect('frost');
+  assert.equal(powers.attacks.size, 3);
+  powers.tick(4);
+  const pierceId = powers.attacks.get('pierce').id;
+  powers.collect('pulse');
+  const hud = Object.fromEntries(powers.snapshotHUD().activeEffects.map(a => [a.kind, a]));
+  assert.equal(hud.pulse.secondsLeft, 16);
+  assert.equal(hud.pierce.secondsLeft, 6);
+  assert.equal(hud.frost.secondsLeft, 6);
+  assert.equal(powers.attacks.get('pierce').id, pierceId);
+  assert.equal(powers.active.kind, 'pulse');
+  powers.tick(10);
+  assert.equal(powers.has('pulse'), true);
+  assert.equal(powers.has('frost'), false);
+  assert.equal(powers.pierceExit, true);
+  powers.finishPierceExit();
+  assert.equal(powers.has('pulse'), true);
+  powers.tick(20);
+  assert.equal(powers.attacks.size, 0);
 });
 
-test('Pierce waits for first impact, hits unlimited distinct originals, then exits safely', () => {
+test('Simultaneous Pulse, Frost, Heavy and Pierce combine effects with max damage plus brittle', () => {
+  const powers = new BonusController();
+  powers.collect('frost');
+  assert.equal(hit(powers, 40, 0).damage, 1);
+  powers.collect('pulse'); powers.collect('heavy'); powers.collect('pierce');
+  const batch = powers.capture();
+  const result = powers.consumeDirect(batch, 40, 0);
+  assert.equal(result.damage, 9, 'max(8,3,3) plus one brittle damage');
+  assert.equal(result.pierced, true);
+  assert.equal(result.frostConsumed, true);
+  assert.deepEqual(result.effects.map(e => e.kind), ['pulse', 'heavy']);
+  assert.equal(powers.has('heavy'), false);
+  assert.equal(powers.consumeDirect(batch, 40, 0).damage, 0, 'Pierce deduplicates across all balls');
+  const next = powers.consumeDirect(batch, 41, 0);
+  assert.equal(next.damage, 8);
+  assert.deepEqual(next.effects.map(e => e.kind), ['pulse', 'frost']);
+  assert.equal(next.suppressReflection, true);
+});
+
+test('Pierce timers start at pickup; exit blocks only penetrating balls and preserves other buffs', () => {
   const powers = new BonusController();
   powers.collect('pierce');
-  powers.collect('heavy');
-  powers.tick(100);
-  assert.equal(powers.snapshotHUD().active.secondsLeft, 10);
-  assert.equal(powers.snapshotHUD().active.remaining, null);
   const batch = powers.capture();
-  for (let id = 0; id < 100; id++) {
-    const result = powers.consumeDirect(batch, id, 100 + id / 100);
-    assert.equal(result.damage, 8);
-    assert.equal(result.suppressReflection, true);
-    assert.equal(result.pierceExit, false);
-  }
-  assert.equal(hit(powers, 1, 102).damage, 0, 'a previously hit original is not hit twice');
-  powers.tick(109.99);
-  assert.equal(powers.pierceExit, false);
-  powers.tick(110);
+  for (let id = 0; id < 100; id++) assert.equal(powers.consumeDirect(batch, id, 0).damage, 8);
+  assert.equal(hit(powers, 0, 1).damage, 0);
+  powers.tick(5); powers.collect('pulse');
+  powers.tick(10);
+  assert.equal(powers.has('pierce'), true);
   assert.equal(powers.pierceExit, true);
-  assert.equal(hit(powers, 101, 110).damage, 0);
-  assert.equal(powers.active.kind, 'pierce');
+  assert.equal(powers.suppressReflection, true);
+  const exitBatch = powers.capture();
+  assert.equal(powers.consumeDirect(exitBatch, 101, 10, {penetrating: true}).damage, 0);
+  const outside = powers.consumeDirect(exitBatch, 101, 10, {penetrating: false});
+  assert.equal(outside.damage, 3);
+  assert.equal(outside.pierced, false);
+  assert.equal(outside.effects[0].kind, 'pulse');
   assert.equal(powers.finishPierceExit(), true);
-  assert.equal(powers.suppressReflection, false);
-  assert.equal(powers.active.kind, 'heavy');
+  assert.equal(powers.has('pierce'), false);
+  assert.equal(powers.has('pulse'), true);
   assert.equal(powers.finishPierceExit(), false);
 });
 
-test('Frost marks without a hit cap for 10s, with per-impact brittle expiry', () => {
+test('Frost marks unlimited originals from pickup with per-impact brittle expiry', () => {
   const powers = new BonusController();
-  powers.collect('frost');
-  powers.collect('heavy');
-  powers.tick(80);
-  assert.equal(powers.snapshotHUD().active.secondsLeft, 10);
-  for (let id = 0; id < 50; id++) {
-    const result = hit(powers, id, 80 + id / 10);
-    assert.equal(result.damage, 1);
-    assert.equal(result.effect.kind, 'frost');
-  }
-  assert.equal(powers.active.kind, 'frost');
+  powers.tick(80); powers.collect('frost');
+  for (let id = 0; id < 50; id++) assert.equal(hit(powers, id, 80 + id / 10).effects[0].kind, 'frost');
   assert.equal(powers.frostMarks.size, 50);
   const brittle = hit(powers, 0, 85);
   assert.equal(brittle.damage, 2);
   assert.equal(brittle.frostConsumed, true);
-  assert.equal(brittle.effect, null);
-  assert.equal(powers.frostMarks.has(0), false);
-  assert.equal(hit(powers, 0, 86).effect.expiresAt, 96, 'a surviving original can be marked again');
+  assert.equal(brittle.effects.length, 0);
+  assert.equal(hit(powers, 0, 86).effect.expiresAt, 96);
   powers.tick(90);
-  assert.equal(powers.active.kind, 'heavy');
-  assert.equal(powers.frostMarks.has(49), true, 'later marks outlive activation until their own expiry');
-  assert.equal(hit(powers, 49, 90).damage, 4, 'queued Heavy consumes brittle as one bonus damage');
+  assert.equal(powers.has('frost'), false);
+  assert.equal(powers.frostMarks.has(49), true);
+  powers.collect('heavy');
+  assert.equal(hit(powers, 49, 90).damage, 4);
   powers.tick(96);
   assert.equal(powers.frostMarks.size, 0);
 });
 
-test('Repeated Split shares normal FIFO slots and multiplies every live ball 1→3→9→27', () => {
+test('Heavy pickups accumulate charges while captured batches cannot spend later pickups', () => {
   const powers = new BonusController();
-  assert.equal(powers.collect('split').slot, 'active');
-  assert.equal(powers.collect('split').slot, 'queued');
-  assert.equal(powers.collect('split').accepted, false, 'only a full inventory rejects the pickup');
-  const batch = powers.capture();
-  const result = powers.consumeDirect(batch, 1, 5);
-  let liveBalls = 1;
-  const multiply = effect => {
-    assert.equal(effect.sourceType, 'all-live-balls');
-    liveBalls += liveBalls * effect.echoCount;
-  };
-  multiply(result.effect);
-  assert.equal(liveBalls, 3);
-  assert.equal(result.effect.persistent, true);
-  assert.equal('duration' in result.effect, false);
-  assert.equal('hitsPerEcho' in result.effect, false);
-  assert.equal(powers.active.kind, 'split');
-  assert.equal(powers.splitActive, true);
-  assert.equal(powers.consumeDirect(batch, 2, 5).effect, null);
-  assert.equal(powers.active.startedAt, null);
-  assert.equal(powers.collect('split').slot, 'queued', 'live extra balls do not block collecting another Split');
-  multiply(hit(powers, 3, 6).effect);
-  assert.equal(liveBalls, 9);
-  assert.equal(powers.active.kind, 'split');
-  assert.equal(powers.collect('heavy').slot, 'queued');
-  const third = hit(powers, 4, 7);
-  multiply(third.effect);
-  assert.equal(liveBalls, 27);
-  assert.equal(powers.active.kind, 'heavy');
-  assert.equal(powers.splitActivationId, third.effect.activationId);
-  assert.equal(powers.collect('halo').accepted, true);
-  powers.tick(1_000);
-  assert.equal(powers.splitActive, true, 'live extra balls have no timer');
-  assert.equal(powers.finishSplit(result.effect.activationId), true, 'the last surviving extra ball may belong to an older activation');
-  assert.equal(powers.splitActive, false);
-  assert.equal(powers.splitActivationId, null);
-  assert.equal(powers.finishSplit(), false);
-  assert.equal(powers.active.kind, 'heavy', 'ending extra balls does not advance FIFO');
-  assert.equal(powers.collect('split').slot, 'queued');
-  assert.equal(powers.collect('split').accepted, false);
-});
-
-test('Different balls use one contact snapshot, shared Pierce deduplication and shared Frost marks', () => {
-  const powers = new BonusController();
-  powers.collect('pierce');
-  powers.collect('frost');
-  const sharedPierceBatch = powers.capture();
-  const mainHit = powers.consumeDirect(sharedPierceBatch, 40, 0);
-  const extraSameOriginal = powers.consumeDirect(sharedPierceBatch, 40, 0);
-  const extraOtherOriginal = powers.consumeDirect(sharedPierceBatch, 41, 0);
-  assert.equal(mainHit.damage, 8);
-  assert.equal(extraSameOriginal.damage, 0);
-  assert.equal(extraOtherOriginal.damage, 8);
-  for (const result of [mainHit, extraSameOriginal, extraOtherOriginal]) assert.equal(result.suppressReflection, true);
-  powers.tick(10);
-  assert.equal(powers.consumeDirect(powers.capture(), 42, 10).damage, 0);
-  powers.finishPierceExit();
-  const sharedFrostBatch = powers.capture();
-  assert.equal(powers.consumeDirect(sharedFrostBatch, 43, 10).effect.kind, 'frost');
-  const anotherBallHit = powers.consumeDirect(sharedFrostBatch, 43, 10);
-  assert.equal(anotherBallHit.damage, 2);
-  assert.equal(anotherBallHit.frostConsumed, true);
-  assert.equal(powers.frostMarks.has(43), false);
-});
-
-test('Arc and Tornado describe the strengthened effects while gravity keeps its internal ID', () => {
-  const powers = new BonusController();
-  powers.collect('arc');
-  assert.deepEqual(hit(powers, 10, 1).effect, {kind: 'arc', originId: 10, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1});
-  assert.equal(powers.active, null, 'Arc remains one discharge');
-  assert.equal(BONUS_DEFS.arc.arenaWide, undefined);
-  assert.match(BONUS_DEFS.arc.description, /chaining within 4\.4 ball diameters/);
-  assert.equal(powers.collect('gravity').message, 'Tornado ready');
-  assert.equal(powers.snapshotHUD().active.name, 'Tornado');
-  assert.equal(powers.snapshotHUD().active.kind, 'gravity');
-  assert.match(powers.snapshotHUD().active.description, /Spins nearby cubes.*4 seconds/);
-  assert.deepEqual(hit(powers, 11, 2).effect, {kind: 'gravity', originId: 11, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, targetType: 'intact-cube'});
-  assert.equal(BONUS_DEFS.split.duration, undefined);
-  assert.equal(BONUS_DEFS.split.hitsPerEcho, undefined);
-});
-
-test('Bomb has bounded automatic floor-effect tuning and never occupies inventory', () => {
-  const def = BONUS_DEFS.bomb;
-  assert.equal(def.kind, 'bomb');
-  assert.equal(def.name, 'Bomb');
-  assert.equal(def.color, 0xff9438);
-  assert.equal(def.colorCss, '#FF9438');
-  assert.equal(def.automatic, true);
-  assert.equal(def.countdown, 5);
-  assert.equal(def.radiusD, 4.4);
-  assert.equal(def.damage, 8);
-  assert.equal(def.maxBallSpeed, 30);
-  assert.equal(def.kickSpeed, 22);
-  const powers = new BonusController();
-  const rejection = {accepted: false, slot: null, message: 'Bomb is automatic and does not use inventory'};
-  assert.deepEqual(powers.collect('bomb'), rejection);
-  assert.equal(powers.active, null);
-  assert.equal(powers.queued, null);
-  powers.collect('pulse');
+  const emptyBatch = powers.capture();
+  powers.collect('heavy'); powers.collect('pulse');
+  const late = powers.consumeDirect(emptyBatch, 1, 0);
+  assert.equal(late.damage, 1);
+  assert.deepEqual(late.effects, []);
+  assert.equal(powers.attacks.get('heavy').remaining, 1);
+  const oldBatch = powers.capture();
   powers.collect('heavy');
-  powers.collect('halo');
+  const refreshed = powers.consumeDirect(oldBatch, 2, 0);
+  assert.equal(refreshed.damage, 3, 'the previously captured Pulse still applies');
+  assert.deepEqual(refreshed.effects.map(e => e.kind), ['pulse']);
+  assert.equal(powers.attacks.get('heavy').remaining, 2);
+  const fresh = powers.capture();
+  assert.deepEqual(powers.consumeDirect(fresh, 3, 0).effects.map(e => e.kind), ['pulse', 'heavy']);
+  assert.deepEqual(powers.consumeDirect(fresh, 4, 0).effects.map(e => e.kind), ['pulse', 'heavy']);
+  assert.equal(powers.has('heavy'), false);
+  assert.deepEqual(powers.consumeDirect(fresh, 5, 0).effects.map(e => e.kind), ['pulse']);
+});
+
+test('Repeated Split activates immediately and multiplies live sources 1→3→9→27', () => {
+  const powers = new BonusController();
+  powers.collect('pulse'); powers.collect('frost'); powers.collect('heavy');
+  let live = 1, first;
+  for (const expected of [3, 9, 27]) {
+    const result = powers.collect('split');
+    first ??= result.effect.activationId;
+    assert.equal(result.accepted, true);
+    assert.equal(result.kind, 'split');
+    assert.equal(result.effect.sourceType, 'all-live-balls');
+    assert.equal(result.effect.persistent, true);
+    assert.equal(result.effect.originId, null);
+    assert.equal('duration' in result.effect, false);
+    live += live * result.effect.echoCount;
+    assert.equal(live, expected);
+    assert.equal(powers.attacks.size, 3, 'instant effects cannot displace active buffs');
+  }
+  assert.equal(powers.has('split'), true);
+  assert.equal(powers.finishSplit(first), true);
+  assert.equal(powers.has('split'), false);
+  assert.equal(powers.attacks.size, 3);
+});
+
+test('Arc, Tornado and Black Hole return immediate descriptors on every pickup', () => {
+  const powers = new BonusController();
+  powers.collect('pulse'); powers.collect('frost');
+  assert.deepEqual(powers.collect('arc').effect, {kind: 'arc', originId: null, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1});
+  const tornado = powers.collect('gravity');
+  assert.match(tornado.message, /Tornado activated/);
+  assert.deepEqual(tornado.effect, {kind: 'gravity', originId: null, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, targetType: 'intact-cube'});
+  const hole = powers.collect('blackhole');
+  assert.deepEqual(hole.effect, {kind: 'blackhole', originId: null, duration: 6, radiusD: 8, rampDuration: 2, acceleration: 50, speedCap: 14, maxTargets: 64});
+  assert.equal('damage' in hole.effect, false);
+  assert.equal(powers.collect('gravity').effect.kind, 'gravity');
+  assert.equal(powers.collect('blackhole').effect.kind, 'blackhole');
+  assert.equal(powers.attacks.size, 2);
+  assert.equal(powers.has('pulse'), true);
+  assert.equal(powers.has('frost'), true);
+});
+
+test('Automatic Bomb remains outside inventory with bounded blast tuning', () => {
+  const def = BONUS_DEFS.bomb, powers = new BonusController();
+  assert.equal(def.countdown, 5); assert.equal(def.radiusD, 4.4); assert.equal(def.damage, 8);
+  assert.equal(def.maxBallSpeed, 30); assert.equal(def.kickSpeed, 22); assert.equal(def.color, 0xff9438);
+  powers.collect('pulse'); powers.collect('frost'); powers.collect('heavy');
   const before = powers.snapshotHUD();
-  assert.deepEqual(powers.collect('bomb'), rejection);
-  assert.deepEqual(powers.snapshotHUD(), before, 'automatic bombs cannot replace powers or spend Halo');
+  assert.deepEqual(powers.collect('bomb'), {kind: 'bomb', accepted: false, message: 'Bomb is automatic and does not use inventory'});
+  assert.deepEqual(powers.snapshotHUD(), before);
 });
 
-test('Black Hole triggers one force-only effect and immediately advances the shared FIFO', () => {
+test('Retired IDs reject gracefully; reset removes every buff and invalidates old captures', () => {
   const powers = new BonusController();
-  assert.equal(powers.collect('blackhole').slot, 'active');
-  assert.equal(powers.snapshotHUD().active.name, 'Black Hole');
-  assert.equal(powers.snapshotHUD().active.remaining, 1);
-  assert.equal(powers.snapshotHUD().active.secondsLeft, null, 'the six-second world effect does not hold the inventory slot');
-  powers.collect('heavy');
-  const batch = powers.capture();
-  const result = powers.consumeDirect(batch, 15, 12);
-  assert.equal(result.damage, 1, 'the triggering ball retains its ordinary direct impact');
-  assert.deepEqual(result.effect, {kind: 'blackhole', originId: 15, duration: 6, radiusD: 8,
-    rampDuration: 2, acceleration: 50, speedCap: 14, maxTargets: 64});
-  assert.equal('damage' in result.effect, false, 'Black Hole itself does not directly damage targets');
-  assert.equal(result.consumed, true);
-  assert.equal(powers.active.kind, 'heavy');
-  const sameBatch = powers.consumeDirect(batch, 16, 12);
-  assert.equal(sameBatch.damage, 1);
-  assert.equal(sameBatch.effect, null);
-  assert.equal(powers.active.kind, 'heavy');
-  assert.equal(hit(powers, 17, 12.1).damage, 3);
-  assert.equal(powers.active, null);
-});
-
-test('Halo remains independent and reset clears all powers and stale contact tokens', () => {
-  const powers = new BonusController();
-  powers.collect('split');
-  hit(powers, 0, 1);
-  powers.collect('pierce');
-  powers.collect('arc');
-  powers.collect('halo');
-  assert.equal(powers.collect('halo').accepted, false);
-  assert.equal(powers.consumeHalo(), true);
-  assert.equal(powers.consumeHalo(), false);
+  assert.equal(Object.keys(BONUS_DEFS).length, 9);
+  for (const kind of ['halo', 'safetyHalo', 'safety-halo', 'safety_halo']) {
+    assert.deepEqual(powers.collect(kind), {kind, accepted: false, message: 'Unknown power'});
+  }
+  assert.equal(typeof powers.consumeHalo, 'undefined');
+  for (const kind of ['pulse', 'pierce', 'frost', 'heavy', 'split']) powers.collect(kind);
   const stale = powers.capture();
   powers.reset();
-  assert.equal(powers.consumeDirect(stale, 100, 2).damage, 0);
+  assert.equal(powers.consumeDirect(stale, 1, 0).damage, 0);
+  assert.equal(powers.attacks.size, 0);
   assert.equal(powers.active, null);
-  assert.equal(powers.queued, null);
-  assert.equal(powers.halo, false);
   assert.equal(powers.splitActive, false);
-  assert.equal(powers.splitActivationId, null);
   assert.equal(powers.frostMarks.size, 0);
+  assert.equal('queued' in powers.snapshotHUD(), false);
+  assert.equal('halo' in powers.snapshotHUD(), false);
 });
 
 function element() {
@@ -287,14 +221,10 @@ function makeWorld() {
   return {world, controller};
 }
 
-test('Section reset preserves powers/FIFO/Halo and timers, while clearing physical pickups', () => {
+test('Section reset preserves all simultaneous buffs and timers while clearing loose pickups', () => {
   const {world, controller} = makeWorld();
-  controller.collect('split');
-  hit(controller, 1, 1);
-  controller.collect('frost');
-  hit(controller, 2, 20);
-  controller.collect('pierce');
-  controller.collect('halo');
+  controller.tick(20);
+  for (const kind of ['split', 'pulse', 'frost', 'pierce', 'heavy']) controller.collect(kind);
   controller.tick(23);
   const before = controller.snapshotHUD();
   world.release({id: 40, bonus: 'pulse'});
@@ -302,38 +232,41 @@ test('Section reset preserves powers/FIFO/Halo and timers, while clearing physic
   world.reset({preservePowers: true});
   assert.deepEqual(controller.snapshotHUD(), before);
   assert.equal(world.pickups.length, 0);
-  controller.tick(23);
-  assert.equal(controller.snapshotHUD().active.secondsLeft, 7);
+  for (const effect of controller.snapshotHUD().activeEffects) {
+    assert.equal(effect.secondsLeft, effect.kind === 'heavy' ? null : 7);
+  }
   world.reset({run: true});
   assert.equal(controller.active, null);
-  assert.equal(controller.queued, null);
-  assert.equal(controller.halo, false);
+  assert.equal(controller.attacks.size, 0);
   assert.equal(controller.splitActive, false);
 });
 
-test('HUD uses timed seconds and persistent Split text rather than spent charges', () => {
+test('HUD and accents display simultaneous timed buffs, Heavy charges and persistent Split', () => {
   const {world, controller} = makeWorld();
-  controller.collect('split');
-  hit(controller, 1, 0);
-  controller.collect('pierce');
-  controller.collect('frost');
+  for (const kind of ['split', 'pulse', 'pierce', 'frost', 'heavy']) controller.collect(kind);
   world.updateHUD();
-  assert.match(textOf(world.hud), /PIERCE · HIT GLASS · 10s/);
-  assert.match(textOf(world.hud), /NEXT · Frost · 10s/);
+  for (const name of ['PULSE', 'PIERCE', 'FROST']) assert.match(textOf(world.hud), new RegExp(name + ' · ACTIVE · 10s'));
+  assert.match(textOf(world.hud), /HEAVY HIT/);
   assert.match(textOf(world.hud), /SPLIT · EXTRA BALLS LIVE/);
-  assert.doesNotMatch(textOf(world.hud), /SPLIT[^∩]*10s/);
-  hit(controller, 2, 0);
+  assert.doesNotMatch(textOf(world.hud), /NEXT ·|HIT GLASS/);
+  controller.collect('heavy');
+  world.updateHUD();
+  assert.match(textOf(world.hud), /HEAVY HIT · 2 HITS/);
+  hit(controller, 55, 0);
+  world.updateHUD();
+  assert.match(textOf(world.hud), /HEAVY HIT · 1 NEXT HIT/);
   controller.tick(3);
   world.updateHUD();
-  assert.match(textOf(world.hud), /PIERCE · ACTIVE · 7s/);
+  for (const name of ['PULSE', 'PIERCE', 'FROST']) assert.match(textOf(world.hud), new RegExp(name + ' · ACTIVE · 7s'));
+  world.render(new THREE.PerspectiveCamera(), new THREE.Vector3());
+  for (const kind of ['pulse', 'pierce', 'frost', 'heavy', 'split']) assert.equal(world.accents[kind].visible, true);
   controller.tick(10);
   world.updateHUD();
   assert.match(textOf(world.hud), /PIERCE · EXITING/);
+  assert.doesNotMatch(textOf(world.hud), /PULSE|FROST/);
   controller.finishPierceExit();
-  hit(controller, 3, 10);
-  controller.tick(12);
-  world.updateHUD();
-  assert.match(textOf(world.hud), /FROST · MARKING · 8s/);
+  assert.equal(controller.has('heavy'), true);
+  assert.equal(controller.splitActive, true);
 });
 
 test('Arc links all 64 targets with finite jagged forks with bounded volumetric glow', () => {
@@ -386,11 +319,98 @@ test('Arc covers all 110 targets in distinct pooled chunks even when the pool is
 });
 
  test('Released pickups double model scale, rest above floor and collect at wider tolerance',()=>{
- for(const kind of Object.keys(BONUS_DEFS).filter(kind=>!BONUS_DEFS[kind].automatic)){const {world,controller}=makeWorld();world.release({id:1,bonus:kind});const item=world.pickups[0];assert.equal(item.scale,.38*2*1.3);assert(item.height>=.1);item.landed=true;item.p.set(0,item.height,1);world.update(.4,new THREE.Vector3(1,item.height,1),new THREE.Vector3(1,0,0),true,new Map());assert.equal(world.pickups.length,0,kind+' collects one world unit away');assert(controller.active||controller.halo);}
+ for(const kind of Object.keys(BONUS_DEFS).filter(kind=>!BONUS_DEFS[kind].automatic)){const {world}=makeWorld();let activated;world.onActivate=result=>{activated=result;assert.equal(world.pickups.length,0,'remove before dispatch');};world.release({id:1,bonus:kind});const item=world.pickups[0];assert.equal(item.scale,.38*2*1.3);assert(item.height>=.1);item.landed=true;item.p.set(0,item.height,1);world.update(.4,new THREE.Vector3(1,item.height,1),new THREE.Vector3(1,0,0),true,new Map());assert.equal(world.pickups.length,0,kind+' collects one world unit away');assert.equal(activated.kind,kind);assert.equal(activated.accepted,true);}
  });
 
-test('Simultaneous main and extra pickup contact awards the item exactly once',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'pulse'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const p=item.p.clone(),v=new THREE.Vector3(1,0,0);let count=0;const collect=controller.collect.bind(controller);controller.collect=kind=>{count++;return collect(kind);};world.update(.01,p,v,true,new Map(),[{id:12,p:p.clone(),v},{id:13,p:p.clone(),v}]);assert.equal(count,1);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'pulse');assert.equal(controller.queued,null);});
+test('Simultaneous main and extra pickup contact awards the item exactly once',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'pulse'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const p=item.p.clone(),v=new THREE.Vector3(1,0,0);let count=0;const collect=controller.collect.bind(controller);controller.collect=kind=>{count++;return collect(kind);};world.update(.01,p,v,true,new Map(),[{id:12,p:p.clone(),v},{id:13,p:p.clone(),v}]);assert.equal(count,1);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'pulse');assert.equal('queued' in controller.snapshotHUD(),false);});
 test('Extra pickup sweeps keep independent histories and cannot bridge between balls',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'heavy'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const v=new THREE.Vector3(1,0,0),main=new THREE.Vector3(0,.38,8);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-3,item.height,1),v},{id:13,p:new THREE.Vector3(3,item.height,1),v}]);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-2.8,item.height,1),v},{id:13,p:new THREE.Vector3(2.8,item.height,1),v}]);assert.equal(world.pickups.length,1);world.update(.01,main,v,false,new Map(),[{id:12,p:item.p.clone(),v}]);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'heavy');});
+
+test('Nine-type arena pool retains 1/2/2 onboarding and 2–5 unique later powers', () => {
+  const expectedKinds = ['pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'].sort();
+  assert.deepEqual(Object.keys(BONUS_DEFS).sort(), expectedKinds);
+  const seen = new Set();
+  try {
+    for (const seed of [0, 1, 0xffffffff, 0x00c57a11]) {
+      setArenaRunSeed(seed);
+      assert.deepEqual(arenaDefinition(1).bonuses, ['pulse']);
+      assert.deepEqual(arenaDefinition(2).bonuses.sort(), ['pulse', 'split']);
+      assert.deepEqual(arenaDefinition(3).bonuses.sort(), ['pierce', 'split']);
+      for (let level = 4; level <= 120; level++) {
+        const bonuses = arenaDefinition(level).bonuses;
+        assert.ok(bonuses.length >= 2 && bonuses.length <= 5);
+        assert.equal(new Set(bonuses).size, bonuses.length);
+        assert.deepEqual(arenaDefinition(level).bonuses, bonuses, 'preview cannot reroll the selection');
+        for (const kind of bonuses) { assert.ok(expectedKinds.includes(kind)); seen.add(kind); }
+      }
+      for (const level of [1, 2, 3, 6, 8, 10, 14, 28, 42]) {
+        const bonuses = arenaBlocks(level).map(spec => spec[7]).filter(Boolean);
+        assert.deepEqual(bonuses.sort(), arenaDefinition(level).bonuses.sort());
+        assert.ok(!bonuses.includes('halo'));
+      }
+    }
+  } finally { setArenaRunSeed(0x00c57a11); }
+  assert.deepEqual([...seen].sort(), expectedKinds);
+});
+
+test('Legacy fall-protection metadata produces no pickup, accent or HUD entry', () => {
+  const {world, controller} = makeWorld();
+  for (const bonus of ['halo', 'safetyHalo', 'safety-halo', 'safety_halo']) {
+    const origin = {id: 99, bonus};
+    assert.doesNotThrow(() => world.attach(origin));
+    assert.doesNotThrow(() => world.release(origin));
+  }
+  assert.equal(world.cores.size, 0);
+  assert.equal(world.pickups.length, 0);
+  assert.equal(world.accents.halo, undefined);
+  controller.collect('pulse');
+  world.updateHUD();
+  assert.doesNotMatch(textOf(world.hud), /HALO|SAVE/i);
+});
+
+function lensRenderer(error = null) {
+  const calls = {copies: 0, renders: 0, errors: 0};
+  const renderer = {autoClear: true,
+    getDrawingBufferSize(size) { return size.set(320, 640); }, initTexture() {},
+    copyFramebufferToTexture() { calls.copies++; },
+    render() { calls.renders++; }, compileAsync: async () => {}};
+  if (error !== null) renderer.getContext = () => ({NO_ERROR: 0, getError() { calls.errors++; return error; }});
+  return {renderer, calls};
+}
+
+test('Black Hole lens copies display-encoded RGBA8 without a second color-space conversion', () => {
+  const {renderer, calls} = lensRenderer();
+  const lens = new BlackHoleLens(renderer);
+  assert.equal(lens.texture.colorSpace, THREE.NoColorSpace);
+  assert.equal(lens.texture.format, THREE.RGBAFormat);
+  assert.equal(lens.texture.type, THREE.UnsignedByteType);
+  assert.doesNotMatch(lens.material.fragmentShader, /colorspace_fragment/);
+  const camera = new THREE.PerspectiveCamera(45, .5, .1, 100);
+  camera.updateMatrixWorld();
+  lens.render(camera, {intensity: 1, point: new THREE.Vector3(0, 0, -5), range: 4});
+  assert.equal(calls.copies, 1);
+  assert.equal(calls.renders, 1, 'context validation is optional for lightweight renderer adapters');
+  assert.equal(renderer.autoClear, true);
+  lens.dispose();
+});
+
+test('Black Hole lens skips post-draw after a copy GL error and warns only once', () => {
+  const {renderer, calls} = lensRenderer(0x0502);
+  const lens = new BlackHoleLens(renderer);
+  const camera = new THREE.PerspectiveCamera(45, .5, .1, 100);
+  camera.updateMatrixWorld();
+  const state = {intensity: 1, point: new THREE.Vector3(0, 0, -5), range: 4};
+  const warnings = [], warn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  try { lens.render(camera, state); lens.render(camera, state); lens.render(camera, state); }
+  finally { console.warn = warn; lens.dispose(); }
+  assert.equal(calls.copies, 1);
+  assert.equal(calls.errors, 1);
+  assert.equal(calls.renders, 0);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0][0], /Black Hole lens/);
+  assert.equal(warnings[0][1], 0x0502);
+  assert.equal(renderer.autoClear, true);
+});
 
 test('Automatic Bomb starts five-second fuse only on landing, pauses and explodes exactly once',()=>{
  const {world,controller}=makeWorld();let explosions=0;world.onBomb=()=>explosions++;
@@ -417,6 +437,6 @@ test('Black Hole lens adds one bounded post draw and restores renderer state',as
  const lens=new BlackHoleLens(renderer),camera=new THREE.PerspectiveCamera(42,4/3,.1,100);camera.position.set(0,8,12);camera.lookAt(0,1,0);camera.updateMatrixWorld();await lens.warm();lens.render(camera,null);assert.equal(draws,0);lens.render(camera,{point:{x:0,y:2.8,z:0},range:6.08,intensity:.5});assert.equal(copies,1);assert.equal(draws,1);assert.equal(renderer.autoClear,true);assert(lens.material.uniforms.radius.value>0);renderer.render=()=>{throw Error('draw failed');};assert.throws(()=>lens.render(camera,{point:{x:0,y:2.8,z:0},range:6.08,intensity:1}));assert.equal(renderer.autoClear,true);lens.dispose();
 });
 
- test('Activation clears stale readiness tips but preserves unrelated queued guidance',()=>{
- const {world}=makeWorld();world.tip={key:'ready-12',text:'BLACK HOLE READY · HIT GLASS'};world.tipAge=3;world.pendingTips=[{key:'power-blackhole',text:'Black Hole ready'},{key:'ready-14',text:'PULSE READY · HIT GLASS'}];world.dismissReadiness('blackhole');assert.equal(world.tip,null);assert.equal(world.pendingTips.length,1);world.feedback('BLACK HOLE · PULL BUILDING',new THREE.Vector3());assert.equal(world.tip.screenY,.58);assert.equal(world.tipAge,1.25);
+ test('Activation clears legacy readiness tips but preserves unrelated guidance',()=>{
+ const {world}=makeWorld();world.tip={key:'ready-12',text:'BLACK HOLE READY · HIT GLASS'};world.tipAge=3;world.pendingTips=[{key:'power-blackhole',text:'Black Hole ready'},{key:'power-pulse',text:'PULSE · ACTIVE'}];world.dismissReadiness('blackhole');assert.equal(world.tip,null);assert.equal(world.pendingTips.length,1);world.feedback('BLACK HOLE · PULL BUILDING',new THREE.Vector3());assert.equal(world.tip.screenY,.58);assert.equal(world.tipAge,1.25);
  });

@@ -145,10 +145,6 @@ export class PowerFX {
       this._ring(kind, point, d * .35, radius, .78, .035, 0, .88);
       this._ring(kind, point, d * .2, radius * .87, .75, .1, .11, .66);
       this._ring(kind, point, d * .12, radius * .68, .68, .17, .22, .5);
-    } else if (kind === 'halo') {
-      this._ring(kind, point, d * .4, d * 2.1, 1.05, d * 2);
-      this._ring(kind, point, d * .6, d * 1.8, 1.05, d * 2.4, .13, .68);
-      this._ring(kind, point, d * .8, d * 1.5, 1.05, d * 2.8, .26, .54);
     } else if (kind === 'heavy') {
       this._ring(kind, point, d * .15, d * 2.3, .43, .035, 0, .95);
       this._ring(kind, point, d * .3, d * 1.55, .36, d * .3, .065, .65);
@@ -172,13 +168,13 @@ export class PowerFX {
         p.lift = i % 3 * d * .19;
       }
     }
-    const count = { pulse: 32, pierce: 22, arc: 28, frost: 30, gravity: 0, split: 32, halo: 18, heavy: 38, bomb:64 }[kind];
+    const count = { pulse: 32, pierce: 22, arc: 28, frost: 30, gravity: 0, split: 32, heavy: 38, bomb:64 }[kind];
     const heading = Math.atan2(this.direction.z, this.direction.x);
     for (let i = 0; i < count; i++) {
       let a = i / count * Math.PI * 2;
       if (kind === 'split') a = heading + (i < count / 2 ? -.7 : .7) + ((i % 16) / 15 - .5) * .36;
       if (kind === 'pierce') a = heading + (i / count - .5) * .4;
-      const speed = d * ({ heavy: 6.2, pierce: 10, pulse: 6.8, split: 7, frost: 3.8, arc: 6, halo: 3.2, bomb:16 }[kind]) * (.65 + Math.random() * .45);
+      const speed = d * ({ heavy: 6.2, pierce: 10, pulse: 6.8, split: 7, frost: 3.8, arc: 6, bomb:16 }[kind]) * (.65 + Math.random() * .45);
       const life = kind === 'bomb' ? .75+Math.random()*.4 : kind === 'heavy' ? .48 : kind === 'arc' ? .3 + Math.random() * .2 : kind === 'frost' ? .85 : .64;
       const size = d * (kind === 'bomb' ? .15 : kind === 'heavy' ? .14 : kind === 'pulse' ? .095 : kind === 'frost' ? .07 : .075);
       const stretch = kind === 'frost' ? 5 : kind === 'arc' || kind === 'pierce' ? 10 : kind === 'heavy' ? 2.6 : 4;
@@ -187,7 +183,6 @@ export class PowerFX {
         p.v.y=d*(2+Math.random()*6); p.glow=.92;
         this.mesh.setColorAt((this.cursor-1)%this.particles.length,this.color.setHex(i%3===0?0xffbd58:BONUS_DEFS.bomb.color));
       }
-      if (kind === 'halo') p.v.y = d * (2.5 + Math.random() * 2);
       if (kind === 'heavy') p.v.y = d * (1.4 + Math.random() * 3.2);
       if (kind === 'frost') p.v.y = d * (.5 + Math.random() * 1.8);
       if (kind === 'split') {

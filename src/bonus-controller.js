@@ -1,44 +1,26 @@
 /** Distances are multiples of the main ball's diameter; time is simulation seconds. */
 export const BONUS_DEFS = Object.freeze({
-  pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', duration: 10, radiusD: 4.4, maxTargets: Infinity, damage: 3, description: '10 seconds: every ball impact blasts nearby cubes for 3 damage' }),
-  pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', duration: 10, damage: 8, description: '10 seconds of smashing straight through cubes' }),
-  arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1, description: 'One hit per bottom support, chaining within 4.4 ball diameters' }),
-  frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', duration: 10, markDuration: 10, bonusDamage: 1, description: '10 seconds of marking cubes for a stronger next hit' }),
-  split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, sourceType: 'all-live-balls', persistent: true, angleDegrees: 18, damage: 1, description: 'Every live ball creates two more; collect again to multiply them' }),
-  gravity: Object.freeze({ kind: 'gravity', name: 'Tornado', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'Spins nearby cubes in a tornado for 4 seconds' }),
+  pulse: Object.freeze({ kind: 'pulse', name: 'Pulse', color: 0xffb44a, colorCss: '#FFB44A', duration: 10, radiusD: 4.4, maxTargets: Infinity, damage: 3, description: 'On pickup, 10 seconds: every ball impact blasts nearby cubes for 3 damage' }),
+  pierce: Object.freeze({ kind: 'pierce', name: 'Pierce', color: 0x44d9ff, colorCss: '#44D9FF', duration: 10, damage: 8, description: 'On pickup, 10 seconds of smashing straight through cubes' }),
+  arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1, description: 'On pickup, one hit per bottom support, chaining within 4.4 ball diameters' }),
+  frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', duration: 10, markDuration: 10, bonusDamage: 1, description: 'On pickup, 10 seconds of marking cubes for a stronger next hit' }),
+  split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, sourceType: 'all-live-balls', persistent: true, angleDegrees: 18, damage: 1, description: 'On pickup, every live ball creates two more; collect again to multiply them' }),
+  gravity: Object.freeze({ kind: 'gravity', name: 'Tornado', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'On pickup, spins nearby cubes in a tornado for 4 seconds' }),
   bomb: Object.freeze({ kind: 'bomb', name: 'Bomb', color: 0xff9438, colorCss: '#FF9438', automatic: true, countdown: 5, radiusD: 4.4, damage: 8, maxBallSpeed: 30, kickSpeed: 22, description: 'Automatically explodes after 5 seconds, blasting nearby cubes and kicking balls away' }),
-  blackhole: Object.freeze({ kind: 'blackhole', name: 'Black Hole', color: 0x8e49ff, colorCss: '#8E49FF', charges: 1, duration: 6, radiusD: 8, rampDuration: 2, acceleration: 50, speedCap: 14, maxTargets: 64, description: 'Pulls nearby cubes inward for 6 seconds, building strength over 2 seconds' }),
-  heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3, description: 'The next direct hit deals 3 damage' }),
-  halo: Object.freeze({ kind: 'halo', name: 'Safety Halo', color: 0xff777d, colorCss: '#FF777D', charges: 1, description: 'One automatic rescue from a fall' }),
+  blackhole: Object.freeze({ kind: 'blackhole', name: 'Black Hole', color: 0x8e49ff, colorCss: '#8E49FF', charges: 1, duration: 6, radiusD: 8, rampDuration: 2, acceleration: 50, speedCap: 14, maxTargets: 64, description: 'On pickup, pulls nearby cubes inward for 6 seconds, building strength over 2 seconds' }),
+  heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3, description: 'Stores a 3-damage charge for the next direct hit; collect again to add charges' }),
 });
 
-/**
- * Physics-free bonus inventory. Caller owns damage, target selection and collision filters.
- *
- * Per simulation step: tick(elapsed), then process valid direct glass contacts, then
- * pickups from any live ball. All balls share this inventory and one snapshot:
- * capture once before the entire physics contact batch, call consumeDirect for
- * each VALID direct ball hit, apply its direct damage and then its effect. Never call for resting contacts,
- * fragments, gates, pickups, or indirect bonus damage. Use persistent original cube
- * IDs (not collider/fragment IDs). The batch snapshot prevents spending queued powers
- * in that same step. Caller owns ordinary hit energy/cooldown validity.
- *
- * Pierce suppresses glass reflection from arming through its exit phase. tick can
- * enter exit even without a collision. During exit, no new glass damage is allowed.
- * Its original-target deduplication is shared by all balls. Call finishPierceExit
- * ONLY when every live ball overlaps no glass. This arms the queue.
- * Use simulation elapsed seconds that stop advancing while paused, not wall time.
+/** Shared immediate-activation inventory; distances use the main ball diameter.
+ * Tick with monotonic paused simulation time before contacts and pickups. Capture
+ * once for the whole contact batch across all balls. Only valid direct contacts
+ * call consumeDirect; indirect damage never recursively activates bonuses.
  */
 export class BonusController {
-  constructor() {
-    this._serial = 0;
-    this.reset();
-  }
+  constructor() { this._serial = 0; this.reset(); }
 
   reset() {
-    this.active = null;
-    this.queued = null;
-    this.halo = false;
+    this.attacks = new Map();
     this.splitActive = false;
     this.splitActivationId = null;
     this.frostMarks = new Map();
@@ -47,171 +29,136 @@ export class BonusController {
     this._tokens = new WeakSet();
   }
 
-  _makeAttack(kind) {
-    return { kind, id: ++this._serial, remaining: BONUS_DEFS[kind].charges ?? null,
-      startedAt: null, seen: new Set(), exiting: false };
+  // Compatibility for single-accent callers. Every actual buff is in attacks.
+  get active() {
+    let newest = null;
+    for (const attack of this.attacks.values()) if (!newest || attack.id > newest.id) newest = attack;
+    return newest;
   }
-
-  /** Only remove a physical pickup when accepted is true. */
-  collect(kind) {
-    const def = Object.prototype.hasOwnProperty.call(BONUS_DEFS, kind) ? BONUS_DEFS[kind] : null;
-    if (!def) return { accepted: false, slot: null, message: 'Unknown power' };
-    if (def.automatic) return { accepted: false, slot: null, message: `${def.name} is automatic and does not use inventory` };
-    if (kind === 'halo') {
-      if (this.halo) return { accepted: false, slot: null, message: 'One save already ready' };
-      this.halo = true;
-      return { accepted: true, slot: 'halo', message: 'One save ready' };
-    }
-    if (!this.active) {
-      this.active = this._makeAttack(kind);
-      return { accepted: true, slot: 'active', message: `${def.name} ready` };
-    }
-    if (!this.queued) {
-      this.queued = this._makeAttack(kind);
-      return { accepted: true, slot: 'queued', message: `${def.name} queued` };
-    }
-    return { accepted: false, slot: null, message: 'Use a power first' };
-  }
-
-  get pierceExit() { return this.active?.kind === 'pierce' && this.active.exiting; }
-  get suppressReflection() { return this.active?.kind === 'pierce'; }
+  has(kind) { return kind === 'split' ? this.splitActive : this.attacks.has(kind); }
+  get pierceExit() { return this.attacks.get('pierce')?.exiting ?? false; }
+  get suppressReflection() { return this.attacks.has('pierce'); }
   get isPiercing() { return this.suppressReflection; }
 
-  /** Opaque contact-batch snapshot; do not recapture during a physics contact loop. */
+  /** All valid pickups activate now. Automatic floor effects never enter inventory. */
+  collect(kind) {
+    const def = Object.prototype.hasOwnProperty.call(BONUS_DEFS, kind) ? BONUS_DEFS[kind] : null;
+    if (!def) return {kind, accepted: false, message: 'Unknown power'};
+    if (def.automatic) return {kind, accepted: false, message: `${def.name} is automatic and does not use inventory`};
+    const id = ++this._serial;
+    if (['pulse', 'pierce', 'frost'].includes(kind)) {
+      const prior = this.attacks.get(kind);
+      const expiresAt = Math.max(this._time, prior?.expiresAt ?? this._time) + def.duration;
+      this.attacks.set(kind, {kind, id, startedAt: prior?.startedAt ?? this._time,
+        expiresAt, remaining: null, exiting: false, seen: prior?.seen ?? new Set()});
+      return {kind, accepted: true, message: `${def.name} active · ${Math.ceil(expiresAt - this._time)}s`};
+    }
+    if (kind === 'heavy') {
+      const remaining = (this.attacks.get(kind)?.remaining ?? 0) + def.charges;
+      this.attacks.set(kind, {kind, id, startedAt: this._time, expiresAt: null, remaining, exiting: false});
+      return {kind, accepted: true, message: `${def.name} · ${remaining} charge${remaining === 1 ? '' : 's'}`};
+    }
+    let effect;
+    if (kind === 'split') {
+      this.splitActive = true;
+      this.splitActivationId = id;
+      effect = {kind, activationId: id, originId: null, echoCount: def.echoCount,
+        sourceType: def.sourceType, persistent: true, angleDegrees: def.angleDegrees, damage: def.damage};
+    } else if (kind === 'arc') {
+      effect = {kind, originId: null, radiusD: def.radiusD, targetType: def.targetType, damage: def.damage};
+    } else if (kind === 'gravity') {
+      effect = {kind, originId: null, radiusD: def.radiusD, duration: def.duration,
+        maxTargets: def.maxTargets, accelerationD: def.accelerationD,
+        maxDeltaSpeedD: def.maxDeltaSpeedD, targetType: 'intact-cube'};
+    } else if (kind === 'blackhole') {
+      effect = {kind, originId: null, duration: def.duration, radiusD: def.radiusD,
+        rampDuration: def.rampDuration, acceleration: def.acceleration,
+        speedCap: def.speedCap, maxTargets: def.maxTargets};
+    }
+    return {kind, accepted: true, message: `${def.name} activated`, effect: Object.freeze(effect)};
+  }
+
+  /** Each pickup gets a fresh ID, so earlier contacts cannot spend a later pickup. */
   capture() {
-    const token = Object.freeze({ epoch: this._epoch, id: this.active?.id ?? null,
-      kind: this.active?.kind ?? null, pierceExit: this.pierceExit,
-      suppressReflection: this.suppressReflection });
+    const activationIds = Object.freeze(Object.fromEntries([...this.attacks].map(([kind, a]) => [kind, a.id])));
+    const token = Object.freeze({epoch: this._epoch, activationIds,
+      id: this.active?.id ?? null, kind: this.active?.kind ?? null,
+      pierceExit: this.pierceExit, suppressReflection: this.suppressReflection});
     this._tokens.add(token);
     return token;
   }
 
-  _advance() {
-    this.active = this.queued;
-    this.queued = null;
-  }
-
-  /** Update before contacts. Pulse/Pierce/Frost timers start at their first valid hit. */
   tick(now) {
     if (!Number.isFinite(now)) throw new TypeError('Bonus time must be finite simulation seconds');
     this._time = Math.max(this._time, now);
     const expiredFrostIds = [];
-    for (const [id, expiresAt] of this.frostMarks) {
-      if (expiresAt <= this._time) { this.frostMarks.delete(id); expiredFrostIds.push(id); }
+    for (const [id, expiresAt] of this.frostMarks) if (expiresAt <= this._time) {
+      this.frostMarks.delete(id); expiredFrostIds.push(id);
     }
-    const a = this.active;
-    if (a?.kind === 'pierce' && a.startedAt !== null &&
-        this._time - a.startedAt >= BONUS_DEFS.pierce.duration) a.exiting = true;
-    if (['pulse', 'frost'].includes(a?.kind) && a.startedAt !== null &&
-        this._time - a.startedAt >= BONUS_DEFS[a.kind].duration) this._advance();
-    return { pierceExit: this.pierceExit, suppressReflection: this.suppressReflection, expiredFrostIds };
+    for (const [kind, attack] of this.attacks) if (attack.expiresAt !== null && attack.expiresAt <= this._time) {
+      if (kind === 'pierce') attack.exiting = true;
+      else this.attacks.delete(kind);
+    }
+    return {pierceExit: this.pierceExit, suppressReflection: this.suppressReflection, expiredFrostIds};
   }
 
-  _directDamage(originalId, baseDamage, result) {
-    const brittle = this.frostMarks.has(originalId);
-    if (brittle) this.frostMarks.delete(originalId);
-    result.frostConsumed = brittle;
-    return baseDamage + (brittle ? BONUS_DEFS.frost.bonusDamage : 0);
-  }
-
-  /**
-   * Returns permission for direct damage and a secondary-effect descriptor.
-   * Pulse excludes originId, which already receives the same burst damage directly.
-   * Arc chains through nearby bottom/support originals within radiusD per hop.
-   * Caller tracks visited originals, including the direct-hit origin, so each
-   * original receives at most one hit per discharge. Effects never hit
-   * gates and never invoke this method recursively. Snapshot origin position BEFORE
-   * direct damage destroys its body, so the caller can anchor the returned effect.
+  /** Pulse excludes the direct-hit origin; secondary effects must not call back.
+   * Pierce deduplicates originals across all balls. At expiry only an embedded
+   * ball is blocked; other buffs still work for nonpenetrating direct contacts.
    */
-  consumeDirect(snapshot, originalId, now = this._time) {
-    const originId = originalId;
+  consumeDirect(snapshot, originalId, now = this._time, {penetrating = false} = {}) {
     this.tick(now);
-    const result = { damage: 0, effect: null, consumed: false,
-      suppressReflection: this.suppressReflection, pierceExit: this.pierceExit };
-    if (!snapshot || !this._tokens.has(snapshot) ||
-        snapshot.epoch !== this._epoch || originalId === null || originalId === undefined) return result;
-    // A contact begun before pickup remains an ordinary hit, never spending the new power.
-    if (snapshot.kind === null) {
-      if (!this.pierceExit) result.damage = this._directDamage(originalId, 1, result);
-      result.suppressReflection = snapshot.suppressReflection;
-      return result;
+    const result = {damage: 0, effects: [], effect: null, consumed: false,
+      pierced: false, frostConsumed: false,
+      suppressReflection: this.suppressReflection, pierceExit: this.pierceExit};
+    if (!snapshot || !this._tokens.has(snapshot) || snapshot.epoch !== this._epoch || originalId == null) return result;
+    result.suppressReflection = snapshot.suppressReflection;
+    if (this.pierceExit && penetrating) return result;
+    const captured = kind => {
+      const attack = this.attacks.get(kind);
+      return attack && snapshot.activationIds[kind] === attack.id ? attack : null;
+    };
+    const pierce = captured('pierce'), pulse = captured('pulse'), frost = captured('frost'), heavy = captured('heavy');
+    if (pierce && !pierce.exiting) {
+      if (pierce.seen.has(originalId)) return result;
+      pierce.seen.add(originalId);
+      result.pierced = true;
     }
-    const a = this.active;
-    // Later valid contacts in this batch do ordinary damage without spending the queue.
-    if (!a || a.id !== snapshot.id) {
-      if (!this.pierceExit) result.damage = this._directDamage(originalId, 1, result);
-      result.suppressReflection = snapshot.suppressReflection;
-      return result;
+    let damage = 1;
+    if (result.pierced) damage = Math.max(damage, BONUS_DEFS.pierce.damage);
+    if (pulse) damage = Math.max(damage, BONUS_DEFS.pulse.damage);
+    if (heavy) damage = Math.max(damage, BONUS_DEFS.heavy.damage);
+    if (this.frostMarks.has(originalId)) {
+      this.frostMarks.delete(originalId);
+      result.frostConsumed = true;
+      damage += BONUS_DEFS.frost.bonusDamage;
     }
-    if (a.kind === 'pierce') {
-      result.suppressReflection = true;
-      if (a.exiting || a.seen.has(originalId)) return result;
-      if (a.startedAt === null) a.startedAt = this._time;
-      a.seen.add(originalId);
-      result.damage = this._directDamage(originalId, BONUS_DEFS.pierce.damage, result);
-      result.consumed = true;
-      result.pierceExit = a.exiting;
-      return result;
+    result.damage = damage;
+    result.consumed = !!(result.pierced || pulse || frost || heavy);
+    if (pulse) result.effects.push(Object.freeze({kind: 'pulse', originId: originalId,
+      radiusD: BONUS_DEFS.pulse.radiusD, maxTargets: BONUS_DEFS.pulse.maxTargets, damage: BONUS_DEFS.pulse.damage}));
+    if (frost && !result.frostConsumed) {
+      const duration = BONUS_DEFS.frost.markDuration, expiresAt = this._time + duration;
+      this.frostMarks.set(originalId, expiresAt);
+      result.effects.push(Object.freeze({kind: 'frost', originId: originalId, duration, expiresAt}));
     }
-    const def = BONUS_DEFS[a.kind];
-    result.damage = this._directDamage(originalId, ['heavy', 'pulse'].includes(a.kind) ? def.damage : 1, result);
-    result.suppressReflection = false;
-    // Main and secondary balls spend the same attack and brittle marks.
-    result.consumed = true;
-    if (a.kind === 'pulse') {
-      if (a.startedAt === null) a.startedAt = this._time;
-      // Every valid direct ball impact triggers a blast for the shared duration.
-      // The caller filters resting/duplicate contacts and never recurses from AoE.
-      // No lifetime target set: a later impact may blast the same original again.
-      result.effect = Object.freeze({ kind: 'pulse', originId,
-        radiusD: def.radiusD, maxTargets: def.maxTargets, damage: def.damage });
-    } else if (a.kind === 'frost') {
-      if (a.startedAt === null) a.startedAt = this._time;
-      // Mark a hit cube, then consume that mark on its next hit. While the timer
-      // runs a surviving cube can be marked again, with no target or hit budget.
-      if (!result.frostConsumed) {
-        const expiresAt = this._time + def.markDuration;
-        this.frostMarks.set(originalId, expiresAt);
-        result.effect = Object.freeze({ kind: 'frost', originId, duration: def.markDuration, expiresAt });
-      }
-    } else if (a.kind === 'split') {
-      a.startedAt = this._time;
-      this.splitActive = true;
-      this.splitActivationId = a.id;
-      result.effect = Object.freeze({ kind: 'split', originId, activationId: a.id,
-        echoCount: def.echoCount, sourceType: def.sourceType, persistent: true,
-        angleDegrees: def.angleDegrees, damage: def.damage });
-      // Extra balls remain independently of the FIFO; caller confirms their loss.
-      this._advance();
-    } else {
-      if (a.kind === 'arc') result.effect = Object.freeze({ kind: 'arc', originId,
-        radiusD: def.radiusD, targetType: def.targetType, damage: def.damage });
-      else if (a.kind === 'gravity') result.effect = Object.freeze({ kind: 'gravity', originId,
-        radiusD: def.radiusD, duration: def.duration, maxTargets: def.maxTargets,
-        accelerationD: def.accelerationD, maxDeltaSpeedD: def.maxDeltaSpeedD,
-        targetType: 'intact-cube' });
-      else if (a.kind === 'blackhole') result.effect = Object.freeze({ kind: 'blackhole', originId,
-        duration: def.duration, radiusD: def.radiusD, rampDuration: def.rampDuration,
-        acceleration: def.acceleration, speedCap: def.speedCap, maxTargets: def.maxTargets });
-      else if (a.kind === 'heavy') result.effect = Object.freeze({ kind: 'heavy', originId,
-        damage: result.damage });
-      this._advance();
+    if (heavy) {
+      heavy.remaining--;
+      if (heavy.remaining <= 0) this.attacks.delete('heavy');
+      result.effects.push(Object.freeze({kind: 'heavy', originId: originalId, damage}));
     }
+    result.effect = result.effects[0] ?? null;
     return result;
   }
 
-  /** Caller asserts no live ball overlaps glass; do not finish while any is embedded. */
+  /** Call only after every live ball has left all glass volumes. */
   finishPierceExit() {
     if (!this.pierceExit) return false;
-    this._advance();
+    this.attacks.delete('pierce');
     return true;
   }
 
-  /**
-   * Caller asserts no physical extra balls remain, across every Split generation.
-   * Activation IDs are diagnostic only: the last surviving ball may come from an
-   * older activation. This notification never advances or clears the attack FIFO.
-   */
+  /** Call only when no extra balls remain across all Split generations. */
   finishSplit() {
     if (!this.splitActive) return false;
     this.splitActive = false;
@@ -219,27 +166,15 @@ export class BonusController {
     return true;
   }
 
-  /** Check before ANY main-ball loss boundary; caller restores safe control without firing. */
-  consumeHalo() {
-    if (!this.halo) return false;
-    this.halo = false;
-    return true;
-  }
-
   snapshotHUD() {
-    const describe = a => a ? {
-      kind: a.kind, name: BONUS_DEFS[a.kind].name, color: BONUS_DEFS[a.kind].color,
-      description: BONUS_DEFS[a.kind].description,
-      charges: a.remaining, remaining: a.remaining, exiting: a.exiting,
-      started: a.startedAt !== null,
-      secondsLeft: ['pulse', 'pierce', 'frost'].includes(a.kind)
-        ? (a.startedAt === null ? BONUS_DEFS[a.kind].duration
-          : Math.max(0, BONUS_DEFS[a.kind].duration - (this._time - a.startedAt)))
-        : null,
-    } : null;
-    return { active: describe(this.active), queued: describe(this.queued), halo: this.halo,
+    const describe = a => ({id: a.id, kind: a.kind, name: BONUS_DEFS[a.kind].name,
+      color: BONUS_DEFS[a.kind].color, description: BONUS_DEFS[a.kind].description,
+      charges: a.remaining, remaining: a.remaining, started: true, exiting: a.exiting,
+      secondsLeft: a.expiresAt === null ? null : Math.max(0, a.expiresAt - this._time)});
+    const activeEffects = [...this.attacks.values()].sort((a, b) => b.id - a.id).map(describe);
+    return {active: activeEffects[0] ?? null, activeEffects,
       splitActive: this.splitActive, splitActivationId: this.splitActivationId,
-      frostMarks: Object.freeze([...this.frostMarks].map(([originId, expiresAt]) => Object.freeze({ originId, expiresAt, secondsLeft: Math.max(0, expiresAt - this._time) }))),
-      pierceExit: this.pierceExit, suppressReflection: this.suppressReflection };
+      frostMarks: Object.freeze([...this.frostMarks].map(([originId, expiresAt]) => Object.freeze({originId, expiresAt, secondsLeft: Math.max(0, expiresAt - this._time)}))),
+      pierceExit: this.pierceExit, suppressReflection: this.suppressReflection};
   }
 }

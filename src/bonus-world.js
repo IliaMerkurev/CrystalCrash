@@ -7,9 +7,9 @@ const ARC_MAX_LINKS=64,ARC_SEGMENTS_PER_LINK=12;
 // Container cores, collectible meshes and a small reusable effect pool.
 // Pickups are visual bodies with analytic floor contact, never bumpers.
 export class BonusWorld {
- constructor({scene,controller,radius,bounds,blocked,onSound,onNotice,onBomb=()=>{}}) {
-  Object.assign(this,{scene,controller,radius,bounds,blocked,onSound,onNotice,onBomb});
-  this.visuals=createBonusVisuals(THREE);this.icons={pulse:"◎",pierce:"➤",arc:"ϟ",halo:"∩",frost:"❄",split:"∴",gravity:"◉",heavy:"▾",bomb:"●",blackhole:"◉"};this.cores=new Map();this.pickups=[];this.time=0;this.seen=new Set();this.lastBall=null;this.collectorHistory=new Map();this.tip=null;this.tipAge=0;this.pendingTips=[];this.shadowGeometry=new THREE.CircleGeometry(.23,20);this.shadowMaterial=new THREE.MeshBasicMaterial({color:0x02050a,transparent:true,opacity:.3,depthWrite:false});
+ constructor({scene,controller,radius,bounds,blocked,onSound,onNotice,onBomb=()=>{},onActivate=()=>{}}) {
+  Object.assign(this,{scene,controller,radius,bounds,blocked,onSound,onNotice,onBomb,onActivate});
+  this.visuals=createBonusVisuals(THREE);this.icons={pulse:"◎",pierce:"➤",arc:"ϟ",frost:"❄",split:"∴",gravity:"◉",heavy:"▾",bomb:"●",blackhole:"◉"};this.cores=new Map();this.pickups=[];this.time=0;this.seen=new Set();this.lastBall=null;this.collectorHistory=new Map();this.tip=null;this.tipAge=0;this.pendingTips=[];this.shadowGeometry=new THREE.CircleGeometry(.23,20);this.shadowMaterial=new THREE.MeshBasicMaterial({color:0x02050a,transparent:true,opacity:.3,depthWrite:false});
   this.label=document.createElement('div');this.label.className='power-tip';document.body.appendChild(this.label);
   this.hud=document.createElement('div');this.hud.id='power-hud';this.hud.setAttribute('aria-live','polite');document.body.appendChild(this.hud);this.hudKey='';
   this.accents={};for(const kind of Object.keys(BONUS_DEFS)){const m=this.visuals.createBallAccent(kind);m.visible=false;m.scale.setScalar(radius*2);scene.add(m);this.accents[kind]=m;}
@@ -28,10 +28,10 @@ export class BonusWorld {
  teach(key,text,point){if(this.seen.has(key)||this.pendingTips.some(t=>t.key===key))return;const tip={key,text,point};if(this.tipAge>0){this.pendingTips.push(tip);return;}this.seen.add(key);this.tip=tip;this.tipAge=3;}
  feedback(text,point){const activation=/^(ARC |BLACK HOLE |TORNADO |BOMB |PULSE |PIERCE |SPLIT |HEAVY |FROST |BRITTLE )/.test(text);this.tip={key:'feedback',text,screenY:activation?.58:null,point:()=>this.currentBall||point};this.tipAge=activation?1.25:2.7;}
  dismissReadiness(kind){const name=BONUS_DEFS[kind]?.name.toUpperCase();const stale=t=>t&&(t.key==='power-'+kind||(t.text?.toUpperCase().includes(name)&&/READY|HIT GLASS/.test(t.text.toUpperCase())));this.pendingTips=this.pendingTips.filter(t=>!stale(t));if(stale(this.tip)){this.tip=null;this.tipAge=0;}}
- attach(origin){if(!origin.bonus)return;const mesh=this.visuals.createCore(origin.bonus);if(origin.bonusPose){mesh.position.copy(origin.bonusPose.p);mesh.quaternion.copy(origin.bonusPose.q);}this.scene.add(mesh);this.cores.set(origin.id,{origin,mesh});}
+ attach(origin){if(!Object.prototype.hasOwnProperty.call(BONUS_DEFS,origin.bonus))return;const mesh=this.visuals.createCore(origin.bonus);if(origin.bonusPose){mesh.position.copy(origin.bonusPose.p);mesh.quaternion.copy(origin.bonusPose.q);}this.scene.add(mesh);this.cores.set(origin.id,{origin,mesh});}
  dismiss(key){this.pendingTips=this.pendingTips.filter(t=>t.key!==key);if(this.tip?.key===key){this.tip=null;this.tipAge=0;}}
  capturePose(origin,body){origin.bonusPose={p:new THREE.Vector3().copy(body.translation()),q:new THREE.Quaternion().copy(body.rotation()),v:new THREE.Vector3().copy(body.linvel())};}
- release(origin){if(!origin.bonus||origin.bonusReleased)return;origin.bonusReleased=true;this.dismiss('container');const core=this.cores.get(origin.id);if(core){this.cores.delete(origin.id);}
+ release(origin){if(!Object.prototype.hasOwnProperty.call(BONUS_DEFS,origin.bonus)||origin.bonusReleased)return;origin.bonusReleased=true;this.dismiss('container');const core=this.cores.get(origin.id);if(core){this.cores.delete(origin.id);}
   const kind=origin.bonus,mesh=this.visuals.createModel(kind),scale=this.radius*2*1.3;mesh.scale.setScalar(scale);const box=new THREE.Box3().setFromObject(mesh),height=Math.max(.1,-box.min.y+.012),pose=origin.bonusPose;
   const p=pose?.p.clone()||new THREE.Vector3(0,1,this.bounds().mid-1),v=pose?.v.clone().multiplyScalar(.18)||new THREE.Vector3();v.clampLength(0,1.4);v.y=Math.max(v.y,.25);
   const aura=this.visuals.createPickupAura(kind);mesh.add(aura);
@@ -42,8 +42,8 @@ export class BonusWorld {
  safe(p){const b=this.bounds();return p.z>b.top+.8&&p.z<b.bottom-this.radius*3&&Math.abs(p.x)<b.half(p.z)-.7&&p.y>-.5;}
  safePoints(){const b=this.bounds(),span=b.bottom-b.mid;return [[0,b.mid+.75],[-.9,b.mid+span*.18],[.9,b.mid+span*.18],[0,b.mid+span*.35]].map(([x,z])=>new THREE.Vector3(x,.8,Math.min(z,b.bottom-this.radius*3.2)));}
  returnItem(item){const points=this.safePoints().filter(p=>!this.blocked(p,.42));if(!points.length)return;points.sort((a,b)=>a.distanceToSquared(item.p)-b.distanceToSquared(item.p));item.from=item.p.clone();item.to=points[0];this.arc([item.from,item.to],BONUS_DEFS[item.kind].color);item.returning=.32;item.landed=false;item.bounced=false;item.blockedFor=0;item.v.set(0,0,0);}
- // Section changes discard uncollected physical items, but can retain ready powers,
- // active timers, FIFO, Halo and the independent live Split state.
+ // Section changes discard uncollected physical items, but can retain independent
+ // active timers, the armed Heavy strike and live Split state.
  reset({run=false,preservePowers=false}={}){for(const {mesh}of this.cores.values()){this.scene.remove(mesh);this.visuals.releaseInstance(mesh);}this.cores.clear();for(const p of this.pickups){this.disposeReleasedCore(p);this.scene.remove(p.mesh);this.visuals.releaseInstance(p.mesh);this.scene.remove(p.shadow);this.disposeTimer(p);}this.pickups.length=0;if(!preservePowers)this.controller.reset();this.lastBall=null;this.collectorHistory.clear();this.currentBall=null;this.tip=null;this.tipAge=0;this.pendingTips.length=0;this.label.style.opacity=0;this.activeId=null;this.hudKey='';for(const fx of [...this.rings,...this.arcs])fx.mesh.visible=false;if(run)this.seen.clear();this.updateHUD();}
  clearAutomatic(){for(let i=this.pickups.length-1;i>=0;i--){const item=this.pickups[i];if(!BONUS_DEFS[item.kind].automatic)continue;this.pickups.splice(i,1);this.disposeReleasedCore(item);this.disposeTimer(item);item.mesh.removeFromParent();this.visuals.releaseInstance(item.mesh);item.shadow.removeFromParent();}}
  disposeTimer(item){if(item.timerRing){item.timerRing.removeFromParent();item.timerRing.geometry.dispose();item.timerRing=null;}}
@@ -68,19 +68,33 @@ export class BonusWorld {
   fx.core.count=fx.halo.count=instance;fx.impacts.count=Math.min(links.length,ARC_MAX_LINKS);for(const mesh of [fx.core,fx.halo,fx.impacts])mesh.instanceMatrix.needsUpdate=true;fx.core.material.color.set(color).lerp(new THREE.Color(0xffffff),.45);fx.halo.material.color.set(color);fx.impacts.material.color.set(color);
   data.needsUpdate=true;fx.mesh.geometry.setDrawRange(0,vertex);fx.mesh.geometry.computeBoundingSphere();fx.mesh.material.color.set(color);fx.mesh.material.opacity=1;fx.age=0;fx.mesh.visible=true;return Math.min(links.length,ARC_MAX_LINKS);
  }
- update(dt,ballPoint,ballVelocity,canCollect,clusters,extraCollectors=[],effectsPaused=false){this.time+=dt;this.currentBall=ballPoint;const collectors=[...(canCollect?[{id:'main',p:ballPoint,v:ballVelocity}]:[]),...extraCollectors].filter(c=>c.v.lengthSq()>.04);
+ update(dt,ballPoint,ballVelocity,canCollect,clusters,extraCollectors=[],effectsPaused=false){this.time+=dt;this.currentBall=ballPoint;const collectors=[...(canCollect?[{id:'main',p:ballPoint,v:ballVelocity}]:[]),...extraCollectors].filter(c=>c.v.lengthSq()>.04).map(c=>({...c,p:new THREE.Vector3().copy(c.p),v:new THREE.Vector3().copy(c.v)}));
+  // Snapshot both lists: activation may spawn balls, release pickups or clear the world.
+  // New entities wait until the next sweep, and an item can only activate once.
+  const pickupSweep=this.pickups.slice();
   for(const {origin,mesh}of this.cores.values()){let largest=null;for(const id of origin.clusters){const o=clusters.get(id);if(o&&(!largest||o.ids.length>largest.ids.length))largest=o;}if(largest){this.capturePose(origin,largest.b);mesh.position.copy(largest.b.translation());mesh.quaternion.copy(largest.b.rotation());this.visuals.animateCore(mesh,this.time);}}
   if(this.cores.size){const first=this.cores.values().next().value;this.teach('container','Break it to release a power',()=>first.mesh.position);}
-  for(let i=this.pickups.length-1;i>=0;i--){const item=this.pickups[i];
+  for(let n=pickupSweep.length-1;n>=0;n--){const item=pickupSweep[n],i=this.pickups.indexOf(item);if(i<0)continue;
    if(item.returning>0){item.returning=Math.max(0,item.returning-dt);const t=1-item.returning/.32;item.p.lerpVectors(item.from,item.to,t*t*(3-2*t));item.p.y+=Math.sin(t*Math.PI)*.25;}
-   else if(!item.landed){item.v.y-=18*dt;item.p.addScaledVector(item.v,dt);if(!this.safe(item.p)){this.returnItem(item);continue;}if(item.p.y<=item.height){item.p.y=item.height;if(!item.bounced&&item.v.y<-.5){item.v.y=Math.min(1.1,-item.v.y*.13);item.v.x*=.2;item.v.z*=.2;item.bounced=true;}else{item.v.set(0,0,0);item.landed=true;this.onSound('land');this.pulse(item.p,.36,BONUS_DEFS[item.kind].color);this.teach(item.kind==='bomb'?'bomb-fuse':'pickup',item.kind==='bomb'?'Bomb armed · 5 seconds':'Hit the pickup',()=>item.p);}}}
+   else if(!item.landed){item.v.y-=18*dt;item.p.addScaledVector(item.v,dt);if(!this.safe(item.p)){this.returnItem(item);continue;}if(item.p.y<=item.height){item.p.y=item.height;if(!item.bounced&&item.v.y<-.5){item.v.y=Math.min(1.1,-item.v.y*.13);item.v.x*=.2;item.v.z*=.2;item.bounced=true;}else{item.v.set(0,0,0);item.landed=true;this.onSound('land');this.pulse(item.p,.36,BONUS_DEFS[item.kind].color);this.teach(item.kind==='bomb'?'bomb-fuse':'pickup',item.kind==='bomb'?'Bomb armed · 5 seconds':'Collect to activate',()=>item.p);}}}
    else if(item.kind==='bomb'){
     if(!effectsPaused)item.fuseRemaining=Math.max(0,item.fuseRemaining-dt);
     item.timerRing.visible=true;item.timerRing.position.set(item.p.x,.035,item.p.z);item.timerRing.geometry.setDrawRange(0,Math.ceil(item.timerRing.geometry.index.count*item.fuseRemaining/BONUS_DEFS.bomb.countdown/3)*3);
     if(item.fuseRemaining<=0){const at=item.p.clone();this.pickups.splice(i,1);this.disposeReleasedCore(item);this.disposeTimer(item);this.scene.remove(item.mesh);this.visuals.releaseInstance(item.mesh);this.scene.remove(item.shadow);this.onBomb(at);continue;}
    }else{if(this.blocked(item.p,.35))item.blockedFor+=dt;else item.blockedFor=0;if(item.blockedFor>2){this.returnItem(item);continue;}
     const collector=collectors.find(c=>{const start=this.collectorHistory.get(c.id)||c.p,delta=new THREE.Vector3().subVectors(c.p,start),t=delta.lengthSq()>0?THREE.MathUtils.clamp(new THREE.Vector3().subVectors(item.p,start).dot(delta)/delta.lengthSq(),0,1):0;return start.clone().addScaledVector(delta,t).distanceTo(item.p)<this.radius*3.6;});
-    if(collector){const result=this.controller.collect(item.kind);if(result.accepted){this.dismiss('pickup');this.disposeReleasedCore(item);this.scene.remove(item.mesh);this.visuals.releaseInstance(item.mesh);this.scene.remove(item.shadow);this.pickups.splice(i,1);this.onSound('pickup');this.onNotice(result.message);this.pulse(collector.p,.55,BONUS_DEFS[item.kind].color);this.feedback(result.slot==='queued'?`${BONUS_DEFS[item.kind].name.toUpperCase()} QUEUED · Use active power first`:item.kind==='halo'?'HALO READY · Saves your next fall':`${BONUS_DEFS[item.kind].name.toUpperCase()} READY · HIT GLASS`,ballPoint);this.teach('power-'+item.kind,BONUS_DEFS[item.kind].description,()=>this.currentBall);this.updateHUD();continue;}if(this.time-item.noticeAt>.75){this.onNotice(result.message);item.noticeAt=this.time;}}
+    if(collector){const result=this.controller.collect(item.kind);if(result.accepted){
+     this.dismiss('pickup');this.dismissReadiness(item.kind);this.disposeReleasedCore(item);this.scene.remove(item.mesh);this.visuals.releaseInstance(item.mesh);this.scene.remove(item.shadow);this.pickups.splice(i,1);
+     const name=BONUS_DEFS[item.kind].name.toUpperCase(),status=item.kind==='heavy'?'ARMED · NEXT HIT':['pulse','pierce','frost'].includes(item.kind)?'ACTIVE':'ACTIVATED';
+     this.onSound('pickup');this.pulse(collector.p,.55,BONUS_DEFS[item.kind].color);
+     const previousTip=this.tip;
+     // Removed before dispatch: reentrant collection, Split creation and section
+     // changes cannot activate this same pickup or its new children twice.
+     this.onActivate({...result,kind:item.kind},collector.p.clone(),collector);
+     // Main owns richer activation captions. Supply a fallback only if it did not.
+     if(this.tip===previousTip)this.feedback(`${name} · ${status}`,collector.p);
+     this.updateHUD();continue;
+    }if(this.time-item.noticeAt>.75){this.onNotice(result.message);item.noticeAt=this.time;}}
    }
    item.mesh.position.copy(item.p);item.shadow.position.set(item.p.x,.007,item.p.z);item.shadow.visible=this.safe(item.p);item.shadow.scale.setScalar(2/Math.max(1,item.p.y*.7));item.mesh.rotation.y=Math.sin(this.time*.7)*.16;const born=Math.min(1,(this.time-(item.spawnTime??(item.spawnTime=this.time)))/.38);item.mesh.scale.setScalar(item.scale*(1-Math.pow(1-born,3)));this.visuals.animateCore(item.aura,this.time);if(item.kind==='bomb')this.visuals.animateCore(item.mesh,this.time);if(item.releasedCore){item.releasedCore.position.copy(item.p);item.releasedCore.scale.setScalar(Math.pow(1-born,2));this.visuals.animateCore(item.releasedCore,this.time);if(born>=1)this.disposeReleasedCore(item);}
   }
@@ -89,11 +103,19 @@ export class BonusWorld {
   for(const fx of this.arcs){if(!fx.mesh.visible)continue;fx.age+=dt;const fade=Math.max(0,1-fx.age/fx.duration),restrike=.68+.32*Math.pow(Math.cos(fx.age*29),2);fx.mesh.material.opacity=fade*restrike;fx.core.material.opacity=fade*restrike*.95;fx.halo.material.opacity=fade*restrike*.28;fx.impacts.material.opacity=fade*(.45+.4*Math.pow(Math.cos(fx.age*38),2));if(fx.age>=fx.duration)fx.mesh.visible=false;}
   this.tipAge-=dt;if(this.tipAge<=0&&this.pendingTips.length){const next=this.pendingTips.shift();this.seen.add(next.key);this.tip=next;this.tipAge=3;}this.updateHUD();
  }
- updateHUD(){const h=this.controller.snapshotHUD(),key=[this.controller.active?.id,h.active?.kind,h.active?.exiting,h.active?.started,h.active?.secondsLeft===null?null:Math.ceil(h.active?.secondsLeft),h.queued?.kind,h.halo,h.splitActive].join('|');if(key===this.hudKey)return;const activeId=this.controller.active?.id;if(activeId&&activeId!==this.activeId&&this.activeId){this.pendingTips.unshift({key:'ready-'+activeId,text:`${BONUS_DEFS[h.active.kind].name.toUpperCase()} READY · HIT GLASS`,point:()=>this.currentBall});}this.activeId=activeId;this.hudKey=key;this.hud.replaceChildren();const add=(kind,text,cls='')=>{const el=document.createElement('span');el.className='power-slot '+cls;el.title=BONUS_DEFS[kind].description;el.setAttribute('aria-label',`${text}. ${BONUS_DEFS[kind].description}`);el.style.setProperty('--power',`#${BONUS_DEFS[kind].color.toString(16).padStart(6,'0')}`);const icon=document.createElement('b');icon.className='power-icon';icon.textContent=this.icons[kind];el.append(icon,document.createTextNode(text));this.hud.appendChild(el);};
-  if(h.active){const a=h.active,status=a.exiting?'EXITING':a.started?(a.kind==='frost'?'MARKING':'ACTIVE'):'HIT GLASS',timer=a.secondsLeft!==null&&!a.exiting?` · ${Math.ceil(a.secondsLeft)}s`:'';add(a.kind,`${a.name.toUpperCase()} · ${status}${timer}`);}
-  if(h.queued)add(h.queued.kind,`NEXT · ${h.queued.name}${h.queued.secondsLeft!==null?' · '+Math.ceil(h.queued.secondsLeft)+'s':''}`,'queued');if(h.splitActive)add('split','SPLIT · EXTRA BALLS LIVE');if(h.halo)add('halo','HALO · 1 SAVE');
+ updateHUD(){
+  const h=this.controller.snapshotHUD(),effects=h.activeEffects||[];
+  const entries=effects.filter(a=>BONUS_DEFS[a.kind]);
+  const heavy=h.heavy||h.heavyArmed;
+  if(heavy&&!entries.some(a=>a.kind==='heavy'))entries.push(typeof heavy==='object'?{...heavy,kind:'heavy'}:{kind:'heavy',name:BONUS_DEFS.heavy.name,secondsLeft:null});
+  const key=entries.map(a=>[a.kind,a.exiting,a.remaining??a.charges??'',Number.isFinite(a.secondsLeft)?Math.ceil(a.secondsLeft):''].join(':')).join('|')+'|split:'+Boolean(h.splitActive);
+  if(key===this.hudKey)return;this.hudKey=key;this.hud.replaceChildren();
+  const add=(kind,text)=>{const def=BONUS_DEFS[kind],el=document.createElement('span');el.className='power-slot';el.title=def.description;el.setAttribute('aria-label',`${text}. ${def.description}`);el.style.setProperty('--power',`#${def.color.toString(16).padStart(6,'0')}`);const icon=document.createElement('b');icon.className='power-icon';icon.textContent=this.icons[kind];el.append(icon,document.createTextNode(text));this.hud.appendChild(el);};
+  for(const a of entries){const hits=Math.max(1,a.remaining??a.charges??1),status=a.kind==='heavy'?(hits===1?'1 NEXT HIT':`${hits} HITS`):a.exiting?'EXITING':'ACTIVE',timer=Number.isFinite(a.secondsLeft)&&!a.exiting?` · ${Math.ceil(Math.max(0,a.secondsLeft))}s`:'';add(a.kind,`${(a.name||BONUS_DEFS[a.kind].name).toUpperCase()} · ${status}${timer}`);}
+  if(h.splitActive&&!entries.some(a=>a.kind==='split'))add('split','SPLIT · EXTRA BALLS LIVE');
  }
- render(camera,ballPoint){const h=this.controller.snapshotHUD();for(const [kind,mesh]of Object.entries(this.accents)){mesh.visible=kind==='halo'?h.halo:kind==='split'?(h.splitActive||h.active?.kind==='split'):h.active?.kind===kind;mesh.position.copy(ballPoint);mesh.rotation.y=this.time*.6;if(kind==='pierce'||kind==='frost'){const duration=BONUS_DEFS[kind].duration,fraction=h.active?.kind===kind?Math.max(0,h.active.secondsLeft)/duration:0;mesh.userData.charges?.forEach((segment,i,all)=>segment.visible=i/all.length<fraction);}}
+ render(camera,ballPoint){const h=this.controller.snapshotHUD(),active=new Map((h.activeEffects||[]).map(a=>[a.kind,a]));if((h.heavy||h.heavyArmed)&&!active.has('heavy'))active.set('heavy',{kind:'heavy'});
+  for(const [kind,mesh]of Object.entries(this.accents)){const a=active.get(kind);mesh.visible=kind==='split'?(Boolean(h.splitActive)||Boolean(a)):Boolean(a);mesh.position.copy(ballPoint);mesh.rotation.y=this.time*.6;if(kind==='pierce'||kind==='frost'){const duration=BONUS_DEFS[kind].duration,fraction=a?Math.max(0,Number.isFinite(a.secondsLeft)?a.secondsLeft:duration)/duration:0;mesh.userData.charges?.forEach((segment,i,all)=>segment.visible=i/all.length<fraction);}}
   if(this.tip&&this.tipAge>0){const point=typeof this.tip.point==='function'?this.tip.point():this.tip.point;if(point){const p=point.clone().add(new THREE.Vector3(0,.5,0));p.z+=this.scene.position.z;p.project(camera);this.label.textContent=this.tip.text;this.label.style.left=`${THREE.MathUtils.clamp((p.x+1)*innerWidth/2,85,innerWidth-85)}px`;this.label.style.top=`${this.tip.screenY?innerHeight*this.tip.screenY:THREE.MathUtils.clamp((1-p.y)*innerHeight/2,100,innerHeight-110)}px`;this.label.style.opacity=p.z<1?1:0;}}else this.label.style.opacity=0;
  }
 }

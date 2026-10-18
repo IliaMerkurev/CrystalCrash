@@ -3,7 +3,7 @@
  * nearest the player. Each tier is physically supported by the tier beneath it.
  * Bonus tokens decorate a specific T1 cube; no runtime roll adds containers.
  */
-const P = '1:pulse', I = '1:pierce', A = '1:arc', H = '1:halo';
+const P = '1:pulse', I = '1:pierce', A = '1:arc';
 const F = '1:frost', S = '1:split', G = '1:gravity', B = '1:heavy';
 const ARENAS = [
   {
@@ -55,9 +55,9 @@ const ARENAS = [
     bridge: true, core: true,
   },
   {
-    name: 'Side Routes', skill: 'Collect protection before taking the side diagonal',
+    name: 'Side Routes', skill: 'Collect a power before taking the side diagonal',
     stacks: [
-      [0, 0, [H, 1, 1]], [2, 0, [2, P, 1]],
+      [0, 0, [A, 1, 1]], [2, 0, [2, P, 1]],
       [-1, 1, [2, 1, 1]], [0, 1, [2, 1, 1]],
       [1, 1, [2, 1, 1]], [2, 1, [2, 1, 1]],
       [-2, 2, [2, 1, 1]], [-1, 2, [3, 2, 1]],
@@ -75,7 +75,7 @@ const ARENAS = [
   {
     name: 'Crossfire', skill: 'Transfer your aim between unequal groups across the opening',
     stacks: [
-      [-2, 0, [2, P, 1]], [-1, 0, [1, H, 1]], [2, 0, [2, I, 1]],
+      [-2, 0, [2, P, 1]], [-1, 0, [1, F, 1]], [2, 0, [2, I, 1]],
       [-2, 1, [2, 1, 1]], [-1, 1, [2, 1, 1]], [1, 1, [2, 1, 1]],
       [-2, 2, [3, 2, 1]], [-1, 2, [3, 4, 5]], [1, 2, [3, 2, 1]],
     ],
@@ -94,7 +94,7 @@ const ARENAS = [
     name: 'Crystal Crown', skill: 'Clear supports, side sections, then the crown',
     stacks: [
       [-2, 0, [2, 1, 1]], [-1, 0, [2, I, 1]],
-      [1, 0, [2, A, 1]], [2, 0, [2, H, 1]],
+      [1, 0, [2, A, 1]], [2, 0, [2, S, 1]],
       [-2, 1, [2, 1, 1, 3, 4]], [0, 1, [1, 3, 4, 5]],
       [2, 1, [2, 1, 1, 3, 1]],
       [-1, 2, [2, 1, 1, 3]], [1, 2, [2, 1, 1]],
@@ -153,7 +153,7 @@ function selected(level) {
 // density rises with the actual level, including when the fourteen names repeat.
 // This cap bounds expensive compound shells rather than only their visible cubes.
 const DENSITY = [30, 36, 41, 45, 48, 52, 56, 60, 64, 68, 74, 80, 86, 92];
-const BONUS_KINDS = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
+const BONUS_KINDS = ['pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
 let arenaRunSeed = 0x00c57a11;
 
 /** Set once when starting/restarting a run, never while previewing or resizing.

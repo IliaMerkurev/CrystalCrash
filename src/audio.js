@@ -120,7 +120,7 @@ export class AudioFX {
       try { this.context.resume().catch(() => {}); } catch (_) {}
       return;
     }
-    const known = ['launch', 'wall', 'hit', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
+    const known = ['launch', 'wall', 'hit', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
     if (!known.includes(name)) return;
     try {
       const now = this.context.currentTime;
@@ -129,7 +129,7 @@ export class AudioFX {
       this.lastPlayed.set(name, now);
       const v = this._voice(now), t = now + 0.002;
       const power = Number.isFinite(strength) ? Math.max(0, Math.min(1.5, strength)) : 1;
-      const level = Math.sqrt(power) * (['pulse','pierce','arc','halo','frost','split','gravity','heavy','bomb','blackhole'].includes(name)?1.22:1);
+      const level = Math.sqrt(power) * (['pulse','pierce','arc','frost','split','gravity','heavy','bomb','blackhole'].includes(name)?1.22:1);
       const names = ['blue', 'emerald', 'amber', 'violet', 'ruby'];
       const index = typeof type === 'string' ? Math.max(0, names.indexOf(type.toLowerCase())) : Math.abs(Math.trunc(Number(type) || 0)) % 5;
       const pitch = [980, 1175, 740, 1397, 880][index] * (0.985 + Math.random() * 0.03);
@@ -156,7 +156,6 @@ export class AudioFX {
           noise(.24,.055,3200,'highpass',.09); tone(42,.55,.075,'sine',23,.12);
           break;
         case 'heavy': tone(130,.28,.13,'sine',32);noise(.14,.09,700,'lowpass');break;
-        case 'halo': [392,587,784,1175].forEach((hz,i)=>tone(hz,.32,.065,'sine',hz,i*.045)); noise(.16,.025,1200,'bandpass'); break;
         case 'launch':
           tone(290, 0.14, 0.15, 'sine', 115); noise(0.07, 0.065, 1300, 'bandpass'); break;
         case 'wall':

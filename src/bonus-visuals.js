@@ -7,9 +7,9 @@ import { BONUS_DEFS } from './bonus-controller.js';
  * Call dispose() only after removing every instance. No frame loop is installed.
  */
 export function createBonusVisuals(THREE = DefaultTHREE) {
-  const kinds = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
+  const kinds = ['pulse', 'pierce', 'arc', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
   const unitBounds = {};
-  const colors = {pulse: 0xffb44a, pierce: 0x44d9ff, arc: 0xb68cff, halo: 0xff777d, frost: 0xb8e9f5, split: 0xf27ed2, gravity: 0x7887ff, heavy: 0xe98745, bomb: BONUS_DEFS.bomb?.color ?? 0xff9438, blackhole: BONUS_DEFS.blackhole?.color ?? 0x8878ff};
+  const colors = {pulse: 0xffb44a, pierce: 0x44d9ff, arc: 0xb68cff, frost: 0xb8e9f5, split: 0xf27ed2, gravity: 0x7887ff, heavy: 0xe98745, bomb: BONUS_DEFS.bomb?.color ?? 0xff9438, blackhole: BONUS_DEFS.blackhole?.color ?? 0x8878ff};
   const geometries = new Set(), materials = new Set();
   const ownGeometry = geometry => (geometries.add(geometry), geometry);
   const ownMaterial = material => (materials.add(material), material);
@@ -46,7 +46,6 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const torus = (radius, tube, arc = Math.PI * 2) => ownGeometry(new THREE.TorusGeometry(radius, tube, 8, 40, arc));
   const ring = torus(.415, .065), ringInset = torus(.415, .033);
   const thinRing = torus(.115, .002);
-  const haloRim = torus(.38, .085, Math.PI), haloInset = torus(.38, .048, Math.PI);
   const accentRing = torus(.53, .012, Math.PI * 1.45);
   const chargeArc = torus(.53, .018, .36);
   function polygon(points) {
@@ -85,7 +84,6 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const key = kind => {
     if (kind === 'gravityWell' || kind === 'gravity-well' || kind === 'gravity_well') return 'gravity';
     if (kind === 'heavyHit' || kind === 'heavy-hit' || kind === 'heavy_hit') return 'heavy';
-    if (kind === 'safetyHalo' || kind === 'safety-halo' || kind === 'safety_halo') return 'halo';
     if (!kinds.includes(kind)) throw new Error(`Unknown bonus visual: ${kind}`);
     return kind;
   };
@@ -143,14 +141,6 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       mesh(group, sphere, surfaces[kind], .18, .47, .07, .036);
       mesh(group, sphere, surfaces[kind], -.19, -.44, .07, .036);
       group.scale.setScalar(1.12);
-    } else if (kind === 'halo') {
-      mesh(group, haloRim, metal, 0, -.08);
-      mesh(group, haloInset, surfaces[kind], 0, -.08, .066);
-      mesh(group, haloInset, surfaces[kind], 0, -.08, -.066);
-      for (const x of [-.38, .38]) {
-        mesh(group, box, metal, x, -.17, 0, .22, .18, .23);
-        mesh(group, box, surfaces[kind], x, -.065, 0, .145, .025, .16);
-      }
     }
     if (kind === 'frost') {
       inset(group, snowflake, kind);
@@ -308,7 +298,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       }
     } else {
       const band = mesh(group, accentRing, surfaces[kind]);
-      band.rotation.set(-.9, .2, kind === 'halo' ? -.7 : .4);
+      band.rotation.set(-.9, .2, .4);
       if (kind === 'arc') {
         const symbol = mesh(group, bolt, surfaces[kind], 0, .48, .22, .16);
         symbol.rotation.z = -.2;
