@@ -185,3 +185,7 @@ Gate barrier height increased from 0.75 to 1.5 for both visible geometry and col
 Aim camera: while holding the ball, ease modestly closer and lower, with a small FOV reduction and lateral shot-direction bias. Keep pullback room, restore after release/cancel, freeze easing while paused, and disable aim motion for reduced-motion preference. Gesture projection remains frozen to its capture camera; aim camera never resizes the arena.
 
 Reflection follow-up: suppress the separate clearcoat specular lobe in the mirror pass too, because Three adds it after the base specular sum. Direct-view clearcoat and the ball remain unchanged.
+
+Continuous arena transition: upcoming decks share the active floor/coat/neon resources, joined by narrow decks, using one reflection surface across all visible decks. Preview cubes match the next section specification. Gate fracture cells are prepared ahead of impact; the actual contact starts a short outward release wave with aligned stationary cells until detachment. Optional ?qa=transition exposes a labeled target-clear and mirror/coat isolation panel for bounded visual diagnosis only.
+
+Reflection target defaults to 1024 square; ?reflectionRes=512 enables same-build resolution comparison. The adjacent-texel kernel follows the selected resolution.
