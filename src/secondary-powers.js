@@ -376,7 +376,7 @@ export class SecondaryPowers {
   const diameter=this.radius*2,range=value('radiusD',6)*diameter,duration=value('duration',4);
   this.well={kind:'tornado',point:{x:point.x,y:point.y,z:point.z},born:now,expires:now+duration,duration,active:true,targets:[],blocks,range,
    acceleration:value('accelerationD',35)*diameter,budget:value('maxDeltaSpeedD',24)*diameter,maxTargets:Math.floor(value('maxTargets',12)),
-   roamSpeed:value('roamSpeedD',5)*diameter,tossSpeed:value('tossSpeedD',13)*diameter,seenOrigins:new Set(),seenBodies:new Set(),
+   roamSpeed:value('roamSpeedD',8)*diameter,tossSpeed:value('tossSpeedD',13)*diameter,seenOrigins:new Set(),seenBodies:new Set(),
    random:typeof config.random==='function'?config.random:Math.random,route:null,velocity:{x:0,z:0}};
   if(duration>0&&range>0)this.captureWellTargets(this.well,now);
   this.wellMesh.position.set(point.x,.035,point.z);this.wellMesh.scale.set(range,1,range);this.wellMaterial.opacity=.7;this.wellFunnelMaterial.opacity=.18;this.wellRibbonMaterial.opacity=.76;this.wellMesh.visible=duration>0&&range>0;
@@ -402,11 +402,15 @@ export class SecondaryPowers {
   // corridor keeps the entire interpolated route inside even tapered arenas.
   if(!well.route){
    const z=Math.max(low,Math.min(high,well.point.z)),x=Math.max(-halfAt(z),Math.min(halfAt(z),well.point.x));
-   const targetZ=low+well.random()*(high-low);
+   const occupied=[...well.blocks.values()].filter(o=>this.playable(o)&&!well.seenOrigins.has(o.origin?.id??o.origin??o.id)).map(o=>o.b.worldCom()).filter(p=>p.z>=low&&p.z<=high&&Math.abs(p.x)<=halfAt(p.z));
+   // Prefer surviving, not-yet-stirred upper clusters; randomized distance bias
+   // makes the field sweep broadly instead of spending its life in empty space.
+   const choices=occupied.map(p=>({p,score:Math.hypot(p.x-x,p.z-z)*(.8+well.random()*.4)})).sort((a,b)=>b.score-a.score);
+   const target=choices[0]?.p,targetZ=target?target.z:low+well.random()*(high-low);
    let half=Math.min(halfAt(z),halfAt(targetZ));for(let i=1;i<8;i++)half=Math.min(half,halfAt(z+(targetZ-z)*i/8));
-   let targetX=(well.random()*2-1)*half;
+   let targetX=target?Math.max(-half,Math.min(half,target.x)):(well.random()*2-1)*half;
    if(Math.hypot(targetX-x,targetZ-z)<margin*2)targetX=x>0?-half:half;
-   well.route={from:{x:well.point.x,z:well.point.z},to:{x:targetX,z:targetZ},elapsed:0,duration:Math.max(.65,Math.hypot(targetX-well.point.x,targetZ-well.point.z)*1.5/Math.max(.01,well.roamSpeed))};
+   well.point.x=x;well.point.z=z;well.route={from:{x,z},to:{x:targetX,z:targetZ},elapsed:0,duration:Math.max(.65,Math.hypot(targetX-well.point.x,targetZ-well.point.z)*1.5/Math.max(.01,well.roamSpeed))};
   }
   const route=well.route;route.elapsed+=dt;
   const t=Math.min(1,route.elapsed/route.duration),ease=t*t*(3-2*t),slope=6*t*(1-t)/route.duration;

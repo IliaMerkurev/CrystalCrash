@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict';import * as THREE from 'three';import fs from 'node:fs';import {BonusWorld} from '../src/bonus-world.js';
+const world=Object.create(BonusWorld.prototype);world.radius=.38;world.bounds=()=>({top:-12,mid:0,bottom:7,half:()=>6});world.blocked=()=>false;let arcs=0;world.arc=()=>arcs++;
+function item(x,z,kind='gravity'){return {kind,p:new THREE.Vector3(x,.8,z),v:new THREE.Vector3(1,0,2),height:.4,landed:true,bounced:true,blockedFor:3};}
+for(const [x,z]of [[0,3],[20,-7],[0,-30]]){const p=item(x,z);world.returnItem(p);assert(p.to.z<0&&p.to.z>-11.2);assert(Math.abs(p.to.x)<5.3);assert.equal(p.v.length(),0);assert.equal(p.returning,.32);assert(world.safe(p.to,'gravity'));}
+world.blocked=p=>p.z>-5;const blocked=item(0,-1);world.returnItem(blocked);assert.equal(blocked.to,undefined,'blocked but in-bounds pickups stay where dropped');
+world.blocked=()=>true;const crowded=item(20,4);world.returnItem(crowded);assert(world.safe(crowded.to,'gravity'),'fully crowded fallback never sends pickup below controls');assert.equal(arcs,0);
+world.blocked=()=>false;const ordinary=item(0,-4,'pulse');world.returnItem(ordinary);assert.equal(ordinary.to,undefined,'ordinary in-bounds pickup does not relocate');for(const kind of ['pulse','pierce','arc','frost','split','heavy','blackhole']){const out=item(20,-4,kind);world.returnItem(out);assert.equal(out.to.z,-4,'side recovery retains drop depth');assert(world.safe(out.to,kind));}
+const source=fs.readFileSync(new URL('../src/bonus-world.js',import.meta.url),'utf8');assert.match(source,/kind==='bomb'\|\|kind==='gravity'\)\{v.x=0;v.z=0/);assert.match(source,/this.safe\(item.p,item.kind\)/);
+assert(!source.includes('blockedFor>2'));assert(!source.includes('safePoints()'));console.log('PASS all in-bounds pickups stay put, no blocked timer relocation, nearest-edge recovery, Tornado upper-only and zero drift');

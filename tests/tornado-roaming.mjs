@@ -22,7 +22,7 @@ test('smooth upper-arena route moves, acquires new cubes, and keeps balls untouc
  let previous={...well.point},distance=0;
  for(let i=1;i<=300;i++){
   advance((i-1)/120,i/120);
-  const moved=Math.hypot(well.point.x-previous.x,well.point.z-previous.z);assert.ok(moved<.05,'bounded smooth motion');distance+=moved;previous={...well.point};
+  const moved=Math.hypot(well.point.x-previous.x,well.point.z-previous.z);assert.ok(moved<=well.roamSpeed/120+.0001,'bounded smooth motion at the configured wider-sweep speed');distance+=moved;previous={...well.point};
   assert.ok(Math.abs(well.point.x)<6&&well.point.z>=-8&&well.point.z<5);
  }
  assert.ok(distance>5);assert.equal(ball.b.linvel().x,0);assert.equal(ball.b.linvel().z,0);
@@ -53,4 +53,13 @@ test('friction owners overlap safely; expiry, replacement, clear, transition cle
  advance(0,.11);assert.equal(powers.well,null);assert.equal(powers.frictionLeases.size,0);
  powers.createWell(point,.11,blocks);powers.clear();assert.equal(powers.well,null);assert.equal(powers.frictionLeases.size,0);
  powers.createWell(point,.11,blocks);powers.parkForTransition(point,bounds);assert.equal(powers.well,null);assert.equal(powers.frictionLeases.size,0);
+}));
+
+test('route clamps lower activation into upper field and seeks surviving distant cubes',()=>fixture(({powers,blocks,cube})=>{
+ cube(21,3,.5,-6);cube(22,-2,.5,-3);
+ const well=powers.createWell({x:0,y:.5,z:8},0,blocks,{random:()=>.5});
+ powers.moveWell(well,1/120,bounds);
+ assert(well.point.z<=bounds.lowerZoneZ-.38*3);
+ assert.equal(well.route.to.z,-6);assert.equal(well.route.to.x,3);
+ assert.equal(well.roamSpeed,.76*8);assert.equal(well.maxTargets,12);
 }));
