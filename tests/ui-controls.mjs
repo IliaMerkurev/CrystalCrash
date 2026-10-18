@@ -10,3 +10,7 @@ const context={document,$:()=>button,cancelDrag(){cancels++;},tell:m=>notices.pu
 await button.onclick();assert.equal(requests,1);assert.equal(button.textContent,'EXIT FULLSCREEN');assert.equal(button['aria-pressed'],'true');await button.onclick();assert.equal(exits,1);assert.equal(button.textContent,'FULLSCREEN');
 delete document.documentElement.requestFullscreen;await button.onclick();assert(notices.at(-1).includes('not available'));assert.equal(button['aria-pressed'],'false');let stopped=false;events.pointerdown({stopPropagation(){stopped=true;}});assert(stopped);assert.equal(cancels,3);
 console.log('PASS visible test/fullscreen controls, trusted-click API toggle, unsupported fallback and pointer isolation');
+
+const css=fs.readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+const glassRule=css.match(/\.glass-panel,\.power-slot,\.power-tip[^}]+}/)?.[0];assert(glassRule);for(const plain of ['#hint','.rail-hint','#toast','#section','.brand','.legend'])assert(!glassRule.includes(plain));assert(css.includes('#paused{background:'));assert(css.includes('blur(24px) saturate(125%)'));
+console.log('PASS frosted panels only, plain logo/hints/legend and fullscreen pause blur');
