@@ -78,3 +78,8 @@ Onboarding demonstrates press→pull→release and two separate attraction lesso
 - No origin-wide clear, IndexedDB or CacheStorage deletion: this game currently owns no such caches. Editor presets and unrelated data are untouched. Browser/driver shader caches and HTTP cache cannot be cleared by this control; it does not claim a true driver-cold launch.
 - Storage failures require a separate Reload Anyway choice; cancel is nonmutating. Reload errors remain visible. Focused tests use isolated mock storage only; no user data was reset during development.
 - User-confirmed final v94 control adjustment restores original max12 pull / max4 aim extent. A faint full-length guide and endpoint marker show the maximum before reaching it; the current line fills toward that marker and snaps/highlights at the same99%/97% full-pull hysteresis used by the meter. Responsive edge fallback remains.
+
+### v96 — Charged traversal balance
+- A timed ×2 launch passes through glass without solver bounce and records one normal direct hit per ball/original traversal. T1 breaks; surviving higher tiers keep their remaining durability. A separate ball or a fully separated return can hit again.
+- Same-traversal shell/fragment contacts are deduplicated, with brief environmental follow-up protection. Expiring charge finishes exiting its already entered shells before restoring ordinary glass solving; catch, park, reset and section changes clear traversal state.
+- Collected Pierce retains its intentional instant destruction. Other collected damage bonuses keep their own effects; ×2 itself adds no damage multiplier. Ball-ball, floor and rail contacts remain physical.
