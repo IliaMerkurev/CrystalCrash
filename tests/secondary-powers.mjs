@@ -238,7 +238,7 @@ test('Only lost echoes are removed and split completion waits for the last survi
   });
 });
 
-test('Gravity selects damaged playable clusters, honors defaults, and excludes balls/pickups/debris', () => {
+test('Tornado selects damaged playable clusters, honors defaults, and excludes balls/pickups/debris', () => {
   withPhysics(({ powers, world }) => {
     const blocks = new Map();
     for (let id = 0; id < 14; id++) addBlock(world, blocks, id,
@@ -252,7 +252,7 @@ test('Gravity selects damaged playable clusters, honors defaults, and excludes b
     ];
     const well = powers.createWell({ x: 0, y: .3, z: 0 }, 0, blocks);
     assert.equal(well.targets.length, 12);
-    near(well.range, RADIUS * 2 * 6, 'default attraction radius');
+    near(well.range, RADIUS * 2 * 6, 'default orbit range');
     near(well.acceleration, RADIUS * 2 * 35, 'default acceleration');
     near(well.targets[0].remaining, RADIUS * 2 * 24, 'default impulse budget');
     assert.equal(well.expires, 4);
@@ -265,7 +265,12 @@ test('Gravity selects damaged playable clusters, honors defaults, and excludes b
       assert.equal(c.frictionCombineRule(), RAPIER.CoefficientCombineRule.Min);
     }
     powers.step(.1, .1, BOUNDS);
-    assert.ok(blocks.get(0).b.linvel().x < -2.65, 'real impulse must pull toward center');
+    near(blocks.get(0).b.linvel().x, 0, 'no initial inward pull');
+    assert.ok(blocks.get(0).b.linvel().z > 1, 'real tangential impulse starts the orbit');
+    near(powers.wellRings[0].position.y, 0, 'funnel bottom');
+    near(powers.wellRings[4].position.y * powers.wellMesh.scale.y, 2.5, 'funnel world height');
+    near(powers.wellRings[0].userData.radius, .15, 'narrow funnel base');
+    near(powers.wellRings[4].userData.radius, .6, 'wide funnel top');
     exclusions.forEach(o => {
       near(speed(o.b), 0, 'excluded body velocity');
       near(o.cs[0].friction(), .65, 'excluded collider friction');
@@ -279,7 +284,7 @@ test('Gravity selects damaged playable clusters, honors defaults, and excludes b
   });
 });
 
-test('Gravity honors stronger explicit configuration and restores safely after target destruction', () => {
+test('Tornado honors stronger explicit configuration and restores safely after target destruction', () => {
   withPhysics(({ powers, world }) => {
     const blocks = new Map();
     for (let id = 0; id < 4; id++) addBlock(world, blocks, id, { x: .5 + id });
@@ -306,7 +311,7 @@ test('Gravity honors stronger explicit configuration and restores safely after t
   });
 });
 
-test('Gravity pulls across a high-friction floor, brakes at its center, and restores on expiry', () => {
+test('Tornado orbits on a high-friction floor without central collapse and restores on expiry', () => {
   withPhysics(({ powers, world }) => {
     const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -.2, 0));
     const floorCollider = world.createCollider(RAPIER.ColliderDesc.cuboid(20, .2, 20)
@@ -316,16 +321,21 @@ test('Gravity pulls across a high-friction floor, brakes at its center, and rest
     for (let i = 0; i < 90; i++) world.step();
     const start = target.b.translation().x;
     const well = powers.createWell({ x: 0, y: .3, z: 0 }, 0, blocks);
-    let halfSecondX;
+    let halfSecondZ, smallestRadius = Infinity, angleTravel = 0, lastAngle = 0;
     for (let i = 0; i < 360; i++) {
       powers.step(DT, i * DT, BOUNDS);
       world.step();
-      if (i === 44) halfSecondX = target.b.translation().x;
+      const p = target.b.translation(), angle = Math.atan2(p.z, p.x);
+      const delta = Math.atan2(Math.sin(angle - lastAngle), Math.cos(angle - lastAngle));
+      angleTravel += delta; lastAngle = angle;
+      smallestRadius = Math.min(smallestRadius, Math.hypot(p.x, p.z));
+      if (i === 44) halfSecondZ = p.z;
     }
-    assert.ok(start - halfSecondX > 2, 'cube must visibly approach within half a second');
-    assert.ok(Math.abs(target.b.translation().x) < .2, 'cube must stay near the well instead of slingshotting');
-    assert.ok(Math.abs(target.b.linvel().x) < .1, 'arrival must brake horizontal speed');
-    assert.ok(well.targets[0].remaining > 0, 'arrival should retain correction headroom');
+    assert.ok(halfSecondZ > 1, 'cube must visibly orbit within half a second');
+    assert.ok(smallestRadius > start * .9, 'orbit never collapses toward center');
+    near(Math.hypot(target.b.translation().x, target.b.translation().z), start, 'retains original radius', .1);
+    assert.ok(angleTravel > 3, 'cube travels more than half a turn in four seconds');
+    assert.ok(well.targets[0].remaining > 0, 'orbit retains bounded correction headroom');
     near(floorCollider.friction(), .85, 'global floor friction remains untouched');
     powers.step(DT, 4.01, BOUNDS);
     assert.equal(powers.well, null);
@@ -607,4 +617,209 @@ test('A rested upper-zone extra traverses the real floor, gets one catch second,
     assert.equal(powers.echoes.length, 0);
     assert.deepEqual(finished, [undefined]);
   });
+});
+
+test('Black Hole starts at zero force, ramps smoothly, and targets only playable cubes', () => {
+  withPhysics(({ powers, world, hits }) => {
+    const blocks = new Map();
+    const cube = addBlock(world, blocks, 1, { x: 3 });
+    const excluded = [
+      addBlock(world, blocks, 2, { kind: 'ball' }),
+      addBlock(world, blocks, 3, { kind: 'echo' }),
+      addBlock(world, blocks, 4, { kind: 'pickup' }),
+      addBlock(world, blocks, 5, { kind: 'fragment' }),
+      addBlock(world, blocks, 6, { fixed: true }),
+      addBlock(world, blocks, 7, { x: 20 }),
+    ];
+    const damage = cube.damage, stage = cube.stage, ids = [...cube.ids];
+    Object.defineProperty(cube, 'damage', { get: () => damage, set: () => { throw new Error('direct damage is forbidden'); } });
+    const hole = powers.createBlackHole({ x: 0, y: 2, z: 0 }, 10, blocks);
+    assert.deepEqual(hole.targets.map(target => target.id), [1]);
+    near(hole.radius, RADIUS * 16, 'default eight-diameter radius');
+    near(hole.acceleration, 50, 'bounded peak acceleration');
+    near(hole.maxSpeed, 14, 'default speed cap');
+    near(hole.expires, 16, 'six-second life');
+    near(hole.intensity, 0, 'initial visual intensity');
+    cube.b.setLinvel({ x: 2, y: -1, z: .5 }, true);
+    powers.step(.1, 10, BOUNDS);
+    vectorNear(cube.b.linvel(), { x: 2, y: -1, z: .5 }, 'age-zero field applies no force or damping');
+    for (const [age, intensity] of [[.5, .15625], [1, .5], [2, 1]]) {
+      cube.b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      powers.step(.1, 10 + age, BOUNDS);
+      near(hole.age, age, 'public visual age');
+      near(hole.intensity, intensity, 'smoothstep force envelope');
+      near(speed(cube.b), 50 * intensity * .1, 'mass-independent capped impulse', 1e-4);
+      assert.ok(cube.b.linvel().x < 0 && cube.b.linvel().y > 0, 'field pulls and lifts toward its elevated center');
+    }
+    for (const body of excluded) {
+      near(speed(body.b), 0, 'excluded velocity');
+      near(body.cs[0].friction(), .65, 'excluded friction');
+    }
+    assert.equal(cube.damage, damage);
+    assert.equal(cube.stage, stage);
+    assert.deepEqual(cube.ids, ids);
+    assert.deepEqual(hits, [], 'field does not issue direct hit/damage callbacks');
+    powers.remap(p => { p.x += 10; p.z -= 4; });
+    vectorNear(hole.point, { x: 10, y: 2, z: -4 }, 'Black Hole center remaps with the arena');
+  }, { x: 0, y: 0, z: 0 });
+});
+
+test('Black Hole honors canonical speedCap, configured target count, and a bounded default of 64', () => {
+  withPhysics(({ powers, world }) => {
+    const blocks = new Map();
+    for (let id = 0; id < 70; id++) addBlock(world, blocks, id,
+      { x: (id % 10 - 4.5) * .5, z: (Math.floor(id / 10) - 3) * .5 });
+    const initial = powers.createBlackHole({ x: 0, y: 2, z: 0 }, 0, blocks);
+    assert.equal(initial.targets.length, 64, 'Black Hole is not restricted to the old small well cap');
+    const hole = powers.createBlackHole({ x: 0, y: 2, z: 0 }, 0, blocks,
+      { radiusD: 20, duration: 9, rampDuration: 0, acceleration: 100, speedCap: 4, maxSpeed: 99, maxTargets: 2 });
+    assert.equal(hole.targets.length, 2);
+    near(hole.radius, 15.2, 'configured radius');
+    near(hole.expires, 9, 'configured duration');
+    near(hole.maxSpeed, 4, 'speedCap takes precedence over legacy alias');
+    powers.step(.1, 0, BOUNDS);
+    for (const target of hole.targets) near(speed(target.body), 4, 'actual desired-speed cap');
+    assert.equal(powers.frictionLeases.size, 2, 'replacement releases all former targets outside its new selection');
+    powers.endBlackHole();
+    assert.equal(powers.frictionLeases.size, 0);
+    for (const cube of blocks.values()) near(cube.cs[0].friction(), .65, 'all original friction restored');
+  }, { x: 0, y: 0, z: 0 });
+});
+
+test('Black Hole visibly lifts a real cube off a high-friction floor, arrives safely, and releases at six seconds', () => {
+  withPhysics(({ powers, world }) => {
+    const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -.2, 0));
+    const floorCollider = world.createCollider(RAPIER.ColliderDesc.cuboid(20, .2, 20).setFriction(.9), floor);
+    const blocks = new Map(), cube = addBlock(world, blocks, 1, { x: 3, half: .3 });
+    for (let i = 0; i < 90; i++) world.step();
+    const center = { x: 0, y: 3, z: 0 }, start = { ...cube.b.translation() };
+    const hole = powers.createBlackHole(center, 0, blocks);
+    let maxHeight = start.y, maxSpeed = 0;
+    for (let i = 0; i < 540; i++) {
+      powers.step(DT, i * DT, BOUNDS);
+      world.step();
+      maxHeight = Math.max(maxHeight, cube.b.translation().y);
+      maxSpeed = Math.max(maxSpeed, speed(cube.b));
+      assert.ok(Number.isFinite(speed(cube.b)), 'attraction remains finite');
+    }
+    const p = cube.b.translation();
+    assert.ok(maxHeight > start.y + 2, 'visible lift overcomes gravity and floor friction');
+    assert.ok(Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z) < .5,
+      'arrival damping holds the cube near the elevated center');
+    assert.ok(maxSpeed < 14.3, 'bounded attraction does not create an explosive speed');
+    near(floorCollider.friction(), .9, 'global floor remains untouched');
+    powers.step(DT, 6, BOUNDS);
+    assert.equal(powers.blackHole, null);
+    assert.equal(hole.active, false);
+    assert.equal(hole.intensity, 0);
+    near(cube.cs[0].friction(), .65, 'expiry restores cube friction');
+    const releaseHeight = cube.b.translation().y;
+    for (let i = 0; i < 30; i++) { powers.step(DT, 6 + (i + 1) * DT, BOUNDS); world.step(); }
+    assert.ok(cube.b.translation().y < releaseHeight - .5, 'released cube falls under real gravity');
+  });
+});
+
+test('Escaping the Black Hole radius releases force and friction immediately and permits later recapture', () => {
+  withPhysics(({ powers, world }) => {
+    const blocks = new Map(), cube = addBlock(world, blocks, 1, { x: 1 });
+    const hole = powers.createBlackHole({ x: 0, y: .3, z: 0 }, 0, blocks, { radiusD: 2 });
+    assert.equal(hole.targets.length, 1);
+    cube.b.setTranslation({ x: hole.radius + .1, y: .3, z: 0 }, true);
+    cube.b.setLinvel({ x: 1, y: 2, z: 3 }, true);
+    powers.step(.1, 2, BOUNDS);
+    assert.equal(hole.targets.length, 0, 'range is checked each active step');
+    vectorNear(cube.b.linvel(), { x: 1, y: 2, z: 3 }, 'escaped cube receives no impulse');
+    near(cube.cs[0].friction(), .65, 'escaped cube friction restored');
+    assert.equal(powers.frictionLeases.size, 0);
+    cube.b.setTranslation({ x: 1, y: .3, z: 0 }, true);
+    powers.step(DT, 2.21, BOUNDS);
+    assert.equal(hole.targets.length, 1, 'bounded refresh can acquire a returning playable cluster');
+    near(cube.cs[0].friction(), 0, 'recaptured cube leases friction again');
+    cube.kind = 'fragment';
+    powers.step(DT, 2.22, BOUNDS);
+    assert.equal(hole.targets.length, 0, 'nonplayable debris drops out immediately');
+    near(cube.cs[0].friction(), .65, 'debris conversion restores friction');
+  }, { x: 0, y: 0, z: 0 });
+});
+
+test('Tornado and Black Hole share friction ownership and restore safely on replacement, clear, and transition', () => {
+  withPhysics(({ powers, world }) => {
+    const blocks = new Map(), cube = addBlock(world, blocks, 1, { x: 1 });
+    const point = { x: 0, y: .3, z: 0 };
+    for (const endFirst of ['well', 'blackHole']) {
+      powers.createWell(point, 0, blocks);
+      powers.createBlackHole(point, 0, blocks);
+      assert.equal(powers.frictionLeases.size, 1, 'one original friction record per collider');
+      assert.equal([...powers.frictionLeases.values()][0].owners.size, 2);
+      if (endFirst === 'well') powers.endWell(); else powers.endBlackHole();
+      near(cube.cs[0].friction(), 0, 'one remaining effect keeps friction disabled');
+      if (endFirst === 'well') powers.endBlackHole(); else powers.endWell();
+      near(cube.cs[0].friction(), .65, 'last owner restores the original coefficient');
+      assert.equal(cube.cs[0].frictionCombineRule(), RAPIER.CoefficientCombineRule.Multiply);
+      assert.equal(powers.frictionLeases.size, 0);
+    }
+    powers.createBlackHole(point, 0, blocks);
+    const replacement = powers.createBlackHole({ x: 100, y: 2, z: 0 }, 1, blocks);
+    assert.equal(replacement.targets.length, 0);
+    near(cube.cs[0].friction(), .65, 'replacement ends the old field lease');
+    powers.createWell(point, 0, blocks); powers.createBlackHole(point, 0, blocks);
+    powers.clear();
+    assert.equal(powers.blackHole, null); assert.equal(powers.well, null);
+    near(cube.cs[0].friction(), .65, 'reset restores concurrent leases');
+    powers.createWell(point, 0, blocks); powers.createBlackHole(point, 0, blocks);
+    powers.parkForTransition({ x: 0, y: .41, z: 4 });
+    assert.equal(powers.blackHole, null); assert.equal(powers.well, null);
+    assert.equal(powers.frictionLeases.size, 0);
+    near(cube.cs[0].friction(), .65, 'transition ends both effects');
+  });
+});
+
+test('Black Hole safely releases a destroyed body without corrupting a replacement collider', () => {
+  withPhysics(({ powers, world }) => {
+    const blocks = new Map(), old = addBlock(world, blocks, 1, { x: 1 });
+    const hole = powers.createBlackHole({ x: 0, y: .3, z: 0 }, 0, blocks);
+    world.removeRigidBody(old.b); blocks.delete(old.id);
+    const replacement = addBlock(world, blocks, 1, { x: 20 });
+    replacement.cs[0].setFriction(.91);
+    replacement.cs[0].setFrictionCombineRule(RAPIER.CoefficientCombineRule.Max);
+    powers.step(DT, 1, BOUNDS);
+    assert.equal(hole.targets.length, 0);
+    assert.equal(powers.frictionLeases.size, 0);
+    powers.endBlackHole();
+    near(replacement.cs[0].friction(), .91, 'replacement collider identity is protected');
+    assert.equal(replacement.cs[0].frictionCombineRule(), RAPIER.CoefficientCombineRule.Max);
+  });
+});
+
+test('Bomb impulse grace preserves a free echo kick but rejects held, parked, staged, and removed echoes', () => {
+  withPhysics(({ powers, world }) => {
+    const [echo, other] = split(powers); powers.removeEcho(other, false);
+    echo.b.setTranslation({ x: 0, y: 1, z: 5 }, true);
+    echo.b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    powers.step(DT, 0, BOUNDS);
+    assert.equal(echo.inLowerZone, true);
+    const kick = { x: 12, y: 0, z: 2 };
+    assert.equal(powers.blastEcho(echo, kick, .1, .6), true);
+    for (let i = 0; i < 50; i++) {
+      powers.step(DT, .1 + i * DT, BOUNDS); world.step();
+      assert.ok(Math.hypot(echo.b.linvel().x, echo.b.linvel().z) > 11.5, 'actual motion keeps the Bomb kick during grace');
+    }
+    near(echo.impulseGraceUntil, .7, 'bounded grace lifetime');
+    powers.step(DT, .71, BOUNDS);
+    near(Math.hypot(echo.b.linvel().x, echo.b.linvel().z), 2.8, 'normal catch control resumes after grace');
+    powers.holdEcho(echo);
+    assert.equal(powers.grantImpulseGrace(echo), false);
+    assert.equal(powers.blastEcho(echo, kick), false);
+    near(speed(echo.b), 0, 'held ball cannot be bomb launched');
+    powers.parkForTransition({ x: 0, y: .41, z: 4 });
+    assert.equal(powers.blastEcho(echo, kick), false);
+    powers.resumeAfterTransition(2);
+    assert.equal(powers.grantImpulseGrace(echo), false);
+    assert.equal(powers.blastEcho(echo, kick), false);
+    near(speed(echo.b), 0, 'staged ball remains still');
+    powers.launchStaged(kick);
+    assert.equal(powers.grantImpulseGrace(echo, .6, 2), true);
+    powers.removeEcho(echo, false);
+    assert.equal(powers.grantImpulseGrace(echo), false);
+  }, { x: 0, y: 0, z: 0 });
 });

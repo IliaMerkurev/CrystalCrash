@@ -1,4 +1,5 @@
 import * as DefaultTHREE from 'three';
+import { BONUS_DEFS } from './bonus-controller.js';
 
 /** Visuals only. XY is the icon plane, +Z its front; Y is up.
  * Factory owns shared GPU resources. Remove/reuse instances; releaseInstance()
@@ -6,9 +7,9 @@ import * as DefaultTHREE from 'three';
  * Call dispose() only after removing every instance. No frame loop is installed.
  */
 export function createBonusVisuals(THREE = DefaultTHREE) {
-  const kinds = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
+  const kinds = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
   const unitBounds = {};
-  const colors = {pulse: 0xffb44a, pierce: 0x44d9ff, arc: 0xb68cff, halo: 0xff777d, frost: 0xb8e9f5, split: 0xf27ed2, gravity: 0x7887ff, heavy: 0xe98745};
+  const colors = {pulse: 0xffb44a, pierce: 0x44d9ff, arc: 0xb68cff, halo: 0xff777d, frost: 0xb8e9f5, split: 0xf27ed2, gravity: 0x7887ff, heavy: 0xe98745, bomb: BONUS_DEFS.bomb?.color ?? 0xff9438, blackhole: BONUS_DEFS.blackhole?.color ?? 0x8878ff};
   const geometries = new Set(), materials = new Set();
   const ownGeometry = geometry => (geometries.add(geometry), geometry);
   const ownMaterial = material => (materials.add(material), material);
@@ -70,6 +71,14 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   }
   const snowflake = polygon(snowflakePoints);
   const gravityRing = torus(.39, .033), gravityInset = torus(.39, .013);
+  const bombBody = ownMaterial(new THREE.MeshStandardMaterial({color:0x101319,metalness:.72,roughness:.27}));
+  const bombFuse = ownMaterial(new THREE.MeshStandardMaterial({color:0xbda17b,roughness:.86,metalness:0}));
+  const bombCap = ownGeometry(new THREE.CylinderGeometry(.12,.15,.12,16));
+  const fuseCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0,.34,0),new THREE.Vector3(.015,.47,0),
+    new THREE.Vector3(.09,.55,0),new THREE.Vector3(.18,.53,0),
+  ]);
+  const fuseGeometry = ownGeometry(new THREE.TubeGeometry(fuseCurve,16,.022,6,false));
   const weightBody = ownGeometry(new THREE.CylinderGeometry(.26, .41, .62, 6, 1));
   const weightBase = ownGeometry(new THREE.CylinderGeometry(.42, .44, .10, 6, 1));
   const weightCap = ownGeometry(new THREE.CylinderGeometry(.285, .285, .085, 6, 1));
@@ -95,7 +104,26 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     kind = key(kind);
     const group = new THREE.Group(); group.name = `bonus-${kind}`;
     group.userData.bonusKind = kind;
-    if (kind === 'pulse') {
+    if (kind === 'blackhole') {
+      mesh(group,sphere,bombBody,0,0,0,.265);
+      for(let i=0;i<3;i++) {
+        const orbit=mesh(group,gravityRing,i===1?surfaces.bomb:surfaces.blackhole,0,0,0,1+i*.1);
+        orbit.rotation.set(.65+i*.3,.2,i*.32);
+      }
+      for(let i=0;i<6;i++) {
+        const a=i*Math.PI/3;
+        mesh(group,sphere,lights.blackhole,Math.cos(a)*.43,Math.sin(a)*.26,Math.sin(a)*.22,.025);
+      }
+    } else if (kind === 'bomb') {
+      mesh(group, sphere, bombBody, 0,-.09,0,.38);
+      mesh(group, bombCap, metal,0,.29,0);
+      mesh(group, fuseGeometry,bombFuse);
+      const ember = mesh(group,sphere,lights.bomb,.18,.53,0,.035);
+      const sparks = new THREE.InstancedMesh(dotGeometry,coreLights.bomb,7);
+      sparks.instanceMatrix.setUsage(THREE.DynamicDrawUsage); sparks.frustumCulled=false; group.add(sparks);
+      group.userData.bombAnimation = {ember,sparks,matrix:new THREE.Matrix4(),scale:new THREE.Vector3()};
+      animateCore(group,0);
+    } else if (kind === 'pulse') {
       mesh(group, ring, metal);
       mesh(group, ringInset, surfaces[kind], 0, 0, .055);
       mesh(group, ringInset, surfaces[kind], 0, 0, -.055);
@@ -136,15 +164,13 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
         mesh(group, sphere, surfaces[kind], x, y, -.105, .145);
       }
     } else if (kind === 'gravity') {
-      mesh(group, sphere, darkMetal, 0, 0, 0, .19);
-      mesh(group, sphere, surfaces[kind], -.035, .035, .14, .07);
-      for (let i = 0; i < 2; i++) {
-        const orbit = new THREE.Group(); orbit.rotation.set(i ? -.78 : .78, i ? -.38 : .38, i ? -.48 : .48);
-        mesh(orbit, gravityRing, metal);
-        mesh(orbit, gravityInset, surfaces[kind], 0, 0, .031);
-        group.add(orbit);
+      // A tapering, upright whirlwind retains Gravity's existing indigo palette.
+      for(let i=0;i<5;i++) {
+        const taper=.22+i*.19;
+        const orbit=mesh(group,gravityRing,i%2?metal:surfaces[kind],.035*Math.sin(i),-.34+i*.16,0,taper);
+        orbit.rotation.set(-Math.PI/2,.10*Math.sin(i),i*.55);
+        mesh(group,sphere,lights[kind],Math.cos(i*1.7)*.39*taper,-.34+i*.16,Math.sin(i*1.7)*.39*taper,.025);
       }
-      mesh(group, sphere, surfaces[kind], .35, .13, .09, .05);
     } else if (kind === 'heavy') {
       mesh(group, weightBody, surfaces[kind]);
       mesh(group, weightBase, metal, 0, -.305);
@@ -168,6 +194,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
       depth: size.z * normalization, groundHeight: size.y * normalization / 2,
     }));
     root.userData.bonusKind = kind;
+    if (group.userData.bombAnimation) root.userData.bombAnimation = group.userData.bombAnimation;
     root.userData.unitBounds = dimensions;
     root.userData.groundHeight = dimensions.groundHeight;
     return root;
@@ -226,6 +253,17 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
    * Supports sealed suns and released pickup auras.
    */
   function animateCore(group, time) {
+    const bomb = group.userData.bombAnimation;
+    if (bomb) {
+      bomb.ember.scale.setScalar(.032 + .009 * Math.sin(time * 29));
+      for (let i=0;i<7;i++) {
+        const t=(time * 2.7+i/7)%1, a=i*2.39996+Math.sin(i)*.5;
+        bomb.matrix.makeTranslation(.18+Math.cos(a)*t*.13,.53+t*.15-t*t*.035,Math.sin(a)*t*.11);
+        bomb.scale.setScalar((1-t)*(1.35+i%3*.35));
+        bomb.matrix.scale(bomb.scale); bomb.sparks.setMatrixAt(i,bomb.matrix);
+      }
+      bomb.sparks.instanceMatrix.needsUpdate=true;
+    }
     const data = group.userData.coreAnimation;
     if (!data) return;
     if (data.sun) data.sun.scale.setScalar(.44 * (1 + .055 * Math.sin(time * 2.2)));
@@ -302,7 +340,11 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
    * Does not touch shared materials or geometries; do not use on pooled cores.
    */
   function releaseInstance(root) {
-    root.traverse(object => {if (object.isInstancedMesh) object.dispose();});
+    root.traverse(object => {
+      if (object.isInstancedMesh) object.dispose();
+      if (object.userData.powerFXWarmupGeometry) object.geometry.dispose();
+      if (object.userData.powerFXWarmupMaterial) object.material.dispose();
+    });
   }
   let disposed = false;
   function dispose() {
@@ -312,5 +354,5 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
     materials.forEach(material => material.dispose());
     glowTexture.dispose();
   }
-  return {createModel, createCore, createPickupAura, animateCore, createBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
+  return {createModel, createPickup: createModel, createCore, createPickupAura, animateCore, createBallAccent, warmupObjects, releaseInstance, dispose, colors, unitBounds};
 }

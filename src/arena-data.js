@@ -153,7 +153,7 @@ function selected(level) {
 // density rises with the actual level, including when the fourteen names repeat.
 // This cap bounds expensive compound shells rather than only their visible cubes.
 const DENSITY = [30, 36, 41, 45, 48, 52, 56, 60, 64, 68, 74, 80, 86, 92];
-const BONUS_KINDS = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
+const BONUS_KINDS = ['pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
 let arenaRunSeed = 0x00c57a11;
 
 /** Set once when starting/restarting a run, never while previewing or resizing.

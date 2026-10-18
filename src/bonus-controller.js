@@ -5,7 +5,9 @@ export const BONUS_DEFS = Object.freeze({
   arc: Object.freeze({ kind: 'arc', name: 'Arc', color: 0xb68cff, colorCss: '#B68CFF', charges: 1, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1, description: 'One hit per bottom support, chaining within 4.4 ball diameters' }),
   frost: Object.freeze({ kind: 'frost', name: 'Frost', color: 0xb8e9f5, colorCss: '#B8E9F5', duration: 10, markDuration: 10, bonusDamage: 1, description: '10 seconds of marking cubes for a stronger next hit' }),
   split: Object.freeze({ kind: 'split', name: 'Split', color: 0xf27ed2, colorCss: '#F27ED2', charges: 1, echoCount: 2, sourceType: 'all-live-balls', persistent: true, angleDegrees: 18, damage: 1, description: 'Every live ball creates two more; collect again to multiply them' }),
-  gravity: Object.freeze({ kind: 'gravity', name: 'Gravity Well', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'A strong, wide pull on nearby cubes for 4 seconds' }),
+  gravity: Object.freeze({ kind: 'gravity', name: 'Tornado', color: 0x7887ff, colorCss: '#7887FF', charges: 1, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, description: 'Spins nearby cubes in a tornado for 4 seconds' }),
+  bomb: Object.freeze({ kind: 'bomb', name: 'Bomb', color: 0xff9438, colorCss: '#FF9438', automatic: true, countdown: 5, radiusD: 4.4, damage: 8, maxBallSpeed: 30, kickSpeed: 22, description: 'Automatically explodes after 5 seconds, blasting nearby cubes and kicking balls away' }),
+  blackhole: Object.freeze({ kind: 'blackhole', name: 'Black Hole', color: 0x8e49ff, colorCss: '#8E49FF', charges: 1, duration: 6, radiusD: 8, rampDuration: 2, acceleration: 50, speedCap: 14, maxTargets: 64, description: 'Pulls nearby cubes inward for 6 seconds, building strength over 2 seconds' }),
   heavy: Object.freeze({ kind: 'heavy', name: 'Heavy Hit', color: 0xe98745, colorCss: '#E98745', charges: 1, damage: 3, description: 'The next direct hit deals 3 damage' }),
   halo: Object.freeze({ kind: 'halo', name: 'Safety Halo', color: 0xff777d, colorCss: '#FF777D', charges: 1, description: 'One automatic rescue from a fall' }),
 });
@@ -54,6 +56,7 @@ export class BonusController {
   collect(kind) {
     const def = Object.prototype.hasOwnProperty.call(BONUS_DEFS, kind) ? BONUS_DEFS[kind] : null;
     if (!def) return { accepted: false, slot: null, message: 'Unknown power' };
+    if (def.automatic) return { accepted: false, slot: null, message: `${def.name} is automatic and does not use inventory` };
     if (kind === 'halo') {
       if (this.halo) return { accepted: false, slot: null, message: 'One save already ready' };
       this.halo = true;
@@ -187,6 +190,9 @@ export class BonusController {
         radiusD: def.radiusD, duration: def.duration, maxTargets: def.maxTargets,
         accelerationD: def.accelerationD, maxDeltaSpeedD: def.maxDeltaSpeedD,
         targetType: 'intact-cube' });
+      else if (a.kind === 'blackhole') result.effect = Object.freeze({ kind: 'blackhole', originId,
+        duration: def.duration, radiusD: def.radiusD, rampDuration: def.rampDuration,
+        acceleration: def.acceleration, speedCap: def.speedCap, maxTargets: def.maxTargets });
       else if (a.kind === 'heavy') result.effect = Object.freeze({ kind: 'heavy', originId,
         damage: result.damage });
       this._advance();

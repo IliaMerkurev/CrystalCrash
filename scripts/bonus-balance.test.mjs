@@ -185,17 +185,68 @@ test('Different balls use one contact snapshot, shared Pierce deduplication and 
   assert.equal(powers.frostMarks.has(43), false);
 });
 
-test('Arc and Gravity describe the strengthened effects', () => {
+test('Arc and Tornado describe the strengthened effects while gravity keeps its internal ID', () => {
   const powers = new BonusController();
   powers.collect('arc');
   assert.deepEqual(hit(powers, 10, 1).effect, {kind: 'arc', originId: 10, radiusD: 4.4, targetType: 'bottom-support-original', damage: 1});
   assert.equal(powers.active, null, 'Arc remains one discharge');
   assert.equal(BONUS_DEFS.arc.arenaWide, undefined);
   assert.match(BONUS_DEFS.arc.description, /chaining within 4\.4 ball diameters/);
-  powers.collect('gravity');
+  assert.equal(powers.collect('gravity').message, 'Tornado ready');
+  assert.equal(powers.snapshotHUD().active.name, 'Tornado');
+  assert.equal(powers.snapshotHUD().active.kind, 'gravity');
+  assert.match(powers.snapshotHUD().active.description, /Spins nearby cubes.*4 seconds/);
   assert.deepEqual(hit(powers, 11, 2).effect, {kind: 'gravity', originId: 11, radiusD: 6, duration: 4, maxTargets: 12, accelerationD: 35, maxDeltaSpeedD: 24, targetType: 'intact-cube'});
   assert.equal(BONUS_DEFS.split.duration, undefined);
   assert.equal(BONUS_DEFS.split.hitsPerEcho, undefined);
+});
+
+test('Bomb has bounded automatic floor-effect tuning and never occupies inventory', () => {
+  const def = BONUS_DEFS.bomb;
+  assert.equal(def.kind, 'bomb');
+  assert.equal(def.name, 'Bomb');
+  assert.equal(def.color, 0xff9438);
+  assert.equal(def.colorCss, '#FF9438');
+  assert.equal(def.automatic, true);
+  assert.equal(def.countdown, 5);
+  assert.equal(def.radiusD, 4.4);
+  assert.equal(def.damage, 8);
+  assert.equal(def.maxBallSpeed, 30);
+  assert.equal(def.kickSpeed, 22);
+  const powers = new BonusController();
+  const rejection = {accepted: false, slot: null, message: 'Bomb is automatic and does not use inventory'};
+  assert.deepEqual(powers.collect('bomb'), rejection);
+  assert.equal(powers.active, null);
+  assert.equal(powers.queued, null);
+  powers.collect('pulse');
+  powers.collect('heavy');
+  powers.collect('halo');
+  const before = powers.snapshotHUD();
+  assert.deepEqual(powers.collect('bomb'), rejection);
+  assert.deepEqual(powers.snapshotHUD(), before, 'automatic bombs cannot replace powers or spend Halo');
+});
+
+test('Black Hole triggers one force-only effect and immediately advances the shared FIFO', () => {
+  const powers = new BonusController();
+  assert.equal(powers.collect('blackhole').slot, 'active');
+  assert.equal(powers.snapshotHUD().active.name, 'Black Hole');
+  assert.equal(powers.snapshotHUD().active.remaining, 1);
+  assert.equal(powers.snapshotHUD().active.secondsLeft, null, 'the six-second world effect does not hold the inventory slot');
+  powers.collect('heavy');
+  const batch = powers.capture();
+  const result = powers.consumeDirect(batch, 15, 12);
+  assert.equal(result.damage, 1, 'the triggering ball retains its ordinary direct impact');
+  assert.deepEqual(result.effect, {kind: 'blackhole', originId: 15, duration: 6, radiusD: 8,
+    rampDuration: 2, acceleration: 50, speedCap: 14, maxTargets: 64});
+  assert.equal('damage' in result.effect, false, 'Black Hole itself does not directly damage targets');
+  assert.equal(result.consumed, true);
+  assert.equal(powers.active.kind, 'heavy');
+  const sameBatch = powers.consumeDirect(batch, 16, 12);
+  assert.equal(sameBatch.damage, 1);
+  assert.equal(sameBatch.effect, null);
+  assert.equal(powers.active.kind, 'heavy');
+  assert.equal(hit(powers, 17, 12.1).damage, 3);
+  assert.equal(powers.active, null);
 });
 
 test('Halo remains independent and reset clears all powers and stale contact tokens', () => {
@@ -335,8 +386,33 @@ test('Arc covers all 110 targets in distinct pooled chunks even when the pool is
 });
 
  test('Released pickups double model scale, rest above floor and collect at wider tolerance',()=>{
- for(const kind of Object.keys(BONUS_DEFS)){const {world,controller}=makeWorld();world.release({id:1,bonus:kind});const item=world.pickups[0];assert.equal(item.scale,.38*2*1.3);assert(item.height>=.1);item.landed=true;item.p.set(0,item.height,1);world.update(.4,new THREE.Vector3(1,item.height,1),new THREE.Vector3(1,0,0),true,new Map());assert.equal(world.pickups.length,0,kind+' collects one world unit away');assert(controller.active||controller.halo);}
+ for(const kind of Object.keys(BONUS_DEFS).filter(kind=>!BONUS_DEFS[kind].automatic)){const {world,controller}=makeWorld();world.release({id:1,bonus:kind});const item=world.pickups[0];assert.equal(item.scale,.38*2*1.3);assert(item.height>=.1);item.landed=true;item.p.set(0,item.height,1);world.update(.4,new THREE.Vector3(1,item.height,1),new THREE.Vector3(1,0,0),true,new Map());assert.equal(world.pickups.length,0,kind+' collects one world unit away');assert(controller.active||controller.halo);}
  });
 
 test('Simultaneous main and extra pickup contact awards the item exactly once',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'pulse'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const p=item.p.clone(),v=new THREE.Vector3(1,0,0);let count=0;const collect=controller.collect.bind(controller);controller.collect=kind=>{count++;return collect(kind);};world.update(.01,p,v,true,new Map(),[{id:12,p:p.clone(),v},{id:13,p:p.clone(),v}]);assert.equal(count,1);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'pulse');assert.equal(controller.queued,null);});
 test('Extra pickup sweeps keep independent histories and cannot bridge between balls',()=>{const {world,controller}=makeWorld();world.release({id:9,bonus:'heavy'});const item=world.pickups[0];item.landed=true;item.p.set(0,item.height,1);const v=new THREE.Vector3(1,0,0),main=new THREE.Vector3(0,.38,8);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-3,item.height,1),v},{id:13,p:new THREE.Vector3(3,item.height,1),v}]);world.update(.01,main,v,false,new Map(),[{id:12,p:new THREE.Vector3(-2.8,item.height,1),v},{id:13,p:new THREE.Vector3(2.8,item.height,1),v}]);assert.equal(world.pickups.length,1);world.update(.01,main,v,false,new Map(),[{id:12,p:item.p.clone(),v}]);assert.equal(world.pickups.length,0);assert.equal(controller.active.kind,'heavy');});
+
+test('Automatic Bomb starts five-second fuse only on landing, pauses and explodes exactly once',()=>{
+ const {world,controller}=makeWorld();let explosions=0;world.onBomb=()=>explosions++;
+ world.release({id:'bomb-check',bonus:'bomb',bonusPose:{p:new THREE.Vector3(0,2,-2),q:new THREE.Quaternion(),v:new THREE.Vector3()}});
+ const item=world.pickups[0],ball=new THREE.Vector3(0,.38,-2),velocity=new THREE.Vector3(0,0,10);
+ for(let i=0;i<300&&!item.landed;i++){world.update(.01,ball,velocity,true,new Map());assert.equal(item.fuseRemaining,5);}
+ assert(item.landed);assert(item.timerRing);assert.equal(controller.active,null);
+ for(let i=0;i<100;i++)world.update(.01,ball,velocity,true,new Map(),[],true);
+ assert.equal(item.fuseRemaining,5);assert.equal(explosions,0);
+ for(let i=0;i<499;i++)world.update(.01,ball,velocity,true,new Map());
+ assert.equal(explosions,0);assert(item.fuseRemaining<.011);
+ world.update(.011,ball,velocity,true,new Map());assert.equal(explosions,1);assert.equal(world.pickups.length,0);assert.equal(item.timerRing,null);
+ world.update(1,ball,velocity,true,new Map());assert.equal(explosions,1);
+});
+
+test('New automatic/model kinds have finite geometry and fixed-budget Bomb/Black Hole feedback',async()=>{
+ const {PowerFX}=await import('../src/power-fx.js');const {world}=makeWorld();
+ for(const kind of ['bomb','blackhole','gravity']){const model=world.visuals.createModel(kind);world.visuals.animateCore(model,2);model.traverse(o=>{if(o.geometry?.attributes.position)assert([...o.geometry.attributes.position.array].every(Number.isFinite));});world.visuals.releaseInstance(model);}
+ const fx=new PowerFX({THREE,scene:new THREE.Scene(),radius:.38});fx.trigger('bomb',new THREE.Vector3());fx.syncBlackHole({point:{x:0,y:2.8,z:-5},range:6.08,intensity:.5,age:1});fx.update(.1,new THREE.Vector3(),null);fx.syncBlackHole(null);fx.clear();assert(fx.warmupObjects().children.length>0);
+});
+
+test('Black Hole lens adds one bounded post draw and restores renderer state',async()=>{
+ const {BlackHoleLens}=await import('../src/blackhole-lens.js');let copies=0,draws=0;const renderer={autoClear:true,getDrawingBufferSize:s=>s.set(800,600),initTexture(){},compileAsync:async()=>{},copyFramebufferToTexture(){copies++;},render(){draws++;}};
+ const lens=new BlackHoleLens(renderer),camera=new THREE.PerspectiveCamera(42,4/3,.1,100);camera.position.set(0,8,12);camera.lookAt(0,1,0);camera.updateMatrixWorld();await lens.warm();lens.render(camera,null);assert.equal(draws,0);lens.render(camera,{point:{x:0,y:2.8,z:0},range:6.08,intensity:.5});assert.equal(copies,1);assert.equal(draws,1);assert.equal(renderer.autoClear,true);assert(lens.material.uniforms.radius.value>0);renderer.render=()=>{throw Error('draw failed');};assert.throws(()=>lens.render(camera,{point:{x:0,y:2.8,z:0},range:6.08,intensity:1}));assert.equal(renderer.autoClear,true);lens.dispose();
+});

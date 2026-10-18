@@ -120,7 +120,7 @@ export class AudioFX {
       try { this.context.resume().catch(() => {}); } catch (_) {}
       return;
     }
-    const known = ['launch', 'wall', 'hit', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy'];
+    const known = ['launch', 'wall', 'hit', 'crack', 'chip', 'break', 'fall', 'catch', 'miss', 'clear', 'click', 'aim', 'release', 'land', 'pickup', 'pulse', 'pierce', 'arc', 'halo', 'frost', 'split', 'gravity', 'heavy', 'bomb', 'blackhole'];
     if (!known.includes(name)) return;
     try {
       const now = this.context.currentTime;
@@ -129,7 +129,7 @@ export class AudioFX {
       this.lastPlayed.set(name, now);
       const v = this._voice(now), t = now + 0.002;
       const power = Number.isFinite(strength) ? Math.max(0, Math.min(1.5, strength)) : 1;
-      const level = Math.sqrt(power) * (['pulse','pierce','arc','halo','frost','split','gravity','heavy'].includes(name)?1.22:1);
+      const level = Math.sqrt(power) * (['pulse','pierce','arc','halo','frost','split','gravity','heavy','bomb','blackhole'].includes(name)?1.22:1);
       const names = ['blue', 'emerald', 'amber', 'violet', 'ruby'];
       const index = typeof type === 'string' ? Math.max(0, names.indexOf(type.toLowerCase())) : Math.abs(Math.trunc(Number(type) || 0)) % 5;
       const pitch = [980, 1175, 740, 1397, 880][index] * (0.985 + Math.random() * 0.03);
@@ -145,6 +145,16 @@ export class AudioFX {
         case 'frost': [1400,2100,2800].forEach((hz,i)=>tone(hz,.2,.035,'sine',hz*.7,i*.025));noise(.18,.035,4000,'highpass');break;
         case 'split': [-1,0,1].forEach((i)=>tone(480+i*130,.22,.045,'triangle',960+i*180,(i+1)*.025));break;
         case 'gravity': tone(190,.65,.08,'sine',65);tone(380,.4,.025,'triangle',90);noise(.4,.02,350,'lowpass');break;
+        case 'blackhole':
+          tone(210,1.15,.10,'sine',38); tone(420,.9,.025,'triangle',75,.06);
+          noise(.65,.055,260,'lowpass'); tone(52,1.3,.06,'sine',29,.18);
+          break;
+        case 'bomb':
+          // A sharp crack, chesty falling fundamental, then a short rolling tail.
+          tone(145,.65,.22,'sine',28); tone(76,.48,.13,'triangle',24,.035);
+          noise(.12,.15,1800,'bandpass'); noise(.62,.19,480,'lowpass',.018);
+          noise(.24,.055,3200,'highpass',.09); tone(42,.55,.075,'sine',23,.12);
+          break;
         case 'heavy': tone(130,.28,.13,'sine',32);noise(.14,.09,700,'lowpass');break;
         case 'halo': [392,587,784,1175].forEach((hz,i)=>tone(hz,.32,.065,'sine',hz,i*.045)); noise(.16,.025,1200,'bandpass'); break;
         case 'launch':

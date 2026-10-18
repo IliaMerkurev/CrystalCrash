@@ -3,7 +3,7 @@
 export class SecondaryPowers {
  constructor({THREE,RAPIER,scene,world,colliders,radius,tableGroup=1,structureGroup=4,onEchoHit,onFinishSplit}) {
   Object.assign(this,{THREE,RAPIER,scene,world,colliders,radius,onEchoHit,onFinishSplit});
-  this.echoRadius=radius*.65;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.marks=new Map();this.markPool=[];this.transitionParked=false;
+  this.echoRadius=radius*.65;this.echoes=[];this.liveEchoes=new Set();this.echoSerial=0;this.splitActivations=new Set();this.echoCapacity=0;this.echoInstances=null;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.catchDuration=1;this.well=null;this.blackHole=null;this.frictionLeases=new Map();this.marks=new Map();this.markPool=[];this.transitionParked=false;
   const membership=g=>g>0xffff?(g>>>16):g;
   this.echoGroups=(16<<16)|(membership(tableGroup)|membership(structureGroup)|2|16);
   this.echoGeometry=new THREE.SphereGeometry(this.echoRadius,20,14);
@@ -13,13 +13,13 @@ export class SecondaryPowers {
   this.wellMaterial=new THREE.MeshBasicMaterial({color:0x7887FF,transparent:true,opacity:.7,depthWrite:false});
   this.iceMaterial=new THREE.MeshBasicMaterial({color:0xB8E9F5,transparent:true,opacity:.8,depthWrite:false});
   this.frostGeometry=new THREE.BoxGeometry(1,1,1);this.frostMaterial=new THREE.MeshBasicMaterial({color:0xb8e9f5,transparent:true,opacity:.16,depthWrite:false});
-  // Five shared, low-poly arcs show the full attraction area and an inward vortex.
+  // Five shared, low-poly arcs form a tall, widening Tornado funnel.
   this.wellGeometry=new THREE.TorusGeometry(1,.018,4,48,Math.PI*1.65);
   this.wellMesh=new THREE.Group();this.wellRings=[];
   for(let i=0;i<5;i++){
    const ring=new THREE.Mesh(this.wellGeometry,this.wellMaterial);
-   ring.rotation.x=-Math.PI/2;ring.rotation.z=i*1.35;ring.position.y=i*.018;
-   ring.userData.radius=.2+i*.2;ring.scale.setScalar(ring.userData.radius);
+   ring.rotation.x=-Math.PI/2;ring.rotation.z=i*1.35;ring.position.y=i*.625;
+   ring.userData.radius=.15+i*.1125;ring.scale.setScalar(ring.userData.radius);
    this.wellRings.push(ring);this.wellMesh.add(ring);
   }
   this.wellMesh.visible=false;scene.add(this.wellMesh);
@@ -93,7 +93,7 @@ export class SecondaryPowers {
     const mass=b.mass();b.applyImpulse({x:velocity.x*mass,y:velocity.y*mass,z:velocity.z*mass},true);
     // Keep the per-ball transform API without allocating a draw call per ball.
     const mesh=new THREE.Object3D();mesh.position.copy(p);
-    const echo={id:++this.echoSerial,index:this.echoes.length,b,c,mesh,hitCount:0,born:now,activationId,removed:false,valid:true,isHeld:false,heldPoint:null,transitionParked:false,staged:false,inLowerZone:false,catchUntil:null,returning:false,launching:false,launchGraceUntil:null};
+    const echo={id:++this.echoSerial,index:this.echoes.length,b,c,mesh,hitCount:0,born:now,activationId,removed:false,valid:true,isHeld:false,heldPoint:null,transitionParked:false,staged:false,inLowerZone:false,catchUntil:null,returning:false,launching:false,launchGraceUntil:null,impulseGraceUntil:null};
     this.echoes.push(echo);this.liveEchoes.add(echo);this.colliders.set(c.handle,{kind:'echo',echo});
    }
   }
@@ -110,7 +110,7 @@ export class SecondaryPowers {
  holdEcho(echo) {
   if(!this.isValid(echo)||echo.transitionParked||echo.staged)return false;
   if(echo.isHeld)return true;
-  echo.heldPoint={...echo.b.translation()};echo.isHeld=true;echo.catchUntil=null;echo.returning=false;echo.launching=false;
+  echo.heldPoint={...echo.b.translation()};echo.isHeld=true;echo.catchUntil=null;echo.returning=false;echo.launching=false;echo.impulseGraceUntil=null;
   echo.b.resetForces(true);echo.b.resetTorques(true);
   echo.b.setLinvel({x:0,y:0,z:0},true);echo.b.setAngvel({x:0,y:0,z:0},true);
   echo.b.setBodyType(this.RAPIER.RigidBodyType.KinematicPositionBased,true);
@@ -119,14 +119,24 @@ export class SecondaryPowers {
  }
  releaseEcho(echo,velocity={x:0,y:0,z:0}) {
   if(!this.isValid(echo)||echo.transitionParked||echo.staged)return false;
-  echo.isHeld=false;echo.heldPoint=null;echo.inLowerZone=true;echo.catchUntil=this.time+this.catchDuration;echo.returning=false;echo.launching=true;echo.launchGraceUntil=echo.catchUntil;
+  echo.isHeld=false;echo.heldPoint=null;echo.inLowerZone=true;echo.catchUntil=this.time+this.catchDuration;echo.returning=false;echo.launching=true;echo.launchGraceUntil=echo.catchUntil;echo.impulseGraceUntil=null;
   echo.b.setBodyType(this.RAPIER.RigidBodyType.Dynamic,true);
   echo.b.resetForces(true);echo.b.resetTorques(true);echo.b.setAngvel({x:0,y:0,z:0},true);
   echo.b.setLinvel({x:velocity.x||0,y:velocity.y||0,z:velocity.z||0},true);
   return true;
  }
+ grantImpulseGrace(echo,seconds=.6,now=this.time) {
+  if(!this.isValid(echo)||echo.isHeld||echo.staged||echo.transitionParked||!echo.b.isDynamic())return false;
+  echo.impulseGraceUntil=Math.max(echo.impulseGraceUntil??-Infinity,now+Math.max(0,seconds));
+  return true;
+ }
+ blastEcho(echo,velocity,now=this.time,seconds=.6) {
+  if(!this.grantImpulseGrace(echo,seconds,now))return false;
+  echo.b.setLinvel({x:velocity.x||0,y:velocity.y||0,z:velocity.z||0},true);
+  return true;
+ }
  parkForTransition(mainPoint,bounds=null) {
-  this.endWell();this.transitionParked=true;this.stagedAnchor=null;
+  this.endWell();this.endBlackHole();this.transitionParked=true;this.stagedAnchor=null;
   for(const echo of this.echoes){
    echo.staged=false;this.holdEcho(echo);echo.transitionParked=true;echo.isHeld=true;
    echo.c.setCollisionGroups(0);echo.c.setSolverGroups(0);
@@ -214,22 +224,90 @@ export class SecondaryPowers {
   return o?.kind==='block'&&o.origin?.clusters?.size===1&&o.ids?.length===o.origin?.graph?.cells?.length&&!(o.damage>0)&&!(o.stage>0);
  }
  playable(o) {return o?.kind==='block'&&o.b?.isValid()&&o.b.isDynamic()&&o.cs?.length>0;}
+ acquireFriction(cs,owner) {
+  const leases=[];
+  for(const c of cs){
+   if(!c.isValid())continue;
+   let lease=this.frictionLeases.get(c);
+   if(!lease){lease={collider:c,handle:c.handle,friction:c.friction(),rule:c.frictionCombineRule(),owners:new Set()};this.frictionLeases.set(c,lease);}
+   lease.owners.add(owner);leases.push(lease);c.setFriction(0);c.setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Min);
+  }
+  return leases;
+ }
+ releaseFriction(leases,owner) {
+  for(const lease of leases||[]){
+   lease.owners.delete(owner);if(lease.owners.size)continue;
+   const c=this.world.getCollider(lease.handle);
+   if(c&&c===lease.collider&&c.isValid()){c.setFriction(lease.friction);c.setFrictionCombineRule(lease.rule);}
+   this.frictionLeases.delete(lease.collider);
+  }
+ }
+ createBlackHole(point,now,blocks,config={}) {
+  this.endBlackHole();
+  const value=(key,fallback)=>Number.isFinite(config[key])?Math.max(0,config[key]):fallback;
+  const diameter=this.radius*2,duration=value('duration',6),radius=value('radiusD',8)*diameter;
+  const hole={point:{x:point.x,y:point.y,z:point.z},radius,range:radius,born:now,expires:now+duration,duration,
+   age:0,intensity:0,active:true,rampDuration:value('rampDuration',2),acceleration:value('acceleration',50),maxSpeed:value('speedCap',value('maxSpeed',14)),
+   settleRadius:value('settleRadiusD',.25)*diameter,maxTargets:Math.floor(value('maxTargets',64)),targets:[],blocks,nextCapture:now};
+  this.blackHole=hole;this.captureBlackHoleTargets(hole);return hole;
+ }
+ captureBlackHoleTargets(hole) {
+  const bodies=new Set(hole.targets.map(target=>target.body)),available=Math.max(0,hole.maxTargets-hole.targets.length);
+  if(!available)return;
+  const candidates=[...hole.blocks.values()].filter(o=>this.playable(o)&&!bodies.has(o.b)).map(o=>{
+   const p=o.b.worldCom();return {o,distance:Math.hypot(p.x-hole.point.x,p.y-hole.point.y,p.z-hole.point.z)};
+  }).filter(target=>target.distance<=hole.radius).sort((a,b)=>a.distance-b.distance).slice(0,available);
+  for(const {o}of candidates){
+   const target={id:o.id,handle:o.b.handle,body:o.b};target.friction=this.acquireFriction(o.cs,target);hole.targets.push(target);
+  }
+ }
+ stepBlackHole(dt,now) {
+  const hole=this.blackHole;if(!hole)return;
+  dt=Math.max(0,Math.min(dt,.1));hole.age=Math.max(0,now-hole.born);
+  if(now>=hole.expires){this.endBlackHole();return;}
+  const ramp=hole.rampDuration>0?Math.max(0,Math.min(1,hole.age/hole.rampDuration)):1;
+  hole.intensity=ramp*ramp*(3-2*ramp);
+  hole.targets=hole.targets.filter(target=>{
+   const o=hole.blocks.get(target.id);let valid=this.playable(o)&&o.b===target.body&&o.b.handle===target.handle;
+   if(valid){const p=o.b.worldCom();valid=Math.hypot(p.x-hole.point.x,p.y-hole.point.y,p.z-hole.point.z)<=hole.radius;}
+   if(!valid)this.releaseFriction(target.friction,target);return valid;
+  });
+  // Refill destroyed/replaced clusters at a bounded cadence; a fractured cube's
+  // surviving playable structure can remain in the field without touching debris.
+  if(now>=hole.nextCapture){this.captureBlackHoleTargets(hole);hole.nextCapture=now+.2;}
+  if(hole.intensity<=0||dt===0)return;
+  const acceleration=hole.acceleration*hole.intensity;
+  for(const target of hole.targets){
+   const o=hole.blocks.get(target.id),p=o.b.worldCom(),dx=hole.point.x-p.x,dy=hole.point.y-p.y,dz=hole.point.z-p.z,distance=Math.hypot(dx,dy,dz);
+   const desiredSpeed=Math.min(hole.maxSpeed*hole.intensity,Math.sqrt(2*acceleration*Math.max(0,distance-hole.settleRadius)));
+   const toward=distance>1e-6?desiredSpeed/distance:0,v=o.b.linvel();
+   const ax=dx*toward-v.x,ay=dy*toward-v.y,az=dz*toward-v.z,change=Math.hypot(ax,ay,az);
+   if(change<1e-8)continue;
+   const dv=Math.min(change,acceleration*dt),scale=dv*o.b.mass()/change;
+   o.b.applyImpulse({x:ax*scale,y:ay*scale,z:az*scale},true);
+  }
+ }
+ endBlackHole() {
+  if(!this.blackHole)return;
+  for(const target of this.blackHole.targets)this.releaseFriction(target.friction,target);
+  this.blackHole.active=false;this.blackHole.intensity=0;this.blackHole=null;
+ }
  createWell(point,now,blocks,config={}) {
   this.endWell();
   const value=(key,fallback)=>Number.isFinite(config[key])?Math.max(0,config[key]):fallback;
   const diameter=this.radius*2,range=value('radiusD',6)*diameter,duration=value('duration',4),budget=value('maxDeltaSpeedD',24)*diameter;
   const targets=[...blocks.values()].filter(o=>this.playable(o)).map(o=>{
    const p=o.b.worldCom();return {o,d:Math.hypot(p.x-point.x,p.y-point.y,p.z-point.z)};
-  }).filter(t=>t.d<=range).sort((a,b)=>a.d-b.d).slice(0,Math.floor(value('maxTargets',12))).map(({o})=>({id:o.id,handle:o.b.handle,body:o.b,remaining:budget,approachSpeed:budget*.4}));
-  for(const target of targets){
-   const o=blocks.get(target.id);
-   // Min + zero removes floor-contact friction only for attracted structures.
-   // Keep actual collider identities so removed/reused handles are never restored.
-   target.friction=o.cs.map(c=>({collider:c,handle:c.handle,friction:c.friction(),rule:c.frictionCombineRule()}));
-   for(const c of o.cs){c.setFriction(0);c.setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Min);}
-  }
-  this.well={point:{x:point.x,y:point.y,z:point.z},born:now,expires:now+duration,duration,targets,blocks,acceleration:value('accelerationD',35)*diameter,settleRadius:diameter*.14,range};
-  this.wellMesh.position.set(point.x,.035,point.z);this.wellMesh.scale.setScalar(range);this.wellMaterial.opacity=.7;this.wellMesh.visible=duration>0&&range>0;
+  }).filter(t=>t.d<=range).sort((a,b)=>a.d-b.d).slice(0,Math.floor(value('maxTargets',12))).map(({o})=>{
+   const p=o.b.worldCom(),orbitRadius=Math.max(diameter*.45,Math.hypot(p.x-point.x,p.z-point.z));
+   // Leave enough of the finite impulse budget for four seconds of centripetal
+   // steering. Every cube keeps its own starting radius instead of seeking center.
+   const orbitSpeed=Math.min(budget*.4,diameter*4,Math.sqrt(orbitRadius*budget/(Math.max(.1,duration)*1.5)));
+   return {id:o.id,handle:o.b.handle,body:o.b,remaining:budget,orbitRadius,orbitSpeed};
+  });
+  for(const target of targets){const o=blocks.get(target.id);target.friction=this.acquireFriction(o.cs,target);}
+  this.well={point:{x:point.x,y:point.y,z:point.z},born:now,expires:now+duration,duration,targets,blocks,acceleration:value('accelerationD',35)*diameter,range};
+  this.wellMesh.position.set(point.x,.035,point.z);this.wellMesh.scale.set(range,1,range);this.wellMaterial.opacity=.7;this.wellMesh.visible=duration>0&&range>0;
   return this.well;
  }
  step(dt,now,bounds={}) {
@@ -246,6 +324,7 @@ export class SecondaryPowers {
    const bottom=bounds.bottom??bounds.BOTTOM??bounds.lossZ??Infinity,top=bounds.top??bounds.TOP??-Infinity;
    if(p.y<(bounds.fallY??-2)||p.z>bottom+this.echoRadius||p.z<top-2||Math.abs(p.x)>half+this.echoRadius*3){this.removeEcho(echo);continue;}
    echo.b.resetForces(true);
+   if(now<(echo.impulseGraceUntil??-Infinity))continue;
    const line=bounds.lowerZoneZ??bottom-3.2,hysteresis=Math.max(0,bounds.lowerZoneHysteresis??Math.max(.3,this.echoRadius*1.5));
    if(echo.inLowerZone&&p.z<line-hysteresis){echo.inLowerZone=false;echo.catchUntil=null;echo.returning=false;echo.launching=false;}
    if(!echo.inLowerZone&&p.z>=line){
@@ -271,16 +350,17 @@ export class SecondaryPowers {
    }
    // These are downward anti-stall/return impulses, never pointer attraction.
   }
+  this.stepBlackHole(dt,now);
   const well=this.well;if(!well)return;
   if(now>=well.expires){this.endWell();return;}
   for(const target of well.targets){
    const o=well.blocks.get(target.id);if(!this.playable(o)||o.b!==target.body||o.b.handle!==target.handle||target.remaining<=0)continue;
-   const p=o.b.worldCom(),dx=well.point.x-p.x,dy=well.point.y-p.y,dz=well.point.z-p.z,distance=Math.hypot(dx,dy,dz);
-   // Arrive at the well rather than spending the whole impulse budget speeding
-   // through it. Reserve braking headroom and reduce desired speed near center.
-   const speed=Math.min(target.approachSpeed,Math.sqrt(2*well.acceleration*Math.max(0,distance-well.settleRadius)));
-   const toward=distance>1e-6?speed/distance:0,v=o.b.linvel();
-   const ax=dx*toward-v.x,ay=dy*toward-v.y,az=dz*toward-v.z,change=Math.hypot(ax,ay,az);
+   const p=o.b.worldCom(),dx=p.x-well.point.x,dz=p.z-well.point.z,distance=Math.hypot(dx,dz);
+   const rx=distance>1e-6?dx/distance:1,rz=distance>1e-6?dz/distance:0;
+   const radial=Math.max(-target.orbitSpeed*.35,Math.min(target.orbitSpeed*.35,(target.orbitRadius-distance)*1.5)),v=o.b.linvel();
+   // Tangential velocity plus a weak correction toward the ORIGINAL orbit radius.
+   // Vertical motion is untouched; only Black Hole owns central pull and lift.
+   const ax=-rz*target.orbitSpeed+rx*radial-v.x,ay=0,az=rx*target.orbitSpeed+rz*radial-v.z,change=Math.hypot(ax,az);
    if(change<1e-6)continue;
    const dv=Math.min(target.remaining,well.acceleration*dt,change),scale=dv*o.b.mass()/change;
    o.b.applyImpulse({x:ax*scale,y:ay*scale,z:az*scale},true);target.remaining-=dv;
@@ -311,6 +391,7 @@ export class SecondaryPowers {
   }
   if(this.stagedAnchor){const p=new this.THREE.Vector3().copy(this.stagedAnchor);fn(p);this.stagedAnchor={x:p.x,y:p.y,z:p.z};}
   if(this.transitionAnchor){const p=new this.THREE.Vector3().copy(this.transitionAnchor);fn(p);this.transitionAnchor={x:p.x,y:p.y,z:p.z};}
+  if(this.blackHole){const p=new this.THREE.Vector3().copy(this.blackHole.point);fn(p);Object.assign(this.blackHole.point,p);}
   if(this.well){const p=new this.THREE.Vector3().copy(this.well.point);fn(p);Object.assign(this.well.point,p);this.wellMesh.position.set(p.x,.035,p.z);}
  }
  render() {
@@ -324,14 +405,11 @@ export class SecondaryPowers {
   const group=new this.THREE.Group();group.add(new this.THREE.InstancedMesh(this.echoGeometry,this.echoMaterial,1),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.ringGeometry,this.iceMaterial),new this.THREE.Mesh(this.frostGeometry,this.frostMaterial));return group;
  }
  endWell(){
-  if(this.well)for(const target of this.well.targets)for(const saved of target.friction||[]){
-   const c=this.world.getCollider(saved.handle);
-   if(c&&c===saved.collider&&c.isValid()){c.setFriction(saved.friction);c.setFrictionCombineRule(saved.rule);}
-  }
+  if(this.well)for(const target of this.well.targets)this.releaseFriction(target.friction,target);
   this.well=null;this.wellMesh.visible=false;
  }
  clear() {
-  for(const echo of [...this.echoes])this.removeEcho(echo,false);this.transitionParked=false;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.splitActivations.clear();this.endWell();
+  for(const echo of [...this.echoes])this.removeEcho(echo,false);this.transitionParked=false;this.transitionAnchor=null;this.stagedAnchor=null;this.time=0;this.splitActivations.clear();this.endWell();this.endBlackHole();
   for(const mesh of this.marks.values()){mesh.visible=false;this.markPool.push(mesh);}this.marks.clear();
  }
  dispose() {this.clear();this.echoInstances.removeFromParent();this.echoInstances.dispose();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.wellGeometry.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();this.frostGeometry.dispose();this.frostMaterial.dispose();}

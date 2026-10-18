@@ -43,7 +43,7 @@ const {shellGeometry,wallThickness}=await import('../src/glass-shell.js');
 context.C.cube=.88;context.layoutZ=z=>z;context.qaPower='split';vm.runInContext(source.split('\n').find(line=>line.startsWith('function sectionBlocks(')),context);
 for(const kind of Object.keys(BONUS_DEFS)){context.qaPower=kind;const specs=context.sectionBlocks(1);assert.equal(specs.length,6);for(const spec of specs){assert(spec.slice(4,7).every(Number.isFinite));const g=shellGeometry(...spec.slice(4,7),wallThickness(spec[3]));assert([...g.attributes.position.array].every(Number.isFinite));g.dispose();}}
 assert.throws(()=>shellGeometry(undefined,.88,.88,.025),RangeError);
-console.log('PASS all eight diagnostic scenes build valid actual glass preview geometry');
+console.log('PASS all bonus diagnostic scenes build valid actual glass preview geometry');
 const {setArenaRunSeed,arenaDefinition,arenaBlocks}=await import('../src/arena-data.js');
 for(const seed of [1,123,987654]){setArenaRunSeed(seed);for(const level of [1,2,3,4,5,14,15,40]){const a=arenaDefinition(level),again=arenaDefinition(level);assert.deepEqual(a,again);const count=a.bonuses.length;assert.equal(new Set(a.bonuses).size,count);if(level===1)assert.equal(count,1);else if(level<=3)assert.equal(count,2);else assert(count>=2&&count<=5);const specs=arenaBlocks(level);assert.equal(specs.filter(s=>s[7]).length,count);}}
 console.log('PASS stable per-run arena bonus counts, unique types and matching container metadata');
@@ -55,3 +55,11 @@ context.pointerUp({pointerId:99});assert.equal(groupLaunches.length,1);assert(gr
 context.state='AIMING';context.drag={id:100,mode:'aim',dx:0,dz:0};context.pointerUp({pointerId:100});assert.equal(groupLaunches.length,1);assert.equal(context.state,'HELD');
 assert(source.includes('ball:0x00020017'));assert(source.includes('!e.transitionParked&&!e.staged).map(e=>({body:e.b,echo:e}))'));
 console.log('PASS main launch releases staged group exactly once; cancelled aim leaves it staged; main collision masks include extras');
+// Automatic blast snapshots originals once and scatters only free physical balls.
+hits.length=0;blocks.clear();block(20,1,.44,0,4);const duplicate=block(21,1.2,.44,0,4);duplicate.origin=blocks.get(20).origin;block(22,0,.44,-20,4);
+const kicked=[];const makeBall=(id,p)=>({translation:()=>p,linvel:()=>({x:0,y:0,z:0}),setLinvel:v=>kicked.push({id,...v})});
+const freeEcho={b:makeBall('extra',{x:1,y:.3,z:0})},heldEcho={isHeld:true,b:makeBall('held',{x:1,y:.3,z:0})};let grace=0;
+Object.assign(context,{state:'BALL_ACTIVE',ball:makeBall('main',{x:0,y:0,z:0}),secondary:{echoes:[freeEcho,heldEcho],isValid:()=>true,grantImpulseGrace(){grace++;}},powerFX:{trigger(){}},bonusWorld:{pulse(){},feedback(){}},audio:{play(){}}});
+vm.runInContext(code('explodeBomb'),context);context.explodeBomb(new THREE.Vector3());assert.deepEqual(hits,[{id:20,damage:8}]);assert.equal(kicked.length,2);assert(kicked.every(k=>Number.isFinite(k.x+k.y+k.z)&&Math.hypot(k.x,k.y,k.z)<=30.001));assert.equal(grace,1);
+let holeCall;Object.assign(context,{MID:0,TOP:-20,secondary:{createBlackHole(...args){holeCall=args;}},bonusWorld:{dismiss(){},feedback(){}},powerFX:{trigger(){}}});context.applyPower({kind:'blackhole',duration:6,radiusD:8},new THREE.Vector3(3,1,-3));assert.equal(holeCall[0].x,0);assert.equal(holeCall[0].y,2.8);assert.equal(holeCall[0].z,-10);assert.equal(holeCall[2],blocks);
+console.log('PASS Bomb original deduplication, finite capped free-ball kick/held exclusion, and centered airborne Black Hole activation');
