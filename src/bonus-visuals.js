@@ -14,7 +14,7 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   const ownMaterial = material => (materials.add(material), material);
   const metal = ownMaterial(new THREE.MeshStandardMaterial({color: 0xa6b3c5, metalness: .96, roughness: .18}));
   const darkMetal = ownMaterial(new THREE.MeshStandardMaterial({color: 0x202938, metalness: .9, roughness: .24}));
-  const surfaces = {}, lights = {}, glows = {};
+  const surfaces = {}, lights = {}, glows = {}, coreLights = {}, coreGlows = {};
   const glowSize = 32, pixels = new Uint8Array(glowSize * glowSize * 4);
   for (let y = 0; y < glowSize; y++) for (let x = 0; x < glowSize; x++) {
     const r = Math.hypot((x + .5) / glowSize * 2 - 1, (y + .5) / glowSize * 2 - 1);
@@ -28,6 +28,8 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   for (const kind of kinds) {
     surfaces[kind] = ownMaterial(new THREE.MeshStandardMaterial({color: colors[kind], emissive: colors[kind], emissiveIntensity: .48, metalness: .42, roughness: .23}));
     lights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color: colors[kind], toneMapped: false}));
+    coreLights[kind] = ownMaterial(new THREE.MeshBasicMaterial({color:new THREE.Color(colors[kind]).multiplyScalar(2.2),transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+    coreGlows[kind] = ownMaterial(new THREE.SpriteMaterial({map:glowTexture,color:new THREE.Color(colors[kind]).multiplyScalar(1.6),transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
     glows[kind] = ownMaterial(new THREE.SpriteMaterial({map: glowTexture, color: colors[kind], transparent: true, opacity: .28, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false}));
   }
   const sphere = ownGeometry(new THREE.SphereGeometry(1, 16, 10));
@@ -166,16 +168,17 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   function createCore(kind) {
     kind = key(kind);
     const group = new THREE.Group(); group.name = `core-${kind}`;
-    const sun = mesh(group, sphere, surfaces[kind], 0, 0, -.025, .032);
-    const pin = mesh(group, sphere, lights[kind], 0, 0, .006, .012);
+    const sun = mesh(group, sphere, coreLights[kind], 0, 0, -.025, .052);
+    const pin = mesh(group, sphere, coreLights[kind], 0, 0, .006, .025);
     const silhouette = createModel(kind); silhouette.scale.multiplyScalar(.145); silhouette.position.z = .015; group.add(silhouette);
-    const orbit = mesh(group, thinRing, lights[kind]); orbit.rotation.set(.8, .25, .2);
-    const dots = new THREE.InstancedMesh(dotGeometry, lights[kind], 6);
+    const orbit = mesh(group, thinRing, coreLights[kind]); orbit.rotation.set(.8, .25, .2);
+    const dots = new THREE.InstancedMesh(dotGeometry, coreLights[kind], 12);
     dots.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     dots.frustumCulled = false; group.add(dots);
-    const glow = new THREE.Sprite(glows[kind]); glow.scale.set(.28, .28, 1); group.add(glow);
+    const glow = new THREE.Sprite(coreGlows[kind]); glow.scale.set(.46, .46, 1); group.add(glow);
+    for(const o of [sun,pin,orbit,dots,glow])o.renderOrder=6;
     group.userData.bonusKind = kind;
-    group.userData.coreAnimation = {sun, pin, orbit, dots, silhouette, matrix: new THREE.Matrix4()};
+    group.userData.coreAnimation = {sun, pin, orbit, dots, silhouette, matrix: new THREE.Matrix4(), particleScale: new THREE.Vector3(2.8,2.8,2.8)};
     animateCore(group, 0);
     return group;
   }
@@ -183,13 +186,14 @@ export function createBonusVisuals(THREE = DefaultTHREE) {
   function animateCore(group, time) {
     const data = group.userData.coreAnimation;
     if (!data) return;
-    data.sun.scale.setScalar(.032 * (1 + .08 * Math.sin(time * 2.2)));
+    data.sun.scale.setScalar(.052 * (1 + .08 * Math.sin(time * 2.2)));
     data.orbit.rotation.z = .2 + time * .22;
     data.silhouette.rotation.y = Math.sin(time * .65) * .24;
-    for (let i = 0; i < 6; i++) {
-      const angle = i * Math.PI / 3 + time * .42;
-      const radius = .112 + (i % 2) * .017;
+    for (let i = 0; i < 12; i++) {
+      const angle = i * Math.PI / 6 + time * (.5+(i%3)*.11);
+      const radius = .125 + (i % 3) * .021;
       data.matrix.makeTranslation(Math.cos(angle) * radius, Math.sin(angle) * radius * .64, Math.sin(angle * 2 + i) * .035);
+      data.matrix.scale(data.particleScale);
       data.dots.setMatrixAt(i, data.matrix);
     }
     data.dots.instanceMatrix.needsUpdate = true;

@@ -44,8 +44,9 @@ export class SecondaryPowers {
  }
  createWell(point,now,blocks,config={}) {
   // The impulse budget is a bound on cumulative added speed, not resultant speed.
-  const diameter=this.radius*2,range=(config.radiusD??3)*diameter;
+  this.endWell();const diameter=this.radius*2,range=(config.radiusD??3)*diameter;
   const targets=[...blocks.values()].filter(o=>this.intact(o)).map(o=>({o,d:Math.hypot(o.b.translation().x-point.x,o.b.translation().y-point.y,o.b.translation().z-point.z)})).filter(t=>t.d<=range).sort((a,b)=>a.d-b.d).slice(0,4).map(({o})=>({id:o.id,handle:o.b.handle,remaining:diameter*2}));
+  for(const target of targets){const o=blocks.get(target.id);target.friction=o.cs.map(c=>({handle:c.handle,friction:c.friction(),rule:c.frictionCombineRule()}));for(const c of o.cs){c.setFriction(0);c.setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Min);}}
   this.well={point:{x:point.x,y:point.y,z:point.z},born:now,expires:now+2,targets,blocks,acceleration:Math.min(diameter*2,Math.max(0,(config.accelerationD??2)*diameter)),range};
   this.wellMesh.position.set(point.x,.035,point.z);this.wellMesh.scale.setScalar(Math.max(diameter,range*.35));this.wellMesh.visible=true;return this.well;
  }
@@ -60,7 +61,7 @@ export class SecondaryPowers {
    if(a){const mass=echo.b.mass();echo.b.applyImpulse({x:(a.x||0)*mass*dt,y:(a.y||0)*mass*dt,z:(a.z||0)*mass*dt},true);}
   }
   const well=this.well;if(!well)return;
-  if(now>=well.expires){this.well=null;this.wellMesh.visible=false;return;}
+  if(now>=well.expires){this.endWell();return;}
   for(const target of well.targets){
    const o=well.blocks.get(target.id);if(!this.intact(o)||o.b.handle!==target.handle||target.remaining<=0)continue;
    const p=o.b.translation(),dx=well.point.x-p.x,dy=well.point.y-p.y,dz=well.point.z-p.z,distance=Math.hypot(dx,dy,dz);if(distance<.01)continue;
@@ -85,8 +86,9 @@ export class SecondaryPowers {
  warmupObjects() {
   const group=new this.THREE.Group();group.add(new this.THREE.Mesh(this.echoGeometry,this.echoMaterial),new this.THREE.Mesh(this.ringGeometry,this.wellMaterial),new this.THREE.Mesh(this.ringGeometry,this.iceMaterial));return group;
  }
+ endWell(){if(this.well)for(const target of this.well.targets)for(const saved of target.friction||[]){const c=this.world.getCollider(saved.handle);if(c){c.setFriction(saved.friction);c.setFrictionCombineRule(saved.rule);}}this.well=null;this.wellMesh.visible=false;}
  clear() {
-  for(const echo of [...this.echoes])this.removeEcho(echo,false);this.well=null;this.wellMesh.visible=false;
+  for(const echo of [...this.echoes])this.removeEcho(echo,false);this.endWell();
   for(const mesh of this.marks.values()){mesh.visible=false;this.markPool.push(mesh);}this.marks.clear();
  }
  dispose() {this.clear();this.wellMesh.removeFromParent();for(const mesh of this.markPool)mesh.removeFromParent();this.markPool.length=0;this.echoGeometry.dispose();this.ringGeometry.dispose();this.echoMaterial.dispose();this.wellMaterial.dispose();this.iceMaterial.dispose();}
