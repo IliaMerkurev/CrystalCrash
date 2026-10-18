@@ -4,8 +4,8 @@ const light=new THREE.RectAreaLight(),inner=new THREE.MeshBasicMaterial(),partic
 const s=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');assert.match(s,/profileButton.onclick=\(\)=>\{close\(\);profiler\?\.open\(\);\}/);assert.match(s,/frameTiming.rapier\+=performance.now\(\)-rapierStart/);assert.match(s,/profileContacts\(contacts\)/);assert.match(s,/if\(outer\)frameTiming.contacts\+=performance.now\(\)-start/);assert.match(s,/simulationMs-frameTiming.rapier-frameTiming.contacts/);assert.match(s,/renderMs-\(profiler.frame.submit\|\|0\)-\(profiler.frame.prepare\|\|0\)/);assert.match(s,/metadata:\{mode:baselineActive/);console.log('Profiler visual restore, shader variants, no per-frame churn, scoped visibility and exclusive timing wiring passed');
 // The RAF interval belongs to the prior frame's completed CPU/render sample.
 assert(s.indexOf('profiler.endFrame({...pendingProfilerFrame,frameMs')<s.indexOf('frameTiming.rapier=frameTiming.contacts=0;profiler?.beginFrame'));
-assert.match(s,/if\(profiler\?\.enabled&&profiler.active\)gpuTimer\?\.begin/);
+assert.match(s,/performanceSettings.areaLights==='auto'&&!mobileGraphicsDevice&&!areaLightPolicy.snapshot\(\).latchedOff&&gpuFrameIndex%4===0/);
 assert.match(s,/if\(baselineActive\)gpuSample=gpuTimer.poll\(\);else\{gpuTimer.clear/);
 assert.match(s,/pendingProfilerFrame=null;gpuTimer.clear\(\);profilerVisuals.reset/);
 
-p.reset({areaLights:false});assert.equal(p.flags.areaLights,false);p.set('areaLights',true);assert.equal(p.flags.areaLights,true);p.reset({areaLights:false});assert.equal(p.flags.areaLights,false);assert.match(s,/performanceSettings.areaLights\?\[\]:railLights/);assert.match(s,/onOpen:\(\)=>\{profilerVisuals.reset\(\{areaLights:performanceSettings.areaLights\}\)/);
+p.reset({areaLights:false});assert.equal(p.flags.areaLights,false);p.set('areaLights',true);assert.equal(p.flags.areaLights,true);p.reset({areaLights:false});assert.equal(p.flags.areaLights,false);assert.match(s,/areaLightPolicy.snapshot\(\).enabled\?\[\]:\[...railLights\]/);assert.match(s,/onOpen:\(\)=>\{profilerVisuals.reset\(\{areaLights:areaLightPolicy.snapshot\(\).enabled\}\)/);

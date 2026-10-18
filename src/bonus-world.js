@@ -38,7 +38,7 @@ export class BonusWorld {
   const kind=origin.bonus,mesh=this.visuals.createModel(kind),scale=this.radius*2*1.3;mesh.scale.setScalar(scale);const box=new THREE.Box3().setFromObject(mesh),height=Math.max(.1,-box.min.y+.012),pose=origin.bonusPose;
   const p=pose?.p.clone()||new THREE.Vector3(0,1,this.bounds().mid-1),v=pose?.v.clone().multiplyScalar(.18)||new THREE.Vector3();v.clampLength(0,1.4);v.y=Math.max(v.y,.25);if(kind==='bomb'){v.x=0;v.z=0;}
   const aura=this.visuals.createPickupAura(kind);mesh.add(aura);
-  const shadow=new THREE.Mesh(this.shadowGeometry,this.shadowMaterial);shadow.rotation.x=-Math.PI/2;shadow.position.set(p.x,.007,p.z);this.scene.add(shadow);const item={kind,mesh,shadow,aura,releasedCore:core?.mesh||null,p,v,height,scale,landed:false,bounced:false,blockedFor:0,noticeAt:-10,returning:0};this.pickups.push(item);this.scene.add(mesh);mesh.position.copy(p);this.onSound('release');
+  const shadow=new THREE.Mesh(this.shadowGeometry,this.shadowMaterial);shadow.rotation.x=-Math.PI/2;shadow.position.set(p.x,.007,p.z);this.scene.add(shadow);const item={kind,cleanupNoScore:!!origin.cleanupNoScore,mesh,shadow,aura,releasedCore:core?.mesh||null,p,v,height,scale,landed:false,bounced:false,blockedFor:0,noticeAt:-10,returning:0};this.pickups.push(item);this.scene.add(mesh);mesh.position.copy(p);this.onSound('release');
   if(kind==='bomb'){item.fuseRemaining=BONUS_DEFS.bomb.countdown;item.timerRing=new THREE.Mesh(this.bombTimerGeometry.clone(),this.bombTimerMaterial);item.timerRing.rotation.x=-Math.PI/2;item.timerRing.visible=false;this.scene.add(item.timerRing);}
   if(!this.safe(p))this.returnItem(item);
  }
@@ -109,7 +109,7 @@ export class BonusWorld {
    else if(item.kind==='bomb'){
     if(!effectsPaused)item.fuseRemaining=Math.max(0,item.fuseRemaining-dt);
     item.timerRing.visible=true;item.timerRing.position.set(item.p.x,.035,item.p.z);item.timerRing.geometry.setDrawRange(0,Math.ceil(item.timerRing.geometry.index.count*item.fuseRemaining/BONUS_DEFS.bomb.countdown/3)*3);
-    if(item.fuseRemaining<=0){const at=item.p.clone();this.pickups.splice(i,1);this.disposeReleasedCore(item);this.disposeTimer(item);this.scene.remove(item.mesh);this.visuals.releaseInstance(item.mesh);this.scene.remove(item.shadow);this.onBomb(at);continue;}
+    if(item.fuseRemaining<=0){const at=item.p.clone();this.pickups.splice(i,1);this.disposeReleasedCore(item);this.disposeTimer(item);this.scene.remove(item.mesh);this.visuals.releaseInstance(item.mesh);this.scene.remove(item.shadow);this.onBomb(at,{cleanupNoScore:item.cleanupNoScore});continue;}
    }else{if(this.blocked(item.p,.35))item.blockedFor+=dt;else item.blockedFor=0;if(item.blockedFor>2){this.returnItem(item);continue;}
     const collector=collectors.find(c=>{const start=this.collectorHistory.get(c.id)||c.p,delta=new THREE.Vector3().subVectors(c.p,start),t=delta.lengthSq()>0?THREE.MathUtils.clamp(new THREE.Vector3().subVectors(item.p,start).dot(delta)/delta.lengthSq(),0,1):0;return start.clone().addScaledVector(delta,t).distanceTo(item.p)<this.radius*3.6;});
     if(collector){const result=this.controller.collect(item.kind);if(result.accepted){

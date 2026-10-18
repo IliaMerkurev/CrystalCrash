@@ -8,15 +8,17 @@ export const DEFAULT_PERFORMANCE_SETTINGS = Object.freeze({
   cubeEnvironment: true,
   particlesInFloor: true,
   debrisEnvironment: true,
-  shadows: 'high',
+  shadows: 'auto',
   gateTransmission: true,
-  areaLights: true,
+  areaLights: 'auto',
+  fillLighting: true,
   showDiagnostics: false
 });
 const CHOICES = Object.freeze({
   sceneQuality: Object.freeze(['auto', 'low', 'medium', 'high']),
   floorReflection: Object.freeze(['auto', 'off', '128', '256', '512', '1024']),
-  shadows: Object.freeze(['off', 'low', 'high'])
+  shadows: Object.freeze(['auto', 'contact', 'off', 'low', 'high']),
+  areaLights: Object.freeze(['auto', 'off', 'on'])
 });
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
@@ -25,7 +27,7 @@ export function isMobileGraphicsDevice(env=globalThis) {
   const nav=env.navigator||{};
   return !!(env.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|iPod/i.test(nav.userAgent||'') || (/Mac/i.test(nav.platform||nav.userAgent||'') && nav.maxTouchPoints>1));
 }
-export function performanceDefaults(env=globalThis) {return {...DEFAULT_PERFORMANCE_SETTINGS,areaLights:!isMobileGraphicsDevice(env)};}
+export function performanceDefaults(env=globalThis) {return {...DEFAULT_PERFORMANCE_SETTINGS};}
 
 /** Returns a fresh, known-key-only settings object. Invalid fields use defaults. */
 export function normalizePerformanceSettings(value, defaults=performanceDefaults()) {
@@ -33,7 +35,7 @@ export function normalizePerformanceSettings(value, defaults=performanceDefaults
   const result = {...defaults};
   for (const key of Object.keys(result)) {
     if (!owns(source, key)) continue;
-    const candidate = source[key];
+    const candidate = key === 'areaLights' && typeof source[key] === 'boolean' ? (source[key] ? 'on' : 'off') : source[key];
     if (CHOICES[key] ? CHOICES[key].includes(candidate) : typeof candidate === 'boolean') result[key] = candidate;
   }
   return result;
@@ -105,7 +107,7 @@ export function createPerformanceSettingsUI({parent, settings, onChange, getDiag
   const root = doc.createElement('section');
   root.className = 'performance-settings';
   root.setAttribute('aria-label', 'Performance settings');
-  root.style.cssText = 'margin:12px 0;padding:12px 0;border-top:1px solid #678ca955;border-bottom:1px solid #678ca955;min-width:0;max-height:58vh;max-height:58dvh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;';
+  root.style.cssText = 'margin:12px 0;padding:12px 0;border-top:1px solid #678ca955;border-bottom:1px solid #678ca955;min-width:0;';
   const heading = doc.createElement('b');
   heading.textContent = 'Performance';
   heading.style.cssText = 'display:block;margin:0 0 5px;font-size:13px;';
@@ -116,21 +118,42 @@ export function createPerformanceSettingsUI({parent, settings, onChange, getDiag
   const controls = {};
   const handlers = [];
   let disposed = false;
+  const groups = {};
+  for (const [name, description] of [
+    ['Lighting', 'Fill = hemisphere and cool directional light; the key light stays on. Area = extra rail lights, enabled by Auto only after a desktop GPU check. Environment = shine on glass.'],
+    ['Shadows', 'Auto uses soft contact shadows while area lights are off, and soft dynamic shadows when on. Choose a manual mode independently of lighting.'],
+    ['Graphics', 'Floor mirror reflects objects. Its resolution and object visibility are independent of lighting and shadows.']
+  ]) {
+    const group = doc.createElement('details');
+    group.open = name === 'Graphics';
+    group.setAttribute('aria-label', name);
+    group.style.cssText = 'margin:10px 0;padding:8px;border:1px solid #678ca944;border-radius:8px;min-width:0;';
+    const legend = doc.createElement('summary');
+    legend.textContent = name;
+    legend.style.cssText = 'padding:5px;min-height:34px;box-sizing:border-box;cursor:pointer;color:#e7f4ff;font:bold 12px/24px sans-serif;';
+    const help = doc.createElement('p');
+    help.textContent = description;
+    help.style.cssText = 'margin:1px 0 6px;color:#aac0d1;font:11px/1.4 sans-serif;';
+    group.append(legend, help);
+    groups[name] = group;
+    root.append(group);
+  }
   const fields = [
+    ['fillLighting', 'Fill lighting', null, 'Hemisphere ambient fill and cool directional fill. The key light stays on so shadows remain independently controlled.'],
+    ['areaLights', 'Area lights', [['auto', 'Auto'], ['off', 'Off'], ['on', 'On']], 'Auto starts off and enables only after a desktop GPU budget check. Phones, tablets, and unavailable GPU timing keep Auto off. Your On or Off choice always wins.'],
     ['sceneQuality', 'Scene resolution', [['auto', 'Auto'], ['low', 'Low · 0.90 MP'], ['medium', 'Medium · 1.40 MP'], ['high', 'High · 2.0736 MP']], 'Pixel budget for the main scene. Auto adapts to the device.'],
     ['floorReflection', 'Floor mirror', [['auto', 'Auto'], ['off', 'Off'], ['128', '128 × 128'], ['256', '256 × 256'], ['512', '512 × 512'], ['1024', '1024 × 1024']], 'Mirror texture resolution. Auto follows scene quality.'],
     ['cubesInFloor', 'Cubes in floor mirror', null, 'Show glass cubes and physical glass pieces in the floor mirror.'],
     ['cubeEnvironment', 'Environment on cubes', null, 'Studio reflections on cube surfaces, separate from the floor mirror.'],
     ['particlesInFloor', 'Particles in floor mirror', null, 'Show glass particles in the floor mirror.'],
     ['debrisEnvironment', 'Environment on debris', null, 'Studio reflections on glass debris and particle surfaces.'],
-    ['shadows', 'Shadows', [['off', 'Off'], ['low', 'Low · 512'], ['high', 'High · 1024']], 'Shadow-map resolution, independent of scene resolution.'],
-    ['areaLights', 'Area lights', null, 'Extra rail lighting. Off by default on phones and tablets; environment and basic lighting remain.'],
+    ['shadows', 'Shadows', [['auto', 'Auto'], ['contact', 'Soft contact'], ['off', 'Off'], ['low', 'Low · 512'], ['high', 'High · 1024']], 'Auto uses soft contact shadows with area lights off, and soft dynamic shadows with area lights on. Manual choices stay independent.'],
     ['gateTransmission', 'Gate transmission', null, 'Use the glass gate’s see-through transmission effect.'],
     ['showDiagnostics', 'Show FPS / ms in game', null, 'Keep a small, non-interactive performance readout visible during gameplay.']
   ];
   for (const [key, title, choices, description] of fields) {
     const row = doc.createElement('label');
-    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:35px;padding:3px 1px;color:#e7f4ff;font:12px/1.3 sans-serif;';
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:2px 1px;color:#e7f4ff;font:12px/1.3 sans-serif;';
     row.htmlFor = `${id}-${key}`;
     row.title = description;
     const label = doc.createElement('span');
@@ -143,7 +166,7 @@ export function createPerformanceSettingsUI({parent, settings, onChange, getDiag
     input.setAttribute('aria-label', title);
     input.title = description;
     if (choices) {
-      input.style.cssText = 'width:132px;max-width:48%;min-height:30px;border:1px solid #678ca988;border-radius:6px;padding:4px;background:#1c3043;color:#f3f8ff;font:11px sans-serif;';
+      input.style.cssText = 'width:132px;max-width:48%;min-height:36px;border:1px solid #678ca988;border-radius:6px;padding:4px;background:#1c3043;color:#f3f8ff;font:11px sans-serif;';
       for (const [value, text] of choices) {
         const option = doc.createElement('option');
         option.value = value;
@@ -171,7 +194,8 @@ export function createPerformanceSettingsUI({parent, settings, onChange, getDiag
     handlers.push([input, change]);
     controls[key] = input;
     row.append(label, input);
-    root.append(row);
+    const groupName = key === 'shadows' ? 'Shadows' : ['fillLighting', 'areaLights', 'cubeEnvironment', 'debrisEnvironment'].includes(key) ? 'Lighting' : 'Graphics';
+    groups[groupName].append(row);
   }
   const distinction = doc.createElement('p');
   distinction.textContent = 'Floor mirror = reflected objects. Environment = shine on glass surfaces.';

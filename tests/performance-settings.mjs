@@ -27,17 +27,17 @@ function documentFixture() {
 }
 const sample = {fps: 60, frameMs: 16.666, physicsMs: 2.125, drawCalls: 44, triangles: 125000, bodies: 120, colliders: 456, width: 1080, height: 1920, reflectionResolution: 512};
 
-test('defaults preserve all visual effects and keep diagnostics opt-in', () => {
+test('defaults use conservative automatic lighting and keep diagnostics opt-in', () => {
   assert.equal(Object.isFrozen(DEFAULT_PERFORMANCE_SETTINGS), true);
   assert.deepEqual(SCENE_PIXEL_BUDGETS, {low: 900000, medium: 1400000, high: 2073600});
-  assert.deepEqual(DEFAULT_PERFORMANCE_SETTINGS, {sceneQuality: 'auto', floorReflection: 'auto', cubesInFloor: true, cubeEnvironment: true, particlesInFloor: true, debrisEnvironment: true, shadows: 'high', gateTransmission: true, areaLights: true, showDiagnostics: false});
+  assert.deepEqual(DEFAULT_PERFORMANCE_SETTINGS, {sceneQuality: 'auto', floorReflection: 'auto', cubesInFloor: true, cubeEnvironment: true, particlesInFloor: true, debrisEnvironment: true, shadows: 'auto', gateTransmission: true, areaLights: 'auto', fillLighting: true, showDiagnostics: false});
   const first = normalizePerformanceSettings(), second = normalizePerformanceSettings();
   first.shadows = 'off';
-  assert.equal(second.shadows, 'high');
+  assert.equal(second.shadows, 'auto');
 });
 
 test('validation is strict, independent, fresh, and strips unsupported keys', () => {
-  const source = {sceneQuality: 'low', floorReflection: '1024', particlesInFloor: false, gateTransmission: false, cubeEnvironment: 'false', shadows: 'auto', showDiagnostics: 1, surprise: true};
+  const source = {sceneQuality: 'low', floorReflection: '1024', particlesInFloor: false, gateTransmission: false, cubeEnvironment: 'false', shadows: 'invalid', showDiagnostics: 1, surprise: true};
   const normalized = normalizePerformanceSettings(source);
   assert.deepEqual(normalized, {...DEFAULT_PERFORMANCE_SETTINGS, sceneQuality: 'low', floorReflection: '1024', particlesInFloor: false, gateTransmission: false});
   assert.equal(source.cubeEnvironment, 'false');
@@ -84,8 +84,8 @@ test('compact UI keeps shared state, clearly separates choices, and persists onl
   const ui = createPerformanceSettingsUI({parent, settings, storage, onChange: (state, key, previous) => changes.push({state, key, previous}), getDiagnostics: () => sample});
   assert.equal(ui.settings, settings);
   assert.equal(parent.children[0], ui.element);
-  assert.equal(Object.keys(ui.controls).length, 10);
-  assert.match(ui.element.style.cssText, /overflow-y:auto/);
+  assert.equal(Object.keys(ui.controls).length, 11);
+  assert.doesNotMatch(ui.element.style.cssText, /overflow-y:auto|max-height:/);
   assert.doesNotMatch(ui.element.style.cssText, /position:fixed|inset:0/);
   const labels = Object.values(ui.controls).map(input => input.attrs['aria-label']);
   assert(labels.includes('Cubes in floor mirror'));
@@ -175,13 +175,80 @@ test('overlay is opt-in, pointer-transparent, externally updated, and throttled 
 test('mobile area-light defaults include desktop-UA iPads and preserve explicit preferences', async () => {
  const {performanceDefaults,isMobileGraphicsDevice}=await import('../src/performance-settings.js');
  const ipad={navigator:{userAgent:'Mozilla Macintosh',platform:'MacIntel',maxTouchPoints:5}};
- assert(isMobileGraphicsDevice(ipad));assert.equal(performanceDefaults(ipad).areaLights,false);
- assert.equal(performanceDefaults({navigator:{platform:'MacIntel',maxTouchPoints:0}}).areaLights,true);
- assert.equal(performanceDefaults({navigator:{userAgent:'Android'}}).areaLights,false);
- assert.equal(performanceDefaults({matchMedia:()=>({matches:true})}).areaLights,false);
+ assert(isMobileGraphicsDevice(ipad));assert.equal(performanceDefaults(ipad).areaLights,'auto');
+ assert.equal(performanceDefaults({navigator:{platform:'MacIntel',maxTouchPoints:0}}).areaLights,'auto');
+ assert.equal(performanceDefaults({navigator:{userAgent:'Android'}}).areaLights,'auto');
+ assert.equal(performanceDefaults({matchMedia:()=>({matches:true})}).areaLights,'auto');
  const defaults=performanceDefaults(ipad);
- assert.equal(normalizePerformanceSettings({shadows:'off'},defaults).areaLights,false);
- assert.equal(normalizePerformanceSettings({areaLights:true},defaults).areaLights,true);
- assert.equal(normalizePerformanceSettings({areaLights:false},performanceDefaults({})).areaLights,false);
- assert.equal(normalizePerformanceSettings({areaLights:'true'},defaults).areaLights,false);
+ assert.equal(normalizePerformanceSettings({shadows:'off'},defaults).areaLights,'auto');
+ assert.equal(normalizePerformanceSettings({areaLights:true},defaults).areaLights,'on');
+ assert.equal(normalizePerformanceSettings({areaLights:false},performanceDefaults({})).areaLights,'off');
+ assert.equal(normalizePerformanceSettings({areaLights:'true'},defaults).areaLights,'auto');
+});
+
+
+test('area-light and shadow selectors persist explicit choices without changing other settings', () => {
+  const {parent} = documentFixture(), storage = memoryStorage(), settings = loadPerformanceSettings(storage);
+  const ui = createPerformanceSettingsUI({parent, settings, storage});
+  assert.equal(ui.controls.areaLights.tagName, 'select');
+  assert.deepEqual(ui.controls.areaLights.children.map(o => o.value), ['auto', 'off', 'on']);
+  assert.deepEqual(ui.controls.shadows.children.map(o => o.value), ['auto', 'contact', 'off', 'low', 'high']);
+  for (const areaLights of ['off', 'on', 'auto']) {
+    ui.controls.areaLights.value = areaLights; ui.controls.areaLights.dispatch('change');
+    assert.deepEqual(loadPerformanceSettings(storage), {...DEFAULT_PERFORMANCE_SETTINGS, areaLights});
+  }
+  for (const shadows of ['off', 'high', 'contact', 'auto']) {
+    ui.controls.shadows.value = shadows; ui.controls.shadows.dispatch('change');
+    assert.equal(loadPerformanceSettings(storage).shadows, shadows);
+    assert.equal(settings.areaLights, 'auto');
+  }
+});
+
+test('legacy boolean area-light choices migrate on load and save; absent values stay Auto', () => {
+  const storage = memoryStorage();
+  for (const [old, expected] of [[true, 'on'], [false, 'off']]) {
+    storage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify({areaLights: old, shadows: 'high'}));
+    const settings = loadPerformanceSettings(storage);
+    assert.equal(settings.areaLights, expected); assert.equal(settings.shadows, 'high');
+    savePerformanceSettings(settings, storage);
+    assert.equal(JSON.parse(storage.getItem(PERFORMANCE_STORAGE_KEY)).areaLights, expected);
+  }
+  storage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify({shadows: 'off'}));
+  assert.equal(loadPerformanceSettings(storage).areaLights, 'auto');
+  assert.equal(loadPerformanceSettings(storage).shadows, 'off');
+});
+
+
+test('Lighting and Shadows are separate accessible blocks; fill lighting persists independently', () => {
+  const {parent} = documentFixture(), storage = memoryStorage(), settings = loadPerformanceSettings(storage);
+  const ui = createPerformanceSettingsUI({parent, settings, storage});
+  const groups = ui.element.children.filter(child => child.tagName === 'details');
+  assert.deepEqual(groups.map(group => group.attrs['aria-label']), ['Lighting', 'Shadows', 'Graphics']);
+  for (const key of ['fillLighting', 'areaLights', 'cubeEnvironment', 'debrisEnvironment']) assert.equal(ui.controls[key].parentNode.parentNode, groups[0]);
+  assert.equal(ui.controls.shadows.parentNode.parentNode, groups[1]);
+  assert.equal(ui.controls.floorReflection.parentNode.parentNode, groups[2]);
+  assert.match(groups[0].children[1].textContent, /key light stays on/);
+  assert.match(groups[1].children[1].textContent, /independently/);
+  assert.match(ui.controls.fillLighting.parentNode.style.cssText, /min-height:44px/);
+  assert.equal(settings.fillLighting, true);
+  ui.controls.fillLighting.checked = false; ui.controls.fillLighting.dispatch('change');
+  assert.deepEqual(loadPerformanceSettings(storage), {...DEFAULT_PERFORMANCE_SETTINGS, fillLighting: false});
+});
+
+
+test('native collapsible sections preserve live controls and settings when folded', () => {
+  const {parent} = documentFixture(), storage = memoryStorage(), settings = loadPerformanceSettings(storage);
+  const ui = createPerformanceSettingsUI({parent, settings, storage});
+  const sections = ui.element.children.filter(child => child.tagName === 'details');
+  assert.deepEqual(sections.map(section => section.open), [false, false, true]);
+  assert(sections.every(section => section.children[0].tagName === 'summary'));
+  const areaControl = ui.controls.areaLights;
+  sections[0].open = true;
+  areaControl.value = 'on'; areaControl.dispatch('change');
+  sections[0].open = false; sections[0].open = true;
+  ui.refresh();
+  assert.equal(ui.controls.areaLights, areaControl);
+  assert.equal(areaControl.value, 'on');
+  assert.equal(loadPerformanceSettings(storage).areaLights, 'on');
+  assert.doesNotMatch(ui.element.style.cssText, /overflow-y|max-height/);
 });
