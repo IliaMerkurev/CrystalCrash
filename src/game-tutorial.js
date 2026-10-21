@@ -75,6 +75,9 @@ export class GameTutorial {
   this.pointer.innerHTML='<svg viewBox="0 0 68 112" width="68" height="112"><path class="cc-tutorial-pull-trail" d="M16 23v44m-5-6 5 6 5-6"/><circle class="cc-tutorial-release-burst" cx="16" cy="23" r="12"/><circle class="cc-tutorial-release-ball" cx="16" cy="23" r="7"/><path class="cc-tutorial-steer-trail" d="M-16 23h64m-6-5 6 5-6 5M-10 18l-6 5 6 5"/><g class="cc-tutorial-steer-motion"><circle class="cc-tutorial-hold-ring" cx="16" cy="23" r="20"/><circle class="cc-tutorial-hold-ring cc-tutorial-hold-ring--echo" cx="16" cy="23" r="20"/><g class="cc-tutorial-hand-motion"><circle class="cc-tutorial-contact" cx="16" cy="23" r="12"/><path class="cc-tutorial-arrow" d="M16 16V3m-6 6 6-6 6 6"/><path class="cc-tutorial-hand" d="M16 47V23c0-5 7-5 7 0v12-5c0-4 7-4 7 0v6-3c0-4 7-4 7 0v5-1c0-4 7-4 7 0v10c0 7-4 11-8 13H23c-4-3-6-7-8-10l-7-9c-3-4 2-8 5-4l3 3"/></g></g></svg><span class="cc-tutorial-hold-word">HOLD</span>';
   this.element.appendChild(this.pointer);(root||doc.body).appendChild(this.element);
  }
+ // Per-launch state is deliberately independent of persisted onboarding progress.
+ mainLaunched(){this.flight={age:0,shown:0,dismissed:false};this.hide();}
+ dismissAttractReminder(){if(this.flight)this.flight.dismissed=true;this.hide();}
  get step(){return TUTORIAL_STEPS.find(step=>!this.done.has(step))||'done';}
  get chargeUnlocked(){return true;}
  chargeCue(dt,fullPull){if(!this.chargeUnlocked||this.done.has('charged')||!fullPull)return false;this.chargeCueAge+=Math.max(0,Math.min(dt||0,.1));if(this.chargeCueAge>=2.5){this.done.add('charged');this.index=this.done.size;this.persist();return false;}return true;}
@@ -94,19 +97,28 @@ export class GameTutorial {
   this.done.add(action);this.index=this.done.size;this.persist();this.hide();return true;
  }
  update(c){this.updateView(c);return {visible:this.visible,stage:this.displayStep||this.step};}
- updateView(c){this.context=c;this.hide();if(this.completed||!this.active(c))return;
+ updateView(c){this.context=c;this.hide();
+  const flight=this.flight,dt=Math.max(0,Math.min(c.dt||0,.1));
+  if(flight){
+   if(!this.active(c)||c.state!=='BALL_ACTIVE'||c.drag?.mode==='attract'||(flight.shown>0&&c.drag))flight.dismissed=true;
+   if(!flight.dismissed)flight.age+=dt;
+  }
+  const remind=flight&&!flight.dismissed&&flight.age>=1.2&&flight.shown<3&&!c.drag;
+  if(!this.active(c)||(this.completed&&!remind))return;
   const targets=(c.bonusTargets||[]).filter(t=>t&&TUTORIAL_BONUSES[t.kind]&&t.point&&t.eligible!==false);
   for(const target of targets)if(!this.seenBonuses.has(target.kind)&&!this.bonusQueue.includes(target.kind))this.bonusQueue.push(target.kind);
   const candidates=[];const add=(step,point,label=LABELS[step])=>{if(point&&!this.done.has(step))candidates.push({step,point,label});};
   // Active control gestures and the unlocked exit always take precedence.
   if(c.state!=='REPOSITION'&&c.gateReady){if(c.gateOpen)add('gate',c.gatePoint);else if(!this.done.has('gate'))candidates.push({step:'gateBreak',point:c.gatePoint,label:'Break the glass gate'});}
+  if(remind)candidates.push({step:'attractReminder',point:c.lowerPoint,label:'HOLD TO ATTRACT'});
   if(c.drag?.echo){
    const activeId=c.activeExtraId??c.drag.echo.b?.handle;const heldCandidates=(c.extraPoints||[]).filter(e=>e.isHeld&&!e.parked&&!e.staged);const held=activeId!==undefined?heldCandidates.find(e=>e.id===activeId):(heldCandidates.length===1?heldCandidates[0]:null);add('extraRelease',held?.point);
   }else{
    if(c.drag?.mode==='aim'&&['HELD','AIMING'].includes(c.state)){
     add('aim',c.mainPoint);add('release',c.mainPoint);
    }else if(!c.mainUpper&&!c.drag&&['HELD','BALL_ACTIVE'].includes(c.state)){if(this.done.has('catch')&&!this.done.has('release')&&c.mainPoint)candidates.push({step:'catch',point:c.mainPoint,label:'Grab the ball to finish launching'});else add('catch',c.mainPoint);}
-   if(c.mainUpper&&c.state==='BALL_ACTIVE'){add('attract',c.lowerPoint);if(this.done.has('attract'))add('attractMove',c.lowerPoint);}
+   if(!flight&&c.mainUpper&&c.state==='BALL_ACTIVE'){add('attract',c.lowerPoint);if(this.done.has('attract'))add('attractMove',c.lowerPoint);}
+   if(flight&&c.drag?.mode==='attract'&&c.mainUpper&&c.state==='BALL_ACTIVE'&&this.done.has('attract'))add('attractMove',c.lowerPoint);
    const extra=(c.extraPoints||[]).find(e=>!e.isHeld&&!e.parked&&!e.staged&&e.catchable!==false&&(c.lowerZoneZ===undefined||e.point?.z>=c.lowerZoneZ)&&(c.lossZ===undefined||e.point?.z<c.lossZ));
    if(!c.drag){if(this.done.has('extraCatch')&&!this.done.has('extraRelease')&&extra?.point)candidates.push({step:'extraCatch',point:extra.point,label:'Grab the extra ball to relaunch'});else add('extraCatch',extra?.point);}
   }
@@ -121,11 +133,13 @@ export class GameTutorial {
    if((p.y<top+100&&!['gate','gateBreak'].includes(candidate.step))||p.y>top+viewport.height-72||p.x<left+12||p.x>left+viewport.width-12)continue;
    selected=candidate;screen=p;break;
   }
+  if(flight?.shown>0&&selected?.step!=='attractReminder')flight.dismissed=true;
   if(!selected)return;const {step,kind,label}=selected;this.displayStep=step;this.visible=true;
+  if(step==='attractReminder'){flight.shown+=dt;if(flight.shown>=3)flight.dismissed=true;}
   if(kind){const age=(this.bonusTime.get(kind)||0)+Math.max(0,Math.min(c.dt||0,.1));this.bonusTime.set(kind,age);if(age>=3){this.seenBonuses.add(kind);this.persist();}}
   if(!this.element)return;
-  const gesture=step==='charged'&&c.charge?.fullPull?'hold':PULL_STEPS.has(step)?'pull-release':step==='attract'?'hold':step==='attractMove'?'hold-move':'point';
-  const detail=step==='charged'?(c.charge?.fullPull?'Release while the needle is green':'Reach full pull to reveal the timing dial'):GESTURE_DETAILS[step]||'';
+  const gesture=step==='charged'&&c.charge?.fullPull?'hold':PULL_STEPS.has(step)?'pull-release':['attract','attractReminder'].includes(step)?'hold':step==='attractMove'?'hold-move':'point';
+  const detail=step==='attractReminder'?'Press and hold the lower zone':step==='charged'?(c.charge?.fullPull?'Release while the needle is green':'Reach full pull to reveal the timing dial'):GESTURE_DETAILS[step]||'';
   this.element.hidden=false;this.element.setAttribute('data-step',step);this.element.setAttribute('data-gesture',gesture);if(this.label.textContent!==label)this.label.textContent=label;
   if(this.detail.textContent!==detail)this.detail.textContent=detail;this.detail.hidden=!detail;
   const width=Math.min(216,viewport.width-32),labelX=clamp(screen.x-width/2,left+16,left+viewport.width-width-16);
